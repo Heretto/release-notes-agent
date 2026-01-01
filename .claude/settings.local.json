@@ -10,7 +10,8 @@
       "Bash(docker:*)",
       "Bash(open:*)",
       "Bash(curl:*)",
-      "Bash(cp:*)"
+      "Bash(cp:*)",
+      "Bash(python3:*)"
     ],
     "deny": [],
     "ask": [],

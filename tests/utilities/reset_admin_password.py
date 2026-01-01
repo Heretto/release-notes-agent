@@ -2,13 +2,15 @@
 """
 Reset admin password for testing
 """
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import hashlib
 import asyncio
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-import os
-
-DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/release_notes"
+from config import DATABASE_URL
 
 def reset_admin_password():
     # Create database connection

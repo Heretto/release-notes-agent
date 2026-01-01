@@ -3,19 +3,24 @@
 Test script to verify Jira API v3 upgrade.
 """
 
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import requests
 import json
+from config import API_BASE_URL, TEST_EMAIL, TEST_PASSWORD
 
 def test_jira_v3_upgrade():
     """Test that Jira API has been upgraded to v3."""
     
-    BASE_URL = "http://localhost:8000/api/v1"
+    BASE_URL = API_BASE_URL
     
     # Login
     print("1. Logging in...")
     login_resp = requests.post(
         f"{BASE_URL}/auth/login",
-        json={"email": "admin@example.com", "password": "admin123"}
+        json={"email": TEST_EMAIL, "password": TEST_PASSWORD}
     )
     
     if login_resp.status_code != 200:

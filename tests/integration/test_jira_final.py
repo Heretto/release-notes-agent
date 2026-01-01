@@ -3,13 +3,18 @@
 Final test to verify Jira API v3 integration is working correctly.
 """
 
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import requests
 import json
+from config import API_BASE_URL, TEST_EMAIL, TEST_PASSWORD
 
 def test_jira_v3_final():
     """Comprehensive test of Jira v3 API integration."""
     
-    BASE_URL = "http://localhost:8000/api/v1"
+    BASE_URL = API_BASE_URL
     
     print("="*60)
     print("JIRA API V3 INTEGRATION TEST")
@@ -19,7 +24,7 @@ def test_jira_v3_final():
     print("\n1. Authenticating...")
     login_resp = requests.post(
         f"{BASE_URL}/auth/login",
-        json={"email": "admin@example.com", "password": "admin123"}
+        json={"email": TEST_EMAIL, "password": TEST_PASSWORD}
     )
     
     if login_resp.status_code != 200:

@@ -2,14 +2,18 @@
 """
 Test script to verify artifact deletion functionality
 """
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import requests
 import json
 import time
-import sys
+from config import API_BASE_URL, TEST_EMAIL, TEST_PASSWORD
 
-BASE_URL = "http://localhost:8000/api/v1"
-EMAIL = "admin@example.com"  # Use admin email
-PASSWORD = "admin"  # Change this if different
+BASE_URL = API_BASE_URL
+EMAIL = TEST_EMAIL
+PASSWORD = TEST_PASSWORD
 
 def login():
     """Login and get access token"""

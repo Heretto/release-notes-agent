@@ -10,14 +10,18 @@ This script will:
 6. Verify it was deleted
 """
 
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import requests
 import json
-import sys
 from typing import Optional, Dict, Any
+from config import API_BASE_URL, TEST_EMAIL, TEST_PASSWORD
 
-BASE_URL = "http://localhost:8000/api/v1"
-TEST_USER = "admin@example.com"
-TEST_PASSWORD = "admin123"
+BASE_URL = API_BASE_URL
+TEST_USER = TEST_EMAIL
+TEST_PASSWORD = TEST_PASSWORD
 
 class CredentialsTest:
     def __init__(self):
