@@ -1,0 +1,57 @@
+/* Global Styles */
+html, body { 
+  height: 100%; 
+  margin: 0;
+}
+
+body { 
+  font-family: Roboto, "Helvetica Neue", sans-serif; 
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.full-width {
+  width: 100%;
+}
+
+.button-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.status-message {
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: 4px;
+  
+  &.success {
+    background-color: #c8e6c9;
+    color: #2e7d32;
+  }
+  
+  &.error {
+    background-color: #ffcdd2;
+    color: #c62828;
+  }
+}
+
+.form-section {
+  margin-bottom: 30px;
+  
+  h4 {
+    margin-bottom: 15px;
+    color: #3f51b5;
+  }
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}

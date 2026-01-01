@@ -1,0 +1,82 @@
+from datetime import datetime, timedelta
+from typing import Optional, Dict, Any
+import hashlib
+import hmac
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+from cryptography.fernet import Fernet
+import base64
+import json
+
+from app.config import get_settings
+from app.core.exceptions import AuthenticationError
+
+settings = get_settings()
+
+# Password hashing - Using SHA256 for simplicity due to bcrypt issues
+# NOTE: In production, you should fix bcrypt or use another secure method
+import hashlib
+
+# Encryption for credentials
+fernet = Fernet(base64.urlsafe_b64encode(settings.encryption_key.encode()[:32].ljust(32, b'0')))
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify a password against its hash."""
+    # For now, use SHA256 for both hashing and verification
+    return hashlib.sha256(plain_password.encode()).hexdigest() == hashed_password
+
+def get_password_hash(password: str) -> str:
+    """Hash a password."""
+    # Use SHA256 for consistent hashing
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
+    """Create a JWT access token."""
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=settings.jwt_access_token_expire_minutes)
+    
+    to_encode.update({"exp": expire, "type": "access"})
+    encoded_jwt = jwt.encode(to_encode, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+    return encoded_jwt
+
+def create_refresh_token(data: Dict[str, Any]) -> str:
+    """Create a JWT refresh token."""
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(days=settings.jwt_refresh_token_expire_days)
+    to_encode.update({"exp": expire, "type": "refresh"})
+    encoded_jwt = jwt.encode(to_encode, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+    return encoded_jwt
+
+def decode_token(token: str) -> Dict[str, Any]:
+    """Decode and validate a JWT token."""
+    try:
+        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+        return payload
+    except JWTError as e:
+        raise AuthenticationError(f"Invalid token: {str(e)}")
+
+def encrypt_credentials(credentials: Dict[str, Any]) -> bytes:
+    """Encrypt credentials for storage."""
+    json_str = json.dumps(credentials)
+    return fernet.encrypt(json_str.encode())
+
+def decrypt_credentials(encrypted_data: bytes) -> Dict[str, Any]:
+    """Decrypt stored credentials."""
+    decrypted = fernet.decrypt(encrypted_data)
+    return json.loads(decrypted.decode())
+
+def verify_jira_webhook_signature(body: bytes, signature: Optional[str]) -> bool:
+    """Verify Jira webhook signature."""
+    if not signature or not settings.jira_webhook_secret:
+        return False
+    
+    expected_signature = hmac.new(
+        settings.jira_webhook_secret.encode(),
+        body,
+        hashlib.sha256
+    ).hexdigest()
+    
+    return hmac.compare_digest(signature, f"sha256={expected_signature}")

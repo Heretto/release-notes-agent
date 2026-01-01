@@ -1,0 +1,730 @@
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+from typing import List
+from uuid import UUID
+
+from app.models.database import get_db, User, Credential, CredentialType
+from app.models.schemas import (
+    CredentialCreate, 
+    CredentialUpdate, 
+    CredentialResponse,
+    JiraCredentialResponse,
+    JiraCredentials,
+    HerettoCredentials,
+    AICredentials
+)
+from app.api.dependencies import get_current_active_user
+from app.core.security import encrypt_credentials, decrypt_credentials
+from app.services.jira_service_v3 import JiraServiceV3
+from app.services.heretto_service import HerettoService
+
+router = APIRouter(prefix="/credentials")
+
+# Generic credentials endpoints
+@router.get("/", response_model=List[CredentialResponse])
+async def list_credentials(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """List all credentials for current user."""
+    credentials = db.query(Credential).filter(
+        Credential.user_id == current_user.id
+    ).all()
+    return credentials
+
+@router.post("/", response_model=CredentialResponse)
+async def create_credential(
+    credential_data: CredentialCreate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Create new credential."""
+    # Check if credential with same name exists
+    existing = db.query(Credential).filter(
+        Credential.user_id == current_user.id,
+        Credential.type == credential_data.type,
+        Credential.name == credential_data.name
+    ).first()
+    
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Credential with this name already exists"
+        )
+    
+    # Encrypt and store credential
+    encrypted_data = encrypt_credentials(credential_data.credentials)
+    
+    new_credential = Credential(
+        user_id=current_user.id,
+        type=credential_data.type,
+        name=credential_data.name,
+        encrypted_data=encrypted_data
+    )
+    
+    db.add(new_credential)
+    db.commit()
+    db.refresh(new_credential)
+    
+    return new_credential
+
+# Jira-specific endpoints
+@router.get("/jira", response_model=List[JiraCredentialResponse])
+async def list_jira_credentials(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """List all Jira credentials for current user."""
+    credentials = db.query(Credential).filter(
+        Credential.user_id == current_user.id,
+        Credential.type == CredentialType.JIRA
+    ).all()
+    
+    # Decrypt and return full credential data
+    result = []
+    for cred in credentials:
+        decrypted = decrypt_credentials(cred.encrypted_data)
+        result.append(JiraCredentialResponse(
+            id=cred.id,
+            type=cred.type,
+            name=cred.name,
+            server_url=decrypted.get("server_url", ""),
+            email=decrypted.get("email", ""),
+            api_token=decrypted.get("api_token", ""),
+            created_at=cred.created_at,
+            updated_at=cred.updated_at
+        ))
+    
+    return result
+
+@router.post("/jira", response_model=JiraCredentialResponse)
+async def create_jira_credential(
+    credential_data: dict,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Create new Jira credential."""
+    # Check if credential with same name exists
+    existing = db.query(Credential).filter(
+        Credential.user_id == current_user.id,
+        Credential.type == CredentialType.JIRA,
+        Credential.name == credential_data.get("name")
+    ).first()
+    
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Jira credential with this name already exists"
+        )
+    
+    # Extract and validate Jira-specific fields
+    jira_creds = {
+        "server_url": credential_data.get("server_url"),
+        "email": credential_data.get("email"),
+        "api_token": credential_data.get("api_token")
+    }
+    
+    if not all(jira_creds.values()):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing required Jira credential fields"
+        )
+    
+    # Encrypt and store credential
+    encrypted_data = encrypt_credentials(jira_creds)
+    
+    new_credential = Credential(
+        user_id=current_user.id,
+        type=CredentialType.JIRA,
+        name=credential_data.get("name"),
+        encrypted_data=encrypted_data
+    )
+    
+    db.add(new_credential)
+    db.commit()
+    db.refresh(new_credential)
+    
+    # Return with decrypted data
+    return JiraCredentialResponse(
+        id=new_credential.id,
+        type=new_credential.type,
+        name=new_credential.name,
+        server_url=jira_creds["server_url"],
+        email=jira_creds["email"],
+        api_token=jira_creds["api_token"],
+        created_at=new_credential.created_at,
+        updated_at=new_credential.updated_at
+    )
+
+@router.put("/jira/{credential_id}", response_model=JiraCredentialResponse)
+async def update_jira_credential(
+    credential_id: UUID,
+    credential_data: dict,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Update existing Jira credential."""
+    credential = db.query(Credential).filter(
+        Credential.id == credential_id,
+        Credential.user_id == current_user.id,
+        Credential.type == CredentialType.JIRA
+    ).first()
+    
+    if not credential:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Jira credential not found"
+        )
+    
+    if credential_data.get("name"):
+        credential.name = credential_data.get("name")
+    
+    # Get existing credentials
+    existing_creds = decrypt_credentials(credential.encrypted_data)
+    
+    # Update encrypted data if new credentials provided
+    jira_creds = {}
+    if credential_data.get("server_url"):
+        jira_creds["server_url"] = credential_data.get("server_url")
+    if credential_data.get("email"):
+        jira_creds["email"] = credential_data.get("email")
+    if credential_data.get("api_token"):
+        jira_creds["api_token"] = credential_data.get("api_token")
+    
+    if jira_creds:
+        # Merge with existing credentials
+        existing_creds.update(jira_creds)
+        encrypted_data = encrypt_credentials(existing_creds)
+        credential.encrypted_data = encrypted_data
+    
+    db.commit()
+    db.refresh(credential)
+    
+    # Return with decrypted data
+    return JiraCredentialResponse(
+        id=credential.id,
+        type=credential.type,
+        name=credential.name,
+        server_url=existing_creds.get("server_url", ""),
+        email=existing_creds.get("email", ""),
+        api_token=existing_creds.get("api_token", ""),
+        created_at=credential.created_at,
+        updated_at=credential.updated_at
+    )
+
+@router.delete("/jira/{credential_id}")
+async def delete_jira_credential(
+    credential_id: UUID,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Delete Jira credential."""
+    credential = db.query(Credential).filter(
+        Credential.id == credential_id,
+        Credential.user_id == current_user.id,
+        Credential.type == CredentialType.JIRA
+    ).first()
+    
+    if not credential:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Jira credential not found"
+        )
+    
+    db.delete(credential)
+    db.commit()
+    
+    return {"message": "Jira credential deleted successfully"}
+
+# Heretto-specific endpoints
+@router.get("/heretto", response_model=List[CredentialResponse])
+async def list_heretto_credentials(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """List all Heretto credentials for current user."""
+    credentials = db.query(Credential).filter(
+        Credential.user_id == current_user.id,
+        Credential.type == CredentialType.HERETTO
+    ).all()
+    return credentials
+
+@router.post("/heretto", response_model=CredentialResponse)
+async def create_heretto_credential(
+    credential_data: dict,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Create new Heretto credential."""
+    # Check if credential with same name exists
+    existing = db.query(Credential).filter(
+        Credential.user_id == current_user.id,
+        Credential.type == CredentialType.HERETTO,
+        Credential.name == credential_data.get("name")
+    ).first()
+    
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Heretto credential with this name already exists"
+        )
+    
+    # Extract and validate Heretto-specific fields
+    heretto_creds = {
+        "api_key": credential_data.get("api_key"),
+        "organization_id": credential_data.get("organization_id"),
+        "environment": credential_data.get("environment", "production")
+    }
+    
+    if not heretto_creds.get("api_key") or not heretto_creds.get("organization_id"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing required Heretto credential fields"
+        )
+    
+    # Encrypt and store credential
+    encrypted_data = encrypt_credentials(heretto_creds)
+    
+    new_credential = Credential(
+        user_id=current_user.id,
+        type=CredentialType.HERETTO,
+        name=credential_data.get("name"),
+        encrypted_data=encrypted_data
+    )
+    
+    db.add(new_credential)
+    db.commit()
+    db.refresh(new_credential)
+    
+    return new_credential
+
+# AI provider endpoints
+@router.get("/ai", response_model=List[CredentialResponse])
+async def list_ai_credentials(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """List all AI provider credentials for current user."""
+    credentials = db.query(Credential).filter(
+        Credential.user_id == current_user.id,
+        Credential.type.in_([CredentialType.GEMINI, CredentialType.OPENAI, CredentialType.ANTHROPIC])
+    ).all()
+    return credentials
+
+@router.post("/ai", response_model=CredentialResponse)
+async def create_ai_credential(
+    credential_data: dict,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Create new AI provider credential."""
+    provider = credential_data.get("provider", "").lower()
+    
+    # Map provider to credential type
+    type_mapping = {
+        "gemini": CredentialType.GEMINI,
+        "openai": CredentialType.OPENAI,
+        "anthropic": CredentialType.ANTHROPIC
+    }
+    
+    if provider not in type_mapping:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid AI provider: {provider}"
+        )
+    
+    credential_type = type_mapping[provider]
+    
+    # Check if credential with same name exists
+    existing = db.query(Credential).filter(
+        Credential.user_id == current_user.id,
+        Credential.type == credential_type,
+        Credential.name == credential_data.get("name")
+    ).first()
+    
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{provider.capitalize()} credential with this name already exists"
+        )
+    
+    # Extract and validate AI-specific fields
+    ai_creds = {
+        "api_key": credential_data.get("api_key"),
+        "model": credential_data.get("model", "")
+    }
+    
+    if not ai_creds.get("api_key"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="API key is required"
+        )
+    
+    # Encrypt and store credential
+    encrypted_data = encrypt_credentials(ai_creds)
+    
+    new_credential = Credential(
+        user_id=current_user.id,
+        type=credential_type,
+        name=credential_data.get("name"),
+        encrypted_data=encrypted_data
+    )
+    
+    db.add(new_credential)
+    db.commit()
+    db.refresh(new_credential)
+    
+    return new_credential
+
+@router.get("/ai/{credential_id}")
+async def get_ai_credential(
+    credential_id: UUID,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Get single AI credential with details (API key masked)."""
+    credential = db.query(Credential).filter(
+        Credential.id == credential_id,
+        Credential.user_id == current_user.id,
+        Credential.type.in_([CredentialType.GEMINI, CredentialType.OPENAI, CredentialType.ANTHROPIC])
+    ).first()
+    
+    if not credential:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="AI credential not found"
+        )
+    
+    # Decrypt and return with masked API key
+    decrypted = decrypt_credentials(credential.encrypted_data)
+    api_key = decrypted.get("api_key", "")
+    
+    # Map credential type to provider name
+    provider_mapping = {
+        CredentialType.GEMINI: "gemini",
+        CredentialType.OPENAI: "openai", 
+        CredentialType.ANTHROPIC: "anthropic"
+    }
+    
+    return {
+        "id": credential.id,
+        "type": credential.type,
+        "name": credential.name,
+        "provider": provider_mapping.get(credential.type, "unknown"),
+        "api_key": api_key[:4] + "*" * (min(len(api_key) - 8, 20)) + api_key[-4:] if len(api_key) > 8 else "*" * len(api_key),
+        "model": decrypted.get("model", ""),
+        "created_at": credential.created_at,
+        "updated_at": credential.updated_at
+    }
+
+@router.put("/{credential_id}", response_model=CredentialResponse)
+async def update_credential(
+    credential_id: UUID,
+    credential_data: CredentialUpdate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Update existing credential."""
+    credential = db.query(Credential).filter(
+        Credential.id == credential_id,
+        Credential.user_id == current_user.id
+    ).first()
+    
+    if not credential:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Credential not found"
+        )
+    
+    if credential_data.name:
+        credential.name = credential_data.name
+    
+    if credential_data.credentials:
+        # Get existing credentials and merge with updates
+        existing_creds = decrypt_credentials(credential.encrypted_data)
+        
+        # Only update provided fields, keep existing values for others
+        for key, value in credential_data.credentials.items():
+            # Skip masked API keys (containing asterisks)
+            if key == "api_key" and value and "*" in value:
+                continue  # Don't update with masked keys
+            existing_creds[key] = value
+        
+        # Re-encrypt the merged credentials
+        encrypted_data = encrypt_credentials(existing_creds)
+        credential.encrypted_data = encrypted_data
+    
+    db.commit()
+    db.refresh(credential)
+    
+    return credential
+
+@router.delete("/{credential_id}")
+async def delete_credential(
+    credential_id: UUID,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Delete credential."""
+    credential = db.query(Credential).filter(
+        Credential.id == credential_id,
+        Credential.user_id == current_user.id
+    ).first()
+    
+    if not credential:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Credential not found"
+        )
+    
+    db.delete(credential)
+    db.commit()
+    
+    return {"message": "Credential deleted successfully"}
+
+@router.post("/{credential_id}/test")
+async def test_credential(
+    credential_id: UUID,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Test credential connection with detailed response."""
+    import httpx
+    import base64
+    from datetime import datetime
+    
+    credential = db.query(Credential).filter(
+        Credential.id == credential_id,
+        Credential.user_id == current_user.id
+    ).first()
+    
+    if not credential:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Credential not found"
+        )
+    
+    # Decrypt credentials
+    decrypted = decrypt_credentials(credential.encrypted_data)
+    
+    try:
+        if credential.type.value == "jira":
+            # Make a test request to Jira API
+            server_url = decrypted["server_url"].rstrip('/')
+            email = decrypted["email"]
+            api_token = decrypted["api_token"]
+            
+            # Create basic auth header
+            auth_str = f"{email}:{api_token}"
+            auth_bytes = auth_str.encode('ascii')
+            auth_b64 = base64.b64encode(auth_bytes).decode('ascii')
+            
+            headers = {
+                "Authorization": f"Basic {auth_b64}",
+                "Accept": "application/json"
+            }
+            
+            # Test with multiple endpoints to ensure connection works
+            import urllib.parse
+            
+            # Try the simplest endpoint first - get current user
+            test_url = f"{server_url}/rest/api/3/myself"
+            
+            async with httpx.AsyncClient() as client:
+                # First try to get current user info (most reliable test)
+                response = await client.get(test_url, headers=headers, timeout=10.0)
+                
+                if response.status_code == 200:
+                    # Success! Now try to get some issues
+                    user_data = response.json()
+                    search_url = f"{server_url}/rest/api/3/search?maxResults=5"
+                    search_response = await client.get(search_url, headers=headers, timeout=10.0)
+                    
+                    if search_response.status_code == 200:
+                        search_data = search_response.json()
+                        result = {
+                            "success": True,
+                            "status_code": 200,
+                            "timestamp": datetime.utcnow().isoformat(),
+                            "test_url": search_url,
+                            "message": f"Successfully connected as {user_data.get('displayName', user_data.get('emailAddress', 'Unknown'))}. Found {search_data.get('total', 0)} accessible issues.",
+                            "response_body": {
+                                "user": {
+                                    "displayName": user_data.get("displayName"),
+                                    "emailAddress": user_data.get("emailAddress"),
+                                    "accountType": user_data.get("accountType")
+                                },
+                                "total": search_data.get("total", 0),
+                                "maxResults": search_data.get("maxResults", 0),
+                                "issues": [
+                                    {
+                                        "key": issue.get("key"),
+                                        "summary": issue.get("fields", {}).get("summary"),
+                                        "status": issue.get("fields", {}).get("status", {}).get("name"),
+                                        "created": issue.get("fields", {}).get("created")
+                                    }
+                                    for issue in search_data.get("issues", [])[:5]
+                                ]
+                            }
+                        }
+                        return result
+                    else:
+                        # User auth works but can't search issues
+                        result = {
+                            "success": True,
+                            "status_code": 200,
+                            "timestamp": datetime.utcnow().isoformat(),
+                            "test_url": test_url,
+                            "message": f"Connected as {user_data.get('displayName', 'Unknown')} but unable to search issues. Check project permissions.",
+                            "response_body": {
+                                "user": {
+                                    "displayName": user_data.get("displayName"),
+                                    "emailAddress": user_data.get("emailAddress")
+                                }
+                            }
+                        }
+                        return result
+                
+                # If /myself fails, continue with original response handling
+                
+                # Prepare detailed response
+                result = {
+                    "success": response.status_code == 200,
+                    "status_code": response.status_code,
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "test_url": test_url,
+                    "response_headers": dict(response.headers),
+                }
+                
+                if response.status_code == 200:
+                    response_data = response.json()
+                    result["message"] = f"Successfully connected to Jira. Found {response_data.get('total', 0)} total issues."
+                    result["response_body"] = {
+                        "total": response_data.get("total", 0),
+                        "maxResults": response_data.get("maxResults", 0),
+                        "issues": [
+                            {
+                                "key": issue.get("key"),
+                                "summary": issue.get("fields", {}).get("summary"),
+                                "status": issue.get("fields", {}).get("status", {}).get("name"),
+                                "created": issue.get("fields", {}).get("created")
+                            }
+                            for issue in response_data.get("issues", [])[:5]
+                        ]
+                    }
+                else:
+                    result["message"] = f"Connection failed: HTTP {response.status_code}"
+                    try:
+                        result["response_body"] = response.json()
+                    except:
+                        result["response_body"] = response.text
+                
+                return result
+            
+        elif credential.type.value == "heretto":
+            heretto_service = HerettoService(
+                base_url=decrypted.get("base_url", "https://api.heretto.com"),
+                api_key=decrypted["api_key"],
+                organization_id=decrypted["organization_id"]
+            )
+            success = await heretto_service.validate_connection()
+            return {
+                "success": success,
+                "status_code": 200 if success else 401,
+                "message": "Heretto connection successful" if success else "Heretto connection failed",
+                "timestamp": datetime.utcnow().isoformat()
+            }
+                
+        elif credential.type.value in ["gemini", "openai", "anthropic"]:
+            # Test AI provider connection
+            from app.services.ai_service import AIServiceFactory, GenerationRequest
+            import asyncio
+            
+            try:
+                # Debug logging for API key
+                api_key = decrypted.get("api_key", "")
+                print(f"[Credential Test] Provider: {credential.type.value.lower()}")
+                print(f"[Credential Test] API key length: {len(api_key)}")
+                print(f"[Credential Test] API key first 10 chars: {api_key[:10] if len(api_key) >= 10 else 'too short'}")
+                print(f"[Credential Test] Model: {decrypted.get('model', 'default')}")
+                
+                # Create AI service instance
+                ai_service = AIServiceFactory.create(
+                    provider=credential.type.value.lower(),
+                    api_key=api_key,
+                    model=decrypted.get("model")
+                )
+                
+                # Create a simple test request
+                test_request = GenerationRequest(
+                    system_prompt="You are a helpful assistant.",
+                    user_prompt="Please respond with exactly: 'Connection successful'",
+                    max_tokens=20,
+                    temperature=0.1
+                )
+                
+                # Log the request details
+                request_info = {
+                    "provider": credential.type.value.lower(),
+                    "model": ai_service.get_model_name(),
+                    "prompt": test_request.user_prompt,
+                    "max_tokens": test_request.max_tokens,
+                    "temperature": test_request.temperature
+                }
+                
+                # Try to generate a response
+                response = await ai_service.generate(test_request)
+                
+                return {
+                    "success": True,
+                    "status_code": 200,
+                    "message": f"{credential.type.value.capitalize()} connection successful",
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "request": request_info,
+                    "response": {
+                        "model": response.model,
+                        "content": response.content[:100] if response.content else "",
+                        "finish_reason": response.finish_reason
+                    }
+                }
+            except Exception as e:
+                error_msg = str(e)
+                # Extract more specific error info if available
+                status_code = 500
+                if "401" in error_msg or "unauthorized" in error_msg.lower():
+                    status_code = 401
+                elif "403" in error_msg or "forbidden" in error_msg.lower():
+                    status_code = 403
+                elif "404" in error_msg or "not found" in error_msg.lower():
+                    status_code = 404
+                elif "400" in error_msg or "invalid" in error_msg.lower():
+                    status_code = 400
+                    
+                return {
+                    "success": False,
+                    "status_code": status_code,
+                    "message": f"{credential.type.value.capitalize()} connection failed",
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "request": {
+                        "provider": credential.type.value.lower(),
+                        "model": decrypted.get("model", "default")
+                    },
+                    "error": error_msg
+                }
+            
+        else:
+            return {
+                "success": False,
+                "status_code": 400,
+                "message": "Unknown credential type",
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            
+    except Exception as e:
+        return {
+            "success": False,
+            "status_code": 500,
+            "message": f"Test failed: {str(e)}",
+            "timestamp": datetime.utcnow().isoformat(),
+            "error_details": str(e)
+        }

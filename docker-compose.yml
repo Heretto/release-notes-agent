@@ -1,0 +1,101 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: release-notes-db
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: release_notes_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d release_notes_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: release-notes-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: release-notes-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://user:password@postgres:5432/release_notes_db
+      REDIS_URL: redis://redis:6379/0
+      APP_ENV: development
+      APP_SECRET_KEY: ${APP_SECRET_KEY:-development-secret-key}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-development-jwt-key}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-development-encryption-key}
+      GOOGLE_AI_API_KEY: ${GOOGLE_AI_API_KEY}
+      JIRA_WEBHOOK_SECRET: ${JIRA_WEBHOOK_SECRET:-webhook-secret}
+      HERETTO_BASE_URL: ${HERETTO_BASE_URL:-https://api.heretto.com}
+      CORS_ORIGINS: http://localhost:4200
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: release-notes-celery
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://user:password@postgres:5432/release_notes_db
+      REDIS_URL: redis://redis:6379/0
+      APP_ENV: development
+      APP_SECRET_KEY: ${APP_SECRET_KEY:-development-secret-key}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-development-encryption-key}
+      GOOGLE_AI_API_KEY: ${GOOGLE_AI_API_KEY}
+      HERETTO_BASE_URL: ${HERETTO_BASE_URL:-https://api.heretto.com}
+    volumes:
+      - ./backend:/app
+    command: celery -A app.tasks.celery_app worker --loglevel=info
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: release-notes-frontend
+    ports:
+      - "4200:80"
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - API_BASE_URL=http://localhost:8000/api/v1
+
+volumes:
+  postgres_data:
+  redis_data:

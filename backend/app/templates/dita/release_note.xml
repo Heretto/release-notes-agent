@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE topic PUBLIC "-//OASIS//DTD DITA Topic//EN" "topic.dtd">
+<topic id="release-notes-{version}">
+  <title>Release Notes - Version {version}</title>
+  <shortdesc>{short_description}</shortdesc>
+  
+  <prolog>
+    <metadata>
+      <keywords>
+        <keyword>release notes</keyword>
+        <keyword>{product}</keyword>
+        <keyword>{version}</keyword>
+      </keywords>
+    </metadata>
+  </prolog>
+  
+  <body>
+    <section id="overview">
+      <title>Overview</title>
+      <p>{overview_content}</p>
+    </section>
+    
+    <section id="new-features">
+      <title>New Features</title>
+      <ul>
+        {features}
+      </ul>
+    </section>
+    
+    <section id="improvements">
+      <title>Improvements</title>
+      <ul>
+        {improvements}
+      </ul>
+    </section>
+    
+    <section id="bug-fixes">
+      <title>Bug Fixes</title>
+      <ul>
+        {bug_fixes}
+      </ul>
+    </section>
+    
+    <section id="known-issues">
+      <title>Known Issues</title>
+      <ul>
+        {known_issues}
+      </ul>
+    </section>
+  </body>
+</topic>

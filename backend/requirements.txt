@@ -1,0 +1,37 @@
+# Core FastAPI and async support
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+gunicorn==21.2.0
+
+# Database and ORM
+sqlalchemy==2.0.23
+psycopg2-binary==2.9.9
+alembic==1.12.1
+
+# Redis and Celery
+redis==5.0.1
+celery==5.3.4
+
+# Authentication and Security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.6
+cryptography==41.0.7
+
+# AI and API integrations
+google-generativeai==0.3.2
+anthropic==0.39.0
+httpx==0.25.1
+jira==3.5.2
+
+# DITA and XML processing
+lxml==4.9.3
+
+# Environment and config
+python-dotenv==1.0.0
+pydantic==2.5.2
+pydantic-settings==2.1.0
+email-validator==2.1.0
+
+# Utilities
+python-dateutil==2.8.2

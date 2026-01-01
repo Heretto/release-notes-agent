@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir:*)",
+      "Bash(docker-compose:*)",
+      "Bash(docker exec:*)",
+      "Bash(npm run build:*)",
+      "Bash(docker cp:*)",
+      "Bash(docker logs:*)",
+      "Bash(docker:*)",
+      "Bash(open:*)",
+      "Bash(curl:*)",
+      "Bash(cp:*)"
+    ],
+    "deny": [],
+    "ask": [],
+    "defaultMode": "acceptEdits"
+  }
+}
