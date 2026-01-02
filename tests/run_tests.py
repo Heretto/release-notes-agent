@@ -90,6 +90,9 @@ class TestRunner:
         
         # Define test order and descriptions
         tests = [
+            # Unit Tests
+            ("unit/test_dita_validation.py", "DITA Validation"),
+            
             # API Tests
             ("api/test_credentials.py", "Credentials CRUD Operations"),
             ("api/test_delete_artifacts.py", "Artifact Deletion"),

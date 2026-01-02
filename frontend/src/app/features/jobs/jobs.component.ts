@@ -138,6 +138,10 @@ import { switchMap, startWith } from 'rxjs/operators';
                     <mat-icon>download</mat-icon>
                     <span>Download</span>
                   </button>
+                  <button mat-menu-item (click)="rerunJob(job)" *ngIf="job.status === 'completed' || job.status === 'failed'">
+                    <mat-icon>replay</mat-icon>
+                    <span>Rerun</span>
+                  </button>
                   <button mat-menu-item (click)="retryJob(job)" *ngIf="job.status === 'failed'">
                     <mat-icon>refresh</mat-icon>
                     <span>Retry</span>
@@ -498,6 +502,27 @@ export class JobsComponent implements OnInit, OnDestroy {
         this.snackBar.open('Failed to retry job', 'Close', {
           duration: 3000
         });
+      }
+    });
+  }
+
+  rerunJob(job: Job) {
+    if (!job.id) return;
+    
+    this.jobsService.rerunJob(job.id).subscribe({
+      next: (newJob) => {
+        this.jobs.unshift(newJob);
+        this.snackBar.open('New job created with same parameters', 'View', {
+          duration: 5000
+        }).onAction().subscribe(() => {
+          this.router.navigate(['/jobs', newJob.id]);
+        });
+      },
+      error: (error) => {
+        this.snackBar.open('Failed to rerun job', 'Close', {
+          duration: 3000
+        });
+        console.error('Rerun job error:', error);
       }
     });
   }

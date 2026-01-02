@@ -9,7 +9,8 @@ from app.services.jira_service import JiraService
 from app.services.heretto_service import HerettoService
 from app.services.ai_service import AIServiceFactory, GenerationRequest
 from app.services.dita_generator import DITAGenerator
-from app.services.dita_validator import DITAValidator
+from app.services.dita_validator_v2 import DITAValidatorV2
+from app.services.dita_correction_service import DITACorrectionService
 from app.core.security import decrypt_credentials
 from app.config import get_settings
 
@@ -22,7 +23,8 @@ class JobOrchestrator:
     def __init__(self, db: Session):
         self.db = db
         self.dita_generator = DITAGenerator()
-        self.dita_validator = DITAValidator()
+        self.dita_validator = DITAValidatorV2()
+        self.logger = logger
     
     async def process_job(self, job_id: UUID) -> None:
         """Process a release notes generation job."""
@@ -232,94 +234,86 @@ Response Length: {len(ai_response.content)} characters
                 product="Product"
             )
             
-            # Step 7: Validate DITA content
-            valid, error = self.dita_validator.validate(dita_content)
-            if not valid:
-                logger.warning(f"DITA validation failed: {error}")
-                logger.debug(f"Original AI content:\n{ai_response.content[:1000]}...")
+            # Step 7: Enhanced DITA Validation with AI Correction
+            logger.info(f"Starting DITA validation for job {job_id}")
+            
+            # Initialize correction service with the AI service
+            correction_service = DITACorrectionService(ai_service, self.dita_validator)
+            
+            # Store original for comparison
+            original_dita = dita_content
+            
+            # Validate and correct with AI if needed
+            corrected_content, is_valid, validation_log = await correction_service.validate_and_correct_with_ai(
+                content=dita_content,
+                original_prompt=user_prompt,  # Pass original prompt for potential regeneration
+                max_cycles=2
+            )
+            
+            # Save validation log as artifact
+            if validation_log:
+                validation_artifact = JobArtifact(
+                    job_id=job.id,
+                    artifact_type="validation_log",
+                    filename=f"validation-log-{job.id}.log",
+                    content=self._format_validation_log(validation_log, is_valid)
+                )
+                self.db.add(validation_artifact)
+                self.db.commit()
+            
+            if not is_valid:
+                # Save error artifact with details
+                error_details = self.dita_validator.extract_validation_errors(corrected_content)
                 
-                # Try to fix common issues
-                dita_content = self.dita_validator.fix_common_issues(dita_content)
-                valid, error = self.dita_validator.validate(dita_content)
+                error_artifact = JobArtifact(
+                    job_id=job.id,
+                    artifact_type="validation_error",
+                    filename=f"validation-error-{job.id}.log",
+                    content=self._format_validation_error(
+                        job.id,
+                        error_details,
+                        ai_response.content[:2000],
+                        corrected_content[:2000],
+                        validation_log
+                    )
+                )
+                self.db.add(error_artifact)
+                self.db.commit()
                 
-                if not valid:
-                    # Save the problematic content as artifact for debugging
-                    logger.error(f"DITA validation still failing after fixes: {error}")
+                # Log warning but continue with best effort
+                logger.warning(f"DITA validation failed for job {job.id} after correction attempts")
+                
+                # Use the best version we have
+                dita_content = corrected_content
+            else:
+                # Validation successful
+                logger.info(f"DITA validation successful for job {job.id}")
+                dita_content = corrected_content
+                
+                # If content was corrected, save a note about it
+                if corrected_content != original_dita:
+                    logger.info(f"DITA content was corrected during validation for job {job.id}")
                     
-                    # Save the validation error details for debugging
-                    validation_error_artifact = JobArtifact(
+                    correction_note = JobArtifact(
                         job_id=job.id,
-                        artifact_type="validation_error",
-                        filename=f"validation-error-{job.id}.log",
-                        content=f"""DITA Validation Error Log
-==========================
+                        artifact_type="correction_note",
+                        filename=f"correction-note-{job.id}.log",
+                        content=f"""DITA Content Correction Summary
+=====================================
 Job ID: {job.id}
 Timestamp: {datetime.utcnow().isoformat()}
-Error: {error}
 
---- AI RESPONSE (first 2000 chars) ---
-{ai_response.content[:2000]}
+The AI-generated DITA content required structural corrections to be valid.
+The text content was preserved, but XML structure was fixed.
 
---- GENERATED DITA (first 2000 chars) ---
-{dita_content[:2000]}
+Validation Log:
+{chr(10).join(validation_log)}
 
---- FULL ERROR ---
-{error}
+Content is now valid DITA 1.3.
 """
                     )
-                    self.db.add(validation_error_artifact)
+                    self.db.add(correction_note)
                     self.db.commit()
-                    logger.info(f"Saved validation error log for job {job.id}")
-                    
-                    # Try one more time with aggressive fixes
-                    # Check if AI returned Markdown instead of XML
-                    if "#" in ai_response.content[:100] or "**" in ai_response.content[:200] or "---" in ai_response.content[:100]:
-                        # AI likely returned Markdown, try to convert to basic XML structure
-                        logger.warning("AI appears to have returned Markdown instead of XML, attempting conversion")
-                        
-                        # Save a warning log about the Markdown issue
-                        markdown_warning = JobArtifact(
-                            job_id=job.id,
-                            artifact_type="warning",
-                            filename=f"markdown-warning-{job.id}.log",
-                            content=f"""Warning: AI Generated Markdown Instead of DITA XML
-=====================================================
-The AI model returned Markdown formatting instead of proper DITA XML.
-Attempting to create a basic DITA structure from the content.
-
-Original Markdown Content:
-{ai_response.content}
-"""
-                        )
-                        self.db.add(markdown_warning)
-                        self.db.commit()
-                        
-                        # Create a simple DITA structure without warning notes
-                        wrapped_content = (
-                            '<section><title>Release Notes</title>'
-                            f'<p>{self.dita_generator._escape_xml(ai_response.content)}</p></section>'
-                        )
-                        dita_content = self.dita_generator.generate_release_notes(
-                            tickets=tickets,
-                            ai_content=wrapped_content,
-                            version=self._extract_version(job.jql_query),
-                            product="Product"
-                        )
-                        valid, error = self.dita_validator.validate(dita_content)
-                    elif "</section>" not in ai_response.content:
-                        # AI might have returned incomplete content
-                        logger.info("Attempting to wrap incomplete AI content")
-                        wrapped_content = f"<section><title>Release Notes</title><p>{self.dita_generator._escape_xml(ai_response.content)}</p></section>"
-                        dita_content = self.dita_generator.generate_release_notes(
-                            tickets=tickets,
-                            ai_content=wrapped_content,
-                            version=self._extract_version(job.jql_query),
-                            product="Product"
-                        )
-                        valid, error = self.dita_validator.validate(dita_content)
-                    
-                    if not valid:
-                        raise Exception(f"DITA validation failed: {error}")
             
             # Step 8: Save artifact - ensure it's clean DITA only
             # The dita_content should already be clean and valid, just ensure proper formatting
@@ -476,3 +470,68 @@ Original Markdown Content:
         
         # Default version
         return datetime.now().strftime("%Y.%m")
+    
+    def _format_validation_log(self, log_entries, is_valid):
+        """Format validation log for artifact storage."""
+        status = "SUCCESS" if is_valid else "FAILED"
+        
+        content = f"""DITA Validation Log
+====================
+Final Status: {status}
+Timestamp: {datetime.utcnow().isoformat()}
+
+Validation Steps:
+"""
+        
+        for i, entry in enumerate(log_entries, 1):
+            content += f"{i}. {entry}\n"
+        
+        return content
+    
+    def _format_validation_error(self, job_id, error_details, ai_preview, dita_preview, validation_log):
+        """Format validation error details for debugging."""
+        content = f"""DITA Validation Error Report
+============================
+Job ID: {job_id}
+Timestamp: {datetime.utcnow().isoformat()}
+
+Error Summary:
+--------------
+"""
+        
+        if error_details.get("errors"):
+            content += "\nGeneral Errors:\n"
+            for error in error_details["errors"]:
+                content += f"  • {error}\n"
+        
+        if error_details.get("line_errors"):
+            content += "\nLine-Specific Errors:\n"
+            for line_no, errors in error_details["line_errors"].items():
+                content += f"  Line {line_no}:\n"
+                for error in errors:
+                    content += f"    • {error}\n"
+        
+        content += f"""
+
+Validation Attempts:
+-------------------
+{chr(10).join(validation_log)}
+
+Original AI Response (first 2000 chars):
+----------------------------------------
+{ai_preview}
+
+Final DITA Content (first 2000 chars):
+--------------------------------------
+{dita_preview}
+
+Recommendation:
+--------------
+The content has structural DITA validation errors that could not be automatically corrected.
+Consider:
+1. Reviewing the AI model's DITA generation prompt
+2. Checking if the instruction set properly specifies DITA output format
+3. Manually correcting the DITA file if needed
+"""
+        
+        return content

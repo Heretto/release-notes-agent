@@ -4,7 +4,7 @@ from typing import List, Optional
 from uuid import UUID
 from datetime import datetime
 
-from app.models.database import get_db, User, Job, JobArtifact, JobRequest, InstructionSet, Credential, CredentialType
+from app.models.database import get_db, User, Job, JobArtifact, JobRequest, InstructionSet, Credential, CredentialType, JobStatus, JobTrigger
 from app.models.schemas import (
     JobCreate,
     JobResponse,
@@ -457,3 +457,67 @@ async def preview_jira_query(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"JQL query failed: {str(e)}"
         )
+
+@router.post("/{job_id}/rerun", response_model=JobResponse)
+async def rerun_job(
+    job_id: UUID,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Rerun a job with the same parameters."""
+    # Get the original job
+    original_job = db.query(Job).filter(
+        Job.id == job_id,
+        Job.user_id == current_user.id
+    ).first()
+    
+    if not original_job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Job not found"
+        )
+    
+    # Create a new job with the same parameters
+    new_job = Job(
+        user_id=current_user.id,
+        instruction_set_id=original_job.instruction_set_id,
+        ai_credential_id=original_job.ai_credential_id,
+        jql_query=original_job.jql_query,
+        additional_instructions=original_job.additional_instructions,
+        status=JobStatus.PENDING,
+        triggered_by=JobTrigger.MANUAL,  # Rerun is always manual
+        output_filename=original_job.output_filename,
+        heretto_folder_id=original_job.heretto_folder_id,
+        auto_publish=original_job.auto_publish,
+        max_tickets=original_job.max_tickets
+    )
+    
+    db.add(new_job)
+    db.commit()
+    db.refresh(new_job)
+    
+    # Schedule the job for processing
+    from app.services.job_orchestrator import JobOrchestrator
+    orchestrator = JobOrchestrator(db)
+    background_tasks.add_task(orchestrator.process_job, new_job.id)
+    
+    return JobResponse(
+        id=new_job.id,
+        user_id=new_job.user_id,
+        instruction_set_id=new_job.instruction_set_id,
+        ai_credential_id=new_job.ai_credential_id,
+        jql_query=new_job.jql_query,
+        additional_instructions=new_job.additional_instructions,
+        status=new_job.status,
+        triggered_by=new_job.triggered_by,
+        output_filename=new_job.output_filename,
+        heretto_folder_id=new_job.heretto_folder_id,
+        auto_publish=new_job.auto_publish,
+        tickets_processed=new_job.tickets_processed,
+        max_tickets=new_job.max_tickets,
+        error_message=new_job.error_message,
+        created_at=new_job.created_at,
+        started_at=new_job.started_at,
+        completed_at=new_job.completed_at
+    )

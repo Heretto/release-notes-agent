@@ -86,4 +86,8 @@ export class JobsService {
   deleteAllArtifacts(jobId: string): Observable<any> {
     return this.http.delete(`${this.apiUrl}/${jobId}/artifacts`);
   }
+
+  rerunJob(id: string): Observable<Job> {
+    return this.http.post<Job>(`${this.apiUrl}/${id}/rerun`, {});
+  }
 }

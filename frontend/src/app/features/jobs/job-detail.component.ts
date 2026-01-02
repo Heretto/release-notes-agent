@@ -78,9 +78,17 @@ interface JobArtifact {
             <mat-icon>download</mat-icon>
             Download Output
           </button>
+          <button mat-raised-button 
+                  (click)="rerunJob()"
+                  *ngIf="job.status === 'completed' || job.status === 'failed'"
+                  matTooltip="Create a new job with the same parameters">
+            <mat-icon>replay</mat-icon>
+            Rerun Job
+          </button>
           <button mat-raised-button color="accent" 
                   (click)="retryJob()"
-                  *ngIf="job.status === 'failed'">
+                  *ngIf="job.status === 'failed'"
+                  matTooltip="Retry the failed job">
             <mat-icon>refresh</mat-icon>
             Retry Job
           </button>
@@ -739,6 +747,30 @@ export class JobDetailComponent implements OnInit, OnDestroy {
         this.snackBar.open('Failed to retry job', 'Close', {
           duration: 3000
         });
+      }
+    });
+  }
+
+  rerunJob() {
+    if (!this.job?.id) return;
+    
+    this.jobsService.rerunJob(this.job.id).subscribe({
+      next: (newJob) => {
+        this.snackBar.open('New job created with same parameters', 'View', {
+          duration: 5000
+        }).onAction().subscribe(() => {
+          // Navigate to the new job
+          this.router.navigate(['/jobs', newJob.id]);
+        });
+        
+        // Optionally navigate directly to the new job
+        this.router.navigate(['/jobs', newJob.id]);
+      },
+      error: (error) => {
+        this.snackBar.open('Failed to rerun job', 'Close', {
+          duration: 3000
+        });
+        console.error('Rerun job error:', error);
       }
     });
   }
