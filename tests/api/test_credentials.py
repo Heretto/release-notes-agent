@@ -1,234 +1,225 @@
-#!/usr/bin/env python3
-"""
-Test script for Jira credentials CRUD operations.
-This script will:
-1. Login to get authentication token
-2. Create a new Jira credential
-3. Verify it was created
-4. Update the credential
-5. Delete the credential
-6. Verify it was deleted
-"""
+"""Unit tests for credentials CRUD operations."""
 
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from app.main import app
+from app.models.database import Base, get_db
+from app.config import get_settings
 
-import requests
-import json
-from typing import Optional, Dict, Any
-from config import API_BASE_URL, TEST_EMAIL, TEST_PASSWORD
+# Test database setup
+SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
+engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
+TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-BASE_URL = API_BASE_URL
-TEST_USER = TEST_EMAIL
-TEST_PASSWORD = TEST_PASSWORD
+Base.metadata.create_all(bind=engine)
 
-class CredentialsTest:
-    def __init__(self):
-        self.session = requests.Session()
-        self.access_token = None
-        self.created_credential_id = None
+def override_get_db():
+    try:
+        db = TestingSessionLocal()
+        yield db
+    finally:
+        db.close()
+
+app.dependency_overrides[get_db] = override_get_db
+
+client = TestClient(app)
+
+class TestCredentials:
+    """Test suite for credentials endpoints."""
     
-    def login(self) -> bool:
-        """Login and get access token."""
-        print("1. Logging in...")
-        response = self.session.post(
-            f"{BASE_URL}/auth/login",
-            json={"email": TEST_USER, "password": TEST_PASSWORD}
-        )
-        
-        if response.status_code == 200:
-            data = response.json()
-            self.access_token = data["access_token"]
-            self.session.headers.update({
-                "Authorization": f"Bearer {self.access_token}"
-            })
-            print("   ✓ Login successful")
-            return True
-        else:
-            print(f"   ✗ Login failed: {response.status_code} - {response.text}")
-            return False
-    
-    def create_jira_credential(self) -> bool:
-        """Create a new Jira credential."""
-        print("\n2. Creating Jira credential...")
-        credential_data = {
-            "name": "Test Jira Instance",
-            "server_url": "https://test.atlassian.net",
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        """Setup test user and authentication."""
+        # Create test user
+        self.test_user = {
             "email": "test@example.com",
-            "api_token": "test-api-token-123"
+            "password": "testpass123"
         }
         
-        response = self.session.post(
-            f"{BASE_URL}/credentials/jira",
-            json=credential_data
+        # Register user
+        response = client.post("/api/v1/auth/register", json=self.test_user)
+        assert response.status_code in [200, 400]  # 400 if user already exists
+        
+        # Login to get token
+        response = client.post("/api/v1/auth/login", json=self.test_user)
+        assert response.status_code == 200
+        self.token = response.json()["access_token"]
+        self.headers = {"Authorization": f"Bearer {self.token}"}
+        
+        yield
+        
+        # Cleanup: Delete all test credentials
+        response = client.get("/api/v1/credentials/jira", headers=self.headers)
+        if response.status_code == 200:
+            for cred in response.json():
+                client.delete(f"/api/v1/credentials/jira/{cred['id']}", headers=self.headers)
+    
+    def test_create_jira_credential(self):
+        """Test creating a new Jira credential."""
+        credential_data = {
+            "name": "Test Jira",
+            "server_url": "https://test.atlassian.net",
+            "email": "jira@example.com",
+            "api_token": "test-token-123"
+        }
+        
+        response = client.post(
+            "/api/v1/credentials/jira",
+            json=credential_data,
+            headers=self.headers
         )
         
-        if response.status_code == 200:
-            data = response.json()
-            self.created_credential_id = data["id"]
-            print(f"   ✓ Credential created with ID: {self.created_credential_id}")
-            print(f"     Name: {data['name']}")
-            print(f"     Type: {data['type']}")
-            return True
-        else:
-            print(f"   ✗ Failed to create credential: {response.status_code}")
-            print(f"     Error: {response.text}")
-            return False
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == credential_data["name"]
+        assert data["type"] == "jira"
+        assert "id" in data
+        
+        # Store for cleanup
+        self.created_id = data["id"]
     
-    def list_jira_credentials(self) -> bool:
-        """List all Jira credentials and verify our test credential exists."""
-        print("\n3. Listing Jira credentials...")
-        response = self.session.get(f"{BASE_URL}/credentials/jira")
+    def test_list_jira_credentials(self):
+        """Test listing Jira credentials."""
+        # First create a credential
+        credential_data = {
+            "name": "List Test Jira",
+            "server_url": "https://list-test.atlassian.net",
+            "email": "list@example.com",
+            "api_token": "list-token-123"
+        }
         
-        if response.status_code == 200:
-            credentials = response.json()
-            print(f"   ✓ Found {len(credentials)} Jira credential(s)")
-            
-            # Check if our created credential is in the list
-            found = False
-            for cred in credentials:
-                if cred["id"] == self.created_credential_id:
-                    found = True
-                    print(f"   ✓ Test credential found in list:")
-                    print(f"     - ID: {cred['id']}")
-                    print(f"     - Name: {cred['name']}")
-                    print(f"     - Type: {cred['type']}")
-                    break
-            
-            if not found:
-                print(f"   ✗ Test credential {self.created_credential_id} not found in list")
-                return False
-            
-            return True
-        else:
-            print(f"   ✗ Failed to list credentials: {response.status_code}")
-            print(f"     Error: {response.text}")
-            return False
+        create_response = client.post(
+            "/api/v1/credentials/jira",
+            json=credential_data,
+            headers=self.headers
+        )
+        assert create_response.status_code == 200
+        created_id = create_response.json()["id"]
+        
+        # Now list credentials
+        response = client.get("/api/v1/credentials/jira", headers=self.headers)
+        assert response.status_code == 200
+        
+        credentials = response.json()
+        assert isinstance(credentials, list)
+        assert len(credentials) > 0
+        
+        # Check our credential is in the list
+        found = any(cred["id"] == created_id for cred in credentials)
+        assert found
     
-    def update_jira_credential(self) -> bool:
-        """Update the test Jira credential."""
-        print("\n4. Updating Jira credential...")
+    def test_update_jira_credential(self):
+        """Test updating a Jira credential."""
+        # First create a credential
+        credential_data = {
+            "name": "Update Test Jira",
+            "server_url": "https://update-test.atlassian.net",
+            "email": "update@example.com",
+            "api_token": "update-token-123"
+        }
         
-        if not self.created_credential_id:
-            print("   ✗ No credential ID available for update")
-            return False
+        create_response = client.post(
+            "/api/v1/credentials/jira",
+            json=credential_data,
+            headers=self.headers
+        )
+        assert create_response.status_code == 200
+        created_id = create_response.json()["id"]
         
+        # Update the credential
         update_data = {
-            "name": "Updated Test Jira",
-            "server_url": "https://updated-test.atlassian.net"
+            "name": "Updated Jira",
+            "server_url": "https://updated.atlassian.net"
         }
         
-        response = self.session.put(
-            f"{BASE_URL}/credentials/jira/{self.created_credential_id}",
-            json=update_data
+        response = client.put(
+            f"/api/v1/credentials/jira/{created_id}",
+            json=update_data,
+            headers=self.headers
         )
         
-        if response.status_code == 200:
-            data = response.json()
-            print(f"   ✓ Credential updated successfully")
-            print(f"     New name: {data['name']}")
-            return True
-        else:
-            print(f"   ✗ Failed to update credential: {response.status_code}")
-            print(f"     Error: {response.text}")
-            return False
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == update_data["name"]
     
-    def delete_jira_credential(self) -> bool:
-        """Delete the test Jira credential."""
-        print("\n5. Deleting Jira credential...")
+    def test_delete_jira_credential(self):
+        """Test deleting a Jira credential."""
+        # First create a credential
+        credential_data = {
+            "name": "Delete Test Jira",
+            "server_url": "https://delete-test.atlassian.net",
+            "email": "delete@example.com",
+            "api_token": "delete-token-123"
+        }
         
-        if not self.created_credential_id:
-            print("   ✗ No credential ID available for deletion")
-            return False
+        create_response = client.post(
+            "/api/v1/credentials/jira",
+            json=credential_data,
+            headers=self.headers
+        )
+        assert create_response.status_code == 200
+        created_id = create_response.json()["id"]
         
-        response = self.session.delete(
-            f"{BASE_URL}/credentials/jira/{self.created_credential_id}"
+        # Delete the credential
+        response = client.delete(
+            f"/api/v1/credentials/jira/{created_id}",
+            headers=self.headers
         )
         
-        if response.status_code == 200:
-            print(f"   ✓ Credential {self.created_credential_id} deleted successfully")
-            return True
-        else:
-            print(f"   ✗ Failed to delete credential: {response.status_code}")
-            print(f"     Error: {response.text}")
-            return False
+        assert response.status_code == 200
+        
+        # Verify it's deleted
+        list_response = client.get("/api/v1/credentials/jira", headers=self.headers)
+        credentials = list_response.json()
+        found = any(cred["id"] == created_id for cred in credentials)
+        assert not found
     
-    def verify_deletion(self) -> bool:
-        """Verify the credential was actually deleted."""
-        print("\n6. Verifying deletion...")
-        response = self.session.get(f"{BASE_URL}/credentials/jira")
+    def test_duplicate_name_error(self):
+        """Test that creating a credential with duplicate name fails."""
+        credential_data = {
+            "name": "Duplicate Test",
+            "server_url": "https://dup.atlassian.net",
+            "email": "dup@example.com",
+            "api_token": "dup-token-123"
+        }
         
-        if response.status_code == 200:
-            credentials = response.json()
-            
-            # Check if our deleted credential is still in the list
-            found = False
-            for cred in credentials:
-                if cred["id"] == self.created_credential_id:
-                    found = True
-                    break
-            
-            if found:
-                print(f"   ✗ Credential {self.created_credential_id} still exists!")
-                return False
-            else:
-                print(f"   ✓ Credential successfully removed from database")
-                return True
-        else:
-            print(f"   ✗ Failed to list credentials: {response.status_code}")
-            return False
+        # Create first credential
+        response1 = client.post(
+            "/api/v1/credentials/jira",
+            json=credential_data,
+            headers=self.headers
+        )
+        assert response1.status_code == 200
+        
+        # Try to create duplicate
+        response2 = client.post(
+            "/api/v1/credentials/jira",
+            json=credential_data,
+            headers=self.headers
+        )
+        assert response2.status_code == 400
+        assert "already exists" in response2.json()["detail"]
     
-    def cleanup(self):
-        """Clean up any remaining test credentials."""
-        if self.created_credential_id:
-            try:
-                self.session.delete(
-                    f"{BASE_URL}/credentials/jira/{self.created_credential_id}"
-                )
-            except:
-                pass
+    def test_missing_fields_error(self):
+        """Test that missing required fields returns an error."""
+        incomplete_data = {
+            "name": "Incomplete Test",
+            "server_url": "https://incomplete.atlassian.net"
+            # Missing email and api_token
+        }
+        
+        response = client.post(
+            "/api/v1/credentials/jira",
+            json=incomplete_data,
+            headers=self.headers
+        )
+        
+        assert response.status_code == 400
+        assert "Missing required" in response.json()["detail"]
     
-    def run_all_tests(self) -> bool:
-        """Run all test cases."""
-        print("=" * 60)
-        print("JIRA CREDENTIALS CRUD TEST SUITE")
-        print("=" * 60)
-        
-        all_passed = True
-        
-        # Run tests in sequence
-        tests = [
-            self.login,
-            self.create_jira_credential,
-            self.list_jira_credentials,
-            self.update_jira_credential,
-            self.delete_jira_credential,
-            self.verify_deletion
-        ]
-        
-        for test in tests:
-            if not test():
-                all_passed = False
-                print("\n⚠️  Test failed, stopping test suite")
-                break
-        
-        print("\n" + "=" * 60)
-        if all_passed:
-            print("✅ ALL TESTS PASSED")
-        else:
-            print("❌ SOME TESTS FAILED")
-            # Clean up if needed
-            self.cleanup()
-        print("=" * 60)
-        
-        return all_passed
-
-def main():
-    """Main test runner."""
-    tester = CredentialsTest()
-    success = tester.run_all_tests()
-    sys.exit(0 if success else 1)
-
-if __name__ == "__main__":
-    main()
+    def test_unauthorized_access(self):
+        """Test that requests without authentication are rejected."""
+        response = client.get("/api/v1/credentials/jira")
+        assert response.status_code == 401

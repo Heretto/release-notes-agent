@@ -92,6 +92,8 @@ class TestRunner:
         tests = [
             # Unit Tests
             ("unit/test_dita_validation.py", "DITA Validation"),
+            ("unit/test_settings.py", "Settings and Configuration"),
+            ("unit/services/test_valid_models.py", "AI Model Names Validation"),
             
             # API Tests
             ("api/test_credentials.py", "Credentials CRUD Operations"),
@@ -100,6 +102,11 @@ class TestRunner:
             # Integration Tests  
             ("integration/test_jira_v3.py", "JIRA API v3 Integration"),
             ("integration/test_jira_final.py", "JIRA Final Integration"),
+            ("integration/ai/test_configured_ai.py", "Configured AI Services"),
+            ("integration/test_dita_validation_e2e.py", "DITA Validation End-to-End"),
+            
+            # Utilities Tests (optional, run if requested)
+            # ("utilities/database/test_job_model_inspection.py", "Database Inspection"),
         ]
         
         passed = 0
