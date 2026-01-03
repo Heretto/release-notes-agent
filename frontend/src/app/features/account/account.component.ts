@@ -66,7 +66,18 @@ import { Router } from '@angular/router';
               <div class="info-item">
                 <label>Account Type</label>
                 <span class="value">
-                  {{ accountInfo.is_superuser ? 'Administrator' : 'Standard User' }}
+                  {{ accountInfo.is_superuser ? 'System Administrator' : 'Standard User' }}
+                </span>
+              </div>
+              <div class="info-item" *ngIf="accountInfo.organization_name">
+                <label>Organization</label>
+                <span class="value">{{ accountInfo.organization_name }}</span>
+              </div>
+              <div class="info-item" *ngIf="accountInfo.organization_role">
+                <label>Organization Role</label>
+                <span class="value" [class.admin-role]="accountInfo.organization_role === 'admin'">
+                  <mat-icon *ngIf="accountInfo.organization_role === 'admin'" inline>admin_panel_settings</mat-icon>
+                  {{ accountInfo.organization_role === 'admin' ? 'Administrator' : 'Member' }}
                 </span>
               </div>
               <div class="info-item">
@@ -293,6 +304,20 @@ import { Router } from '@angular/router';
 
     .info-item .status.active {
       color: #69f0ae;
+    }
+    
+    .info-item .admin-role {
+      color: #ffd54f;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-weight: 600;
+    }
+    
+    .info-item .admin-role mat-icon {
+      font-size: 18px;
+      width: 18px;
+      height: 18px;
     }
 
     .update-card mat-card-title {
