@@ -35,20 +35,28 @@ export class AuthService {
     }).pipe(
       tap(response => {
         this.storeTokens(response);
+        localStorage.setItem('user_email', email); // Store email for organization checks
         this.router.navigate(['/dashboard']);
       })
     );
   }
   
-  register(email: string, password: string): Observable<any> {
-    return this.http.post(`${environment.apiUrl}/auth/register`, {
+  register(email: string, password: string, organizationName?: string): Observable<any> {
+    const payload: any = {
       email,
       password
-    });
+    };
+    
+    if (organizationName) {
+      payload.organization_name = organizationName;
+    }
+    
+    return this.http.post(`${environment.apiUrl}/auth/register`, payload);
   }
   
   logout(): void {
     this.clearTokens();
+    localStorage.removeItem('user_email');
     this.currentUserSubject.next(null);
     this.router.navigate(['/login']);
   }

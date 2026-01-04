@@ -31,6 +31,15 @@ import { AuthService } from '../../core/auth/auth.service';
         
         <mat-card-content>
           <form [formGroup]="loginForm" (ngSubmit)="onSubmit()">
+            <mat-form-field appearance="outline" class="full-width" *ngIf="isRegisterMode">
+              <mat-label>Organization Name</mat-label>
+              <input matInput type="text" formControlName="organizationName" required>
+              <mat-hint>Enter your company or team name</mat-hint>
+              <mat-error *ngIf="loginForm.get('organizationName')?.hasError('required')">
+                Organization name is required
+              </mat-error>
+            </mat-form-field>
+            
             <mat-form-field appearance="outline" class="full-width">
               <mat-label>Email</mat-label>
               <input matInput type="email" formControlName="email" required>
@@ -125,6 +134,7 @@ export class LoginComponent {
   isRegisterMode = false;
   
   loginForm: FormGroup = this.fb.group({
+    organizationName: ['', []],
     email: ['', [Validators.required, Validators.email]],
     password: ['', [Validators.required, Validators.minLength(8)]]
   });
@@ -134,10 +144,10 @@ export class LoginComponent {
       this.loading = true;
       this.errorMessage = '';
       
-      const { email, password } = this.loginForm.value;
+      const { organizationName, email, password } = this.loginForm.value;
       
       if (this.isRegisterMode) {
-        this.authService.register(email, password).subscribe({
+        this.authService.register(email, password, organizationName).subscribe({
           next: () => {
             this.isRegisterMode = false;
             this.errorMessage = 'Account created! Please login.';
@@ -165,5 +175,14 @@ export class LoginComponent {
   switchToRegister() {
     this.isRegisterMode = !this.isRegisterMode;
     this.errorMessage = '';
+    
+    // Update validators based on mode
+    const orgNameControl = this.loginForm.get('organizationName');
+    if (this.isRegisterMode) {
+      orgNameControl?.setValidators([Validators.required]);
+    } else {
+      orgNameControl?.clearValidators();
+    }
+    orgNameControl?.updateValueAndValidity();
   }
 }

@@ -13,7 +13,7 @@ from app.models.schemas import (
     HerettoCredentials,
     AICredentials
 )
-from app.api.dependencies import get_current_active_user
+from app.api.dependencies import get_current_active_user, get_current_active_user_with_org, CurrentUserContext
 from app.core.security import encrypt_credentials, decrypt_credentials
 from app.services.jira_service_v3 import JiraServiceV3
 from app.services.heretto_service import HerettoService
@@ -23,25 +23,25 @@ router = APIRouter(prefix="/credentials")
 # Generic credentials endpoints
 @router.get("/", response_model=List[CredentialResponse])
 async def list_credentials(
-    current_user: User = Depends(get_current_active_user),
+    context: CurrentUserContext = Depends(get_current_active_user_with_org),
     db: Session = Depends(get_db)
 ):
-    """List all credentials for current user."""
+    """List all credentials for current organization."""
     credentials = db.query(Credential).filter(
-        Credential.user_id == current_user.id
+        Credential.organization_id == context.organization_id
     ).all()
     return credentials
 
 @router.post("/", response_model=CredentialResponse)
 async def create_credential(
     credential_data: CredentialCreate,
-    current_user: User = Depends(get_current_active_user),
+    context: CurrentUserContext = Depends(get_current_active_user_with_org),
     db: Session = Depends(get_db)
 ):
     """Create new credential."""
-    # Check if credential with same name exists
+    # Check if credential with same name exists in organization
     existing = db.query(Credential).filter(
-        Credential.user_id == current_user.id,
+        Credential.organization_id == context.organization_id,
         Credential.type == credential_data.type,
         Credential.name == credential_data.name
     ).first()
@@ -56,7 +56,8 @@ async def create_credential(
     encrypted_data = encrypt_credentials(credential_data.credentials)
     
     new_credential = Credential(
-        user_id=current_user.id,
+        user_id=context.user.id,
+        organization_id=context.organization_id,
         type=credential_data.type,
         name=credential_data.name,
         encrypted_data=encrypted_data
@@ -71,12 +72,12 @@ async def create_credential(
 # Jira-specific endpoints
 @router.get("/jira", response_model=List[JiraCredentialResponse])
 async def list_jira_credentials(
-    current_user: User = Depends(get_current_active_user),
+    context: CurrentUserContext = Depends(get_current_active_user_with_org),
     db: Session = Depends(get_db)
 ):
-    """List all Jira credentials for current user."""
+    """List all Jira credentials for current organization."""
     credentials = db.query(Credential).filter(
-        Credential.user_id == current_user.id,
+        Credential.organization_id == context.organization_id,
         Credential.type == CredentialType.JIRA
     ).all()
     
@@ -100,13 +101,13 @@ async def list_jira_credentials(
 @router.post("/jira", response_model=JiraCredentialResponse)
 async def create_jira_credential(
     credential_data: dict,
-    current_user: User = Depends(get_current_active_user),
+    context: CurrentUserContext = Depends(get_current_active_user_with_org),
     db: Session = Depends(get_db)
 ):
     """Create new Jira credential."""
-    # Check if credential with same name exists
+    # Check if credential with same name exists in organization
     existing = db.query(Credential).filter(
-        Credential.user_id == current_user.id,
+        Credential.organization_id == context.organization_id,
         Credential.type == CredentialType.JIRA,
         Credential.name == credential_data.get("name")
     ).first()
@@ -134,7 +135,8 @@ async def create_jira_credential(
     encrypted_data = encrypt_credentials(jira_creds)
     
     new_credential = Credential(
-        user_id=current_user.id,
+        user_id=context.user.id,
+        organization_id=context.organization_id,
         type=CredentialType.JIRA,
         name=credential_data.get("name"),
         encrypted_data=encrypted_data
@@ -160,13 +162,13 @@ async def create_jira_credential(
 async def update_jira_credential(
     credential_id: UUID,
     credential_data: dict,
-    current_user: User = Depends(get_current_active_user),
+    context: CurrentUserContext = Depends(get_current_active_user_with_org),
     db: Session = Depends(get_db)
 ):
     """Update existing Jira credential."""
     credential = db.query(Credential).filter(
         Credential.id == credential_id,
-        Credential.user_id == current_user.id,
+        Credential.organization_id == context.organization_id,
         Credential.type == CredentialType.JIRA
     ).first()
     
@@ -215,13 +217,13 @@ async def update_jira_credential(
 @router.delete("/jira/{credential_id}")
 async def delete_jira_credential(
     credential_id: UUID,
-    current_user: User = Depends(get_current_active_user),
+    context: CurrentUserContext = Depends(get_current_active_user_with_org),
     db: Session = Depends(get_db)
 ):
     """Delete Jira credential."""
     credential = db.query(Credential).filter(
         Credential.id == credential_id,
-        Credential.user_id == current_user.id,
+        Credential.organization_id == context.organization_id,
         Credential.type == CredentialType.JIRA
     ).first()
     
@@ -239,12 +241,12 @@ async def delete_jira_credential(
 # Heretto-specific endpoints
 @router.get("/heretto", response_model=List[CredentialResponse])
 async def list_heretto_credentials(
-    current_user: User = Depends(get_current_active_user),
+    context: CurrentUserContext = Depends(get_current_active_user_with_org),
     db: Session = Depends(get_db)
 ):
-    """List all Heretto credentials for current user."""
+    """List all Heretto credentials for current organization."""
     credentials = db.query(Credential).filter(
-        Credential.user_id == current_user.id,
+        Credential.organization_id == context.organization_id,
         Credential.type == CredentialType.HERETTO
     ).all()
     return credentials
@@ -252,13 +254,13 @@ async def list_heretto_credentials(
 @router.post("/heretto", response_model=CredentialResponse)
 async def create_heretto_credential(
     credential_data: dict,
-    current_user: User = Depends(get_current_active_user),
+    context: CurrentUserContext = Depends(get_current_active_user_with_org),
     db: Session = Depends(get_db)
 ):
     """Create new Heretto credential."""
-    # Check if credential with same name exists
+    # Check if credential with same name exists in organization
     existing = db.query(Credential).filter(
-        Credential.user_id == current_user.id,
+        Credential.organization_id == context.organization_id,
         Credential.type == CredentialType.HERETTO,
         Credential.name == credential_data.get("name")
     ).first()
@@ -286,7 +288,8 @@ async def create_heretto_credential(
     encrypted_data = encrypt_credentials(heretto_creds)
     
     new_credential = Credential(
-        user_id=current_user.id,
+        user_id=context.user.id,
+        organization_id=context.organization_id,
         type=CredentialType.HERETTO,
         name=credential_data.get("name"),
         encrypted_data=encrypted_data
@@ -301,12 +304,12 @@ async def create_heretto_credential(
 # AI provider endpoints
 @router.get("/ai", response_model=List[CredentialResponse])
 async def list_ai_credentials(
-    current_user: User = Depends(get_current_active_user),
+    context: CurrentUserContext = Depends(get_current_active_user_with_org),
     db: Session = Depends(get_db)
 ):
-    """List all AI provider credentials for current user."""
+    """List all AI provider credentials for current organization."""
     credentials = db.query(Credential).filter(
-        Credential.user_id == current_user.id,
+        Credential.organization_id == context.organization_id,
         Credential.type.in_([CredentialType.GEMINI, CredentialType.OPENAI, CredentialType.ANTHROPIC])
     ).all()
     return credentials
@@ -314,7 +317,7 @@ async def list_ai_credentials(
 @router.post("/ai", response_model=CredentialResponse)
 async def create_ai_credential(
     credential_data: dict,
-    current_user: User = Depends(get_current_active_user),
+    context: CurrentUserContext = Depends(get_current_active_user_with_org),
     db: Session = Depends(get_db)
 ):
     """Create new AI provider credential."""
@@ -335,9 +338,9 @@ async def create_ai_credential(
     
     credential_type = type_mapping[provider]
     
-    # Check if credential with same name exists
+    # Check if credential with same name exists in organization
     existing = db.query(Credential).filter(
-        Credential.user_id == current_user.id,
+        Credential.organization_id == context.organization_id,
         Credential.type == credential_type,
         Credential.name == credential_data.get("name")
     ).first()
@@ -364,7 +367,8 @@ async def create_ai_credential(
     encrypted_data = encrypt_credentials(ai_creds)
     
     new_credential = Credential(
-        user_id=current_user.id,
+        user_id=context.user.id,
+        organization_id=context.organization_id,
         type=credential_type,
         name=credential_data.get("name"),
         encrypted_data=encrypted_data
@@ -379,13 +383,13 @@ async def create_ai_credential(
 @router.get("/ai/{credential_id}")
 async def get_ai_credential(
     credential_id: UUID,
-    current_user: User = Depends(get_current_active_user),
+    context: CurrentUserContext = Depends(get_current_active_user_with_org),
     db: Session = Depends(get_db)
 ):
     """Get single AI credential with details (API key masked)."""
     credential = db.query(Credential).filter(
         Credential.id == credential_id,
-        Credential.user_id == current_user.id,
+        Credential.organization_id == context.organization_id,
         Credential.type.in_([CredentialType.GEMINI, CredentialType.OPENAI, CredentialType.ANTHROPIC])
     ).first()
     
@@ -421,13 +425,13 @@ async def get_ai_credential(
 async def update_credential(
     credential_id: UUID,
     credential_data: CredentialUpdate,
-    current_user: User = Depends(get_current_active_user),
+    context: CurrentUserContext = Depends(get_current_active_user_with_org),
     db: Session = Depends(get_db)
 ):
     """Update existing credential."""
     credential = db.query(Credential).filter(
         Credential.id == credential_id,
-        Credential.user_id == current_user.id
+        Credential.organization_id == context.organization_id
     ).first()
     
     if not credential:
@@ -462,13 +466,13 @@ async def update_credential(
 @router.delete("/{credential_id}")
 async def delete_credential(
     credential_id: UUID,
-    current_user: User = Depends(get_current_active_user),
+    context: CurrentUserContext = Depends(get_current_active_user_with_org),
     db: Session = Depends(get_db)
 ):
     """Delete credential."""
     credential = db.query(Credential).filter(
         Credential.id == credential_id,
-        Credential.user_id == current_user.id
+        Credential.organization_id == context.organization_id
     ).first()
     
     if not credential:
@@ -485,7 +489,7 @@ async def delete_credential(
 @router.post("/{credential_id}/test")
 async def test_credential(
     credential_id: UUID,
-    current_user: User = Depends(get_current_active_user),
+    context: CurrentUserContext = Depends(get_current_active_user_with_org),
     db: Session = Depends(get_db)
 ):
     """Test credential connection with detailed response."""
@@ -495,7 +499,7 @@ async def test_credential(
     
     credential = db.query(Credential).filter(
         Credential.id == credential_id,
-        Credential.user_id == current_user.id
+        Credential.organization_id == context.organization_id
     ).first()
     
     if not credential:

@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 import logging
 
 from app.config import get_settings
-from app.api.routes import auth, credentials, instructions, jobs, webhooks, health, admin, account
+from app.api.routes import auth, credentials, instructions, jobs, webhooks, health, admin, account, organizations, invitations
 from app.core.logging import setup_logging
 from app.models.database import init_db
 
@@ -42,11 +42,13 @@ app.add_middleware(
 # Include routers
 app.include_router(health.router, prefix=settings.api_prefix, tags=["health"])
 app.include_router(auth.router, prefix=settings.api_prefix, tags=["auth"])
+app.include_router(invitations.router, prefix=settings.api_prefix, tags=["invitations"])
 app.include_router(credentials.router, prefix=settings.api_prefix, tags=["credentials"])
 app.include_router(instructions.router, prefix=settings.api_prefix, tags=["instructions"])
 app.include_router(jobs.router, prefix=settings.api_prefix, tags=["jobs"])
 app.include_router(webhooks.router, prefix=settings.api_prefix, tags=["webhooks"])
 app.include_router(account.router, prefix=settings.api_prefix, tags=["account"])
+app.include_router(organizations.router, prefix=settings.api_prefix, tags=["organizations"])
 
 # Admin routes (development only)
 if settings.app_env == "development":
