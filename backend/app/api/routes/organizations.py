@@ -233,6 +233,7 @@ async def list_organization_members(
                 id=member.id,
                 user_id=member.user_id,
                 user_email=user.email,
+                user_name=None,  # User model doesn't have a name field yet
                 role=member.role.value if hasattr(member.role, 'value') else member.role,
                 joined_at=member.joined_at,
                 invited_by=member.invited_by
@@ -283,6 +284,7 @@ async def update_member_role(
         id=member.id,
         user_id=member.user_id,
         user_email=user.email if user else "",
+        user_name=None,  # User model doesn't have a name field yet
         role=member.role.value if hasattr(member.role, 'value') else member.role,
         joined_at=member.joined_at,
         invited_by=member.invited_by
