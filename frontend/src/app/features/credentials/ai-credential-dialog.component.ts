@@ -115,78 +115,9 @@ export interface AICredential {
 
         <mat-form-field appearance="fill" class="full-width">
           <mat-label>Model (Optional)</mat-label>
-          <mat-select formControlName="model" *ngIf="showModelSelect">
-            <mat-option value="">Default</mat-option>
-            <ng-container *ngIf="form.get('provider')?.value === 'openai'">
-              <mat-option value="gpt-4-turbo-preview">
-                GPT-4 Turbo <span class="model-id">(gpt-4-turbo-preview)</span>
-              </mat-option>
-              <mat-option value="gpt-4">
-                GPT-4 <span class="model-id">(gpt-4)</span>
-              </mat-option>
-              <mat-option value="gpt-3.5-turbo">
-                GPT-3.5 Turbo <span class="model-id">(gpt-3.5-turbo)</span>
-              </mat-option>
-              <mat-option value="gpt-3.5-turbo-16k">
-                GPT-3.5 Turbo 16K <span class="model-id">(gpt-3.5-turbo-16k)</span>
-              </mat-option>
-            </ng-container>
-            <ng-container *ngIf="form.get('provider')?.value === 'anthropic'">
-              <mat-option value="claude-3-5-sonnet-20241022">
-                Claude 4.5 Sonnet - Latest <span class="model-id">(claude-sonnet-4-5-20250929)</span>
-              </mat-option>
-              <mat-option value="claude-3-5-haiku-20241022">
-                Claude 3.5 Haiku - Fast <span class="model-id">(claude-3-5-haiku-20241022)</span>
-              </mat-option>
-              <mat-option value="claude-3-opus-20240229">
-                Claude 3 Opus <span class="model-id">(claude-3-opus-20240229)</span>
-              </mat-option>
-              <mat-option value="claude-3-sonnet-20240229">
-                Claude 3 Sonnet <span class="model-id">(claude-3-sonnet-20240229)</span>
-              </mat-option>
-              <mat-option value="claude-3-haiku-20240307">
-                Claude 3 Haiku <span class="model-id">(claude-3-haiku-20240307)</span>
-              </mat-option>
-              <mat-option value="__custom__">
-                Specify exact model name
-              </mat-option>
-            </ng-container>
-            <ng-container *ngIf="form.get('provider')?.value === 'gemini'">
-              <mat-option value="gemini-2.5-pro">
-                Gemini 2.5 Pro - Recommended <span class="model-id">(gemini-2.5-pro)</span>
-              </mat-option>
-              <mat-option value="gemini-2.5-flash">
-                Gemini 2.5 Flash - Fast <span class="model-id">(gemini-2.5-flash)</span>
-              </mat-option>
-              <mat-option value="gemini-pro-latest">
-                Gemini Pro Latest <span class="model-id">(gemini-pro-latest)</span>
-              </mat-option>
-              <mat-option value="gemini-flash-latest">
-                Gemini Flash Latest <span class="model-id">(gemini-flash-latest)</span>
-              </mat-option>
-              <mat-option value="gemini-2.0-flash">
-                Gemini 2.0 Flash <span class="model-id">(gemini-2.0-flash)</span>
-              </mat-option>
-              <mat-option value="gemini-2.5-flash-lite">
-                Gemini 2.5 Flash Lite - Efficient <span class="model-id">(gemini-2.5-flash-lite)</span>
-              </mat-option>
-              <mat-option value="__custom__">
-                Specify exact model name
-              </mat-option>
-            </ng-container>
-          </mat-select>
           <input matInput formControlName="model" 
-                 placeholder="e.g., gpt-4-turbo-preview"
-                 *ngIf="!showModelSelect">
-          <mat-hint>Specific model to use (leave empty for provider default)</mat-hint>
-        </mat-form-field>
-
-        <mat-form-field appearance="fill" class="full-width" 
-                        *ngIf="showCustomModelInput">
-          <mat-label>Exact Model Name</mat-label>
-          <input matInput formControlName="customModel" 
-                 [placeholder]="getCustomModelPlaceholder()">
-          <mat-hint>Enter the exact model identifier to use with the API</mat-hint>
+                 [placeholder]="getModelPlaceholder()">
+          <mat-hint>{{ getModelHint() }}</mat-hint>
         </mat-form-field>
 
         <mat-form-field appearance="fill" class="full-width" 
@@ -384,23 +315,11 @@ export class AICredentialDialogComponent {
     private credentialsService: CredentialsService,
     @Inject(MAT_DIALOG_DATA) public data: AICredential | null
   ) {
-    // Check if the existing model is a custom one (not in our predefined lists)
-    let isCustomModel = false;
-    let modelValue = data?.model || '';
-    let customModelValue = '';
-    
-    if (data?.model && data.model !== '' && !this.isKnownModel(data.model)) {
-      isCustomModel = true;
-      modelValue = '__custom__';
-      customModelValue = data.model;
-    }
-    
     this.form = this.fb.group({
       name: [data?.name || '', Validators.required],
       provider: [data?.provider || 'openai', Validators.required],
       api_key: ['', data ? [] : Validators.required],
-      model: [modelValue],
-      customModel: [customModelValue],
+      model: [data?.model || ''],
       base_url: [data?.base_url || ''],
       organization_id: [data?.organization_id || '']
     });
@@ -409,19 +328,6 @@ export class AICredentialDialogComponent {
     this.form.get('provider')?.valueChanges.subscribe(provider => {
       this.updateFieldVisibility(provider);
     });
-  }
-
-  get showModelSelect(): boolean {
-    const provider = this.form.get('provider')?.value;
-    return provider === 'openai' || provider === 'anthropic' || provider === 'gemini';
-  }
-
-  get showCustomModelInput(): boolean {
-    const provider = this.form.get('provider')?.value;
-    const modelValue = this.form.get('model')?.value;
-    // Show for Anthropic and Gemini when "Custom" is selected
-    // Or for any provider when model is set to custom
-    return modelValue === '__custom__' && (provider === 'anthropic' || provider === 'gemini');
   }
 
   get showBaseUrl(): boolean {
@@ -434,14 +340,36 @@ export class AICredentialDialogComponent {
     return provider === 'openai';
   }
   
-  getCustomModelPlaceholder(): string {
+  getModelPlaceholder(): string {
     const provider = this.form.get('provider')?.value;
-    if (provider === 'anthropic') {
-      return 'e.g., claude-3-5-sonnet-20241022 or claude-3-opus-20240229';
-    } else if (provider === 'gemini') {
-      return 'e.g., gemini-2.5-pro or gemini-pro-vision';
+    switch(provider) {
+      case 'openai':
+        return 'e.g., gpt-4-turbo-preview, gpt-4, gpt-3.5-turbo';
+      case 'anthropic':
+        return 'e.g., claude-3-5-sonnet-20241022, claude-3-opus-20240229';
+      case 'gemini':
+        return 'e.g., gemini-2.5-pro, gemini-2.0-flash, gemini-pro-vision';
+      case 'azure':
+        return 'e.g., gpt-4, gpt-35-turbo (deployment name)';
+      default:
+        return 'Enter the model identifier';
     }
-    return 'e.g., model-name-here';
+  }
+
+  getModelHint(): string {
+    const provider = this.form.get('provider')?.value;
+    switch(provider) {
+      case 'openai':
+        return 'Specify the OpenAI model to use (leave empty for default)';
+      case 'anthropic':
+        return 'Specify the Claude model version to use (leave empty for default)';
+      case 'gemini':
+        return 'Specify the Gemini model to use (leave empty for default)';
+      case 'azure':
+        return 'Enter your Azure OpenAI deployment name';
+      default:
+        return 'Enter the specific model identifier for this provider';
+    }
   }
 
   updateFieldVisibility(provider: string) {
@@ -460,21 +388,6 @@ export class AICredentialDialogComponent {
     return key.substring(0, 4) + '*'.repeat(Math.min(key.length - 8, 20)) + key.substring(key.length - 4);
   }
 
-  isKnownModel(model: string): boolean {
-    // List of all known model IDs from our dropdowns
-    const knownModels = [
-      // OpenAI
-      'gpt-4-turbo-preview', 'gpt-4', 'gpt-3.5-turbo', 'gpt-3.5-turbo-16k',
-      // Anthropic
-      'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022',
-      'claude-3-opus-20240229', 'claude-3-sonnet-20240229', 'claude-3-haiku-20240307',
-      // Gemini
-      'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-pro-latest',
-      'gemini-flash-latest', 'gemini-2.0-flash', 'gemini-2.5-flash-lite'
-    ];
-    return knownModels.includes(model);
-  }
-
   testConnection() {
     this.testing = true;
     this.testSuccess = false;
@@ -490,17 +403,11 @@ export class AICredentialDialogComponent {
       // Test existing credential with updated values
       // Only update if a new API key is provided
       if (formValue.api_key) {
-        // Handle custom model selection
-        let modelValue = formValue.model || '';
-        if (formValue.model === '__custom__' && formValue.customModel) {
-          modelValue = formValue.customModel;
-        }
-        
         const updateData = {
           name: formValue.name,
           credentials: {
             api_key: formValue.api_key,
-            model: modelValue
+            model: formValue.model || ''
           }
         };
         
@@ -523,17 +430,11 @@ export class AICredentialDialogComponent {
       }
     } else {
       // For new credentials, create temporarily and test
-      // Handle custom model selection
-      let modelValue = formValue.model || '';
-      if (formValue.model === '__custom__' && formValue.customModel) {
-        modelValue = formValue.customModel;
-      }
-      
       const newCredential = {
         name: formValue.name,
         provider: formValue.provider,
         api_key: formValue.api_key,
-        model: modelValue
+        model: formValue.model || ''
       };
       
       // Create the credential
@@ -597,23 +498,25 @@ export class AICredentialDialogComponent {
     if (this.form.valid) {
       const formValue = this.form.value;
       
-      // Determine the actual model value to use
-      let modelValue = formValue.model || '';
-      if (formValue.model === '__custom__' && formValue.customModel) {
-        modelValue = formValue.customModel;
-      }
-      
       // Prepare credential data for backend
       const credentialData: any = {
         name: formValue.name,
         provider: formValue.provider,
-        model: modelValue
+        model: formValue.model || ''
       };
 
       // Only include api_key if a new one was provided
       // Never send the masked API key back to the server
       if (formValue.api_key) {
         credentialData.api_key = formValue.api_key;
+      }
+
+      // Include optional fields if provided
+      if (formValue.base_url) {
+        credentialData.base_url = formValue.base_url;
+      }
+      if (formValue.organization_id) {
+        credentialData.organization_id = formValue.organization_id;
       }
 
       this.dialogRef.close(credentialData);

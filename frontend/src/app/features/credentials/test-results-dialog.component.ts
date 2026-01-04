@@ -36,26 +36,116 @@ import { MatDividerModule } from '@angular/material/divider';
           </mat-chip>
           <span class="message">{{ data.message }}</span>
         </div>
-      </div>
-
-      <mat-divider></mat-divider>
-
-      <div class="result-section" *ngIf="data.test_url">
-        <h3>Test Details</h3>
-        <div class="detail-row">
-          <strong>Test URL:</strong>
-          <code>{{ data.test_url }}</code>
-        </div>
-        <div class="detail-row">
+        <div class="detail-row" *ngIf="data.timestamp">
           <strong>Timestamp:</strong>
           <span>{{ formatDate(data.timestamp) }}</span>
         </div>
       </div>
 
-      <mat-divider *ngIf="data.response_body"></mat-divider>
+      <!-- Request Section for AI Providers -->
+      <div class="result-section" *ngIf="data.request">
+        <mat-divider></mat-divider>
+        <mat-expansion-panel [expanded]="true">
+          <mat-expansion-panel-header>
+            <mat-panel-title>
+              <mat-icon>send</mat-icon>
+              Request Details
+            </mat-panel-title>
+            <mat-panel-description>
+              {{ data.request.method || 'POST' }} {{ data.request.url }}
+            </mat-panel-description>
+          </mat-expansion-panel-header>
+          
+          <div class="request-content">
+            <div class="url-section">
+              <strong>URL:</strong>
+              <code class="url-code">{{ data.request.url }}</code>
+            </div>
+            
+            <div class="method-section">
+              <strong>Method:</strong>
+              <span class="method-badge">{{ data.request.method || 'POST' }}</span>
+            </div>
+            
+            <div class="headers-section" *ngIf="data.request.headers">
+              <strong>Headers:</strong>
+              <pre class="json-response">{{ formatJson(data.request.headers) }}</pre>
+            </div>
+            
+            <div class="body-section" *ngIf="data.request.body">
+              <strong>Request Body:</strong>
+              <pre class="json-response">{{ formatJson(data.request.body) }}</pre>
+            </div>
 
-      <div class="result-section" *ngIf="data.response_body">
-        <h3>Response Body</h3>
+            <!-- Legacy format for non-AI providers -->
+            <div *ngIf="data.request.prompt && !data.request.body" class="detail-row">
+              <strong>Model:</strong> {{ data.request.model }}
+            </div>
+            <div *ngIf="data.request.prompt && !data.request.body" class="detail-row">
+              <strong>Prompt:</strong> {{ data.request.prompt }}
+            </div>
+            <div *ngIf="data.request.temperature !== undefined && !data.request.body" class="detail-row">
+              <strong>Temperature:</strong> {{ data.request.temperature }}
+            </div>
+            <div *ngIf="data.request.max_tokens && !data.request.body" class="detail-row">
+              <strong>Max Tokens:</strong> {{ data.request.max_tokens }}
+            </div>
+          </div>
+        </mat-expansion-panel>
+      </div>
+
+      <!-- Response Section for AI Providers -->
+      <div class="result-section" *ngIf="data.response">
+        <mat-divider></mat-divider>
+        <mat-expansion-panel [expanded]="data.success">
+          <mat-expansion-panel-header>
+            <mat-panel-title>
+              <mat-icon>reply</mat-icon>
+              Response Details
+            </mat-panel-title>
+            <mat-panel-description>
+              {{ data.response.status_code || data.status_code }} {{ data.success ? 'OK' : 'Error' }}
+            </mat-panel-description>
+          </mat-expansion-panel-header>
+          
+          <div class="response-content">
+            <div class="headers-section" *ngIf="data.response.headers">
+              <strong>Response Headers:</strong>
+              <pre class="json-response">{{ formatJson(data.response.headers) }}</pre>
+            </div>
+            
+            <div class="available-models-section" *ngIf="data.response.available_models">
+              <strong>Available Models:</strong>
+              <div class="models-list">
+                <mat-chip *ngFor="let model of data.response.available_models">
+                  {{ model }}
+                </mat-chip>
+              </div>
+            </div>
+            
+            <div class="body-section" *ngIf="data.response.body">
+              <strong>Response Body:</strong>
+              <pre class="json-response">{{ formatJson(data.response.body) }}</pre>
+            </div>
+
+            <!-- Legacy format -->
+            <div *ngIf="data.response.model && !data.response.body" class="detail-row">
+              <strong>Model Used:</strong> {{ data.response.model }}
+            </div>
+            <div *ngIf="data.response.content && !data.response.body" class="detail-row">
+              <strong>Response:</strong> {{ data.response.content }}
+            </div>
+            <div *ngIf="data.response.finish_reason && !data.response.body" class="detail-row">
+              <strong>Finish Reason:</strong> {{ data.response.finish_reason }}
+            </div>
+          </div>
+        </mat-expansion-panel>
+      </div>
+
+      <!-- Jira specific response -->
+      <div class="result-section" *ngIf="data.response_body && !data.response">
+        <mat-divider></mat-divider>
+        <h3>Response</h3>
         
         <div *ngIf="data.success && data.response_body.issues" class="issues-summary">
           <p><strong>Total Issues Found:</strong> {{ data.response_body.total }}</p>
@@ -81,9 +171,9 @@ import { MatDividerModule } from '@angular/material/divider';
         </mat-expansion-panel>
       </div>
 
-      <mat-divider *ngIf="data.response_headers"></mat-divider>
-
-      <div class="result-section" *ngIf="data.response_headers">
+      <!-- Response Headers for Jira -->
+      <div class="result-section" *ngIf="data.response_headers && !data.response">
+        <mat-divider></mat-divider>
         <mat-expansion-panel>
           <mat-expansion-panel-header>
             <mat-panel-title>
@@ -94,9 +184,11 @@ import { MatDividerModule } from '@angular/material/divider';
         </mat-expansion-panel>
       </div>
 
-      <div class="result-section error-section" *ngIf="data.error_details">
+      <!-- Error Details -->
+      <div class="result-section error-section" *ngIf="data.error || data.error_details">
+        <mat-divider></mat-divider>
         <h3>Error Details</h3>
-        <pre class="error-text">{{ data.error_details }}</pre>
+        <pre class="error-text">{{ data.error || data.error_details }}</pre>
       </div>
     </mat-dialog-content>
 
@@ -247,6 +339,71 @@ import { MatDividerModule } from '@angular/material/divider';
 
     mat-expansion-panel {
       margin-top: 10px;
+    }
+    
+    .url-section, .method-section {
+      margin-bottom: 10px;
+    }
+    
+    .url-code {
+      background: #f5f5f5;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      display: inline-block;
+      margin-left: 10px;
+      word-break: break-all;
+    }
+    
+    .method-badge {
+      background: #2196f3;
+      color: white;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 500;
+      display: inline-block;
+      margin-left: 10px;
+    }
+    
+    .headers-section, .body-section {
+      margin-top: 15px;
+    }
+    
+    .headers-section strong, .body-section strong {
+      display: block;
+      margin-bottom: 8px;
+      color: #666;
+    }
+    
+    .request-content, .response-content {
+      padding: 10px;
+    }
+    
+    .available-models-section {
+      margin: 15px 0;
+    }
+    
+    .available-models-section strong {
+      display: block;
+      margin-bottom: 10px;
+      color: #666;
+    }
+    
+    .models-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      background: #f5f5f5;
+      padding: 12px;
+      border-radius: 4px;
+    }
+    
+    .models-list mat-chip {
+      background: #2196f3 !important;
+      color: white !important;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
     }
   `]
 })
