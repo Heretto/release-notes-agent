@@ -51,17 +51,22 @@ class User(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     # Relationships
+    # Note: Direct relationships are being phased out in favor of organization-based access
     credentials = relationship("Credential", back_populates="user", cascade="all, delete-orphan")
     instruction_sets = relationship("InstructionSet", back_populates="user", cascade="all, delete-orphan")
     jobs = relationship("Job", back_populates="user", cascade="all, delete-orphan")
     webhook_configs = relationship("WebhookConfig", back_populates="user", cascade="all, delete-orphan")
     dita_templates = relationship("DitaTemplate", back_populates="user", cascade="all, delete-orphan")
+    
+    # Organization relationships
+    organization_memberships = relationship("OrganizationMember", foreign_keys="OrganizationMember.user_id", back_populates="user", cascade="all, delete-orphan")
 
 class Credential(Base):
     __tablename__ = "credentials"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True)  # Nullable for migration
     type = Column(SQLEnum(CredentialType), nullable=False)
     name = Column(String(255), nullable=False)
     encrypted_data = Column(LargeBinary, nullable=False)
@@ -70,12 +75,14 @@ class Credential(Base):
     
     # Relationships
     user = relationship("User", back_populates="credentials")
+    organization = relationship("Organization", back_populates="credentials")
 
 class InstructionSet(Base):
     __tablename__ = "instruction_sets"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True)  # Nullable for migration
     name = Column(String(255), nullable=False)
     description = Column(Text)
     jql_query = Column(Text, nullable=False)  # Jira query to execute
@@ -88,6 +95,7 @@ class InstructionSet(Base):
     
     # Relationships
     user = relationship("User", back_populates="instruction_sets")
+    organization = relationship("Organization", back_populates="instruction_sets")
     dita_template = relationship("DitaTemplate")
     jobs = relationship("Job", back_populates="instruction_set")
 
@@ -96,6 +104,7 @@ class Job(Base):
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True)  # Nullable for migration
     instruction_set_id = Column(UUID(as_uuid=True), ForeignKey("instruction_sets.id"))
     ai_credential_id = Column(UUID(as_uuid=True), ForeignKey("credentials.id"), nullable=True)
     jql_query = Column(Text, nullable=False)
@@ -114,6 +123,7 @@ class Job(Base):
     
     # Relationships
     user = relationship("User", back_populates="jobs")
+    organization = relationship("Organization", back_populates="jobs")
     instruction_set = relationship("InstructionSet", back_populates="jobs")
     ai_credential = relationship("Credential", foreign_keys=[ai_credential_id])
     artifacts = relationship("JobArtifact", back_populates="job", cascade="all, delete-orphan")
@@ -154,6 +164,7 @@ class WebhookConfig(Base):
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True)  # Nullable for migration
     name = Column(String(255), nullable=False)
     trigger_events = Column(ARRAY(Text), nullable=False)
     jql_filter = Column(Text)
@@ -165,6 +176,7 @@ class WebhookConfig(Base):
     
     # Relationships
     user = relationship("User", back_populates="webhook_configs")
+    organization = relationship("Organization", back_populates="webhook_configs")
     instruction_set = relationship("InstructionSet")
 
 class DitaTemplate(Base):
@@ -172,6 +184,7 @@ class DitaTemplate(Base):
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True)  # Nullable for migration
     name = Column(String(255), nullable=False)
     template_type = Column(String(50), nullable=False)
     content = Column(Text, nullable=False)
@@ -180,6 +193,10 @@ class DitaTemplate(Base):
     
     # Relationships
     user = relationship("User", back_populates="dita_templates")
+    organization = relationship("Organization", back_populates="dita_templates")
+
+# Import organization models to ensure relationships are registered
+from app.models.organization import Organization, OrganizationMember, OrganizationRole, OrganizationInvitation
 
 # Database initialization
 async def init_db():

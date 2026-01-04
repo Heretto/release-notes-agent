@@ -13,7 +13,7 @@ from app.models.schemas import (
     JiraPreviewResponse,
     JobStatusEnum
 )
-from app.api.dependencies import get_current_active_user
+from app.api.dependencies import get_current_active_user, get_current_active_user_with_org, CurrentUserContext
 from app.services.job_orchestrator import JobOrchestrator
 from app.core.security import decrypt_credentials
 
@@ -24,11 +24,11 @@ async def list_jobs(
     status: Optional[JobStatusEnum] = None,
     limit: int = 50,
     offset: int = 0,
-    current_user: User = Depends(get_current_active_user),
+    context: CurrentUserContext = Depends(get_current_active_user_with_org),
     db: Session = Depends(get_db)
 ):
     """List jobs with optional filtering."""
-    query = db.query(Job).filter(Job.user_id == current_user.id)
+    query = db.query(Job).filter(Job.organization_id == context.organization_id)
     
     if status:
         query = query.filter(Job.status == status)
@@ -40,14 +40,14 @@ async def list_jobs(
 async def create_job(
     job_data: JobCreate,
     background_tasks: BackgroundTasks,
-    current_user: User = Depends(get_current_active_user),
+    context: CurrentUserContext = Depends(get_current_active_user_with_org),
     db: Session = Depends(get_db)
 ):
     """Create and queue new job."""
-    # Verify instruction set exists
+    # Verify instruction set exists in organization
     instruction_set = db.query(InstructionSet).filter(
         InstructionSet.id == job_data.instruction_set_id,
-        InstructionSet.user_id == current_user.id
+        InstructionSet.organization_id == context.organization_id
     ).first()
     
     if not instruction_set:
@@ -60,7 +60,7 @@ async def create_job(
     if job_data.ai_credential_id:
         ai_credential = db.query(Credential).filter(
             Credential.id == job_data.ai_credential_id,
-            Credential.user_id == current_user.id,
+            Credential.organization_id == context.organization_id,
             Credential.type.in_([CredentialType.GEMINI, CredentialType.OPENAI, CredentialType.ANTHROPIC])
         ).first()
         
@@ -72,7 +72,8 @@ async def create_job(
     
     # Create job
     new_job = Job(
-        user_id=current_user.id,
+        user_id=context.user.id,
+        organization_id=context.organization_id,
         instruction_set_id=job_data.instruction_set_id,
         ai_credential_id=job_data.ai_credential_id,
         jql_query=job_data.jql_query,
@@ -101,13 +102,13 @@ async def create_job(
 @router.get("/{job_id}", response_model=JobResponse)
 async def get_job(
     job_id: UUID,
-    current_user: User = Depends(get_current_active_user),
+    context: CurrentUserContext = Depends(get_current_active_user_with_org),
     db: Session = Depends(get_db)
 ):
     """Get job details and status."""
     job = db.query(Job).filter(
         Job.id == job_id,
-        Job.user_id == current_user.id
+        Job.organization_id == context.organization_id
     ).first()
     
     if not job:
@@ -121,13 +122,13 @@ async def get_job(
 @router.post("/{job_id}/cancel")
 async def cancel_job(
     job_id: UUID,
-    current_user: User = Depends(get_current_active_user),
+    context: CurrentUserContext = Depends(get_current_active_user_with_org),
     db: Session = Depends(get_db)
 ):
     """Cancel pending or running job."""
     job = db.query(Job).filter(
         Job.id == job_id,
-        Job.user_id == current_user.id
+        Job.organization_id == context.organization_id
     ).first()
     
     if not job:
@@ -151,13 +152,13 @@ async def cancel_job(
 @router.get("/{job_id}/artifacts", response_model=List[JobArtifactResponse])
 async def get_job_artifacts(
     job_id: UUID,
-    current_user: User = Depends(get_current_active_user),
+    context: CurrentUserContext = Depends(get_current_active_user_with_org),
     db: Session = Depends(get_db)
 ):
     """Get job output artifacts."""
     job = db.query(Job).filter(
         Job.id == job_id,
-        Job.user_id == current_user.id
+        Job.organization_id == context.organization_id
     ).first()
     
     if not job:
@@ -175,13 +176,13 @@ async def get_job_artifacts(
 @router.get("/{job_id}/requests")
 async def get_job_requests(
     job_id: UUID,
-    current_user: User = Depends(get_current_active_user),
+    context: CurrentUserContext = Depends(get_current_active_user_with_org),
     db: Session = Depends(get_db)
 ):
     """Get job requests (API calls made during job execution)."""
     job = db.query(Job).filter(
         Job.id == job_id,
-        Job.user_id == current_user.id
+        Job.organization_id == context.organization_id
     ).first()
     
     if not job:
@@ -218,13 +219,13 @@ async def get_job_requests(
 async def get_artifact_content(
     job_id: UUID,
     artifact_id: UUID,
-    current_user: User = Depends(get_current_active_user),
+    context: CurrentUserContext = Depends(get_current_active_user_with_org),
     db: Session = Depends(get_db)
 ):
     """Get artifact content."""
     job = db.query(Job).filter(
         Job.id == job_id,
-        Job.user_id == current_user.id
+        Job.organization_id == context.organization_id
     ).first()
     
     if not job:
@@ -254,13 +255,13 @@ async def get_artifact_content(
 async def download_artifact(
     job_id: UUID,
     artifact_id: UUID,
-    current_user: User = Depends(get_current_active_user),
+    context: CurrentUserContext = Depends(get_current_active_user_with_org),
     db: Session = Depends(get_db)
 ):
     """Download artifact as file."""
     job = db.query(Job).filter(
         Job.id == job_id,
-        Job.user_id == current_user.id
+        Job.organization_id == context.organization_id
     ).first()
     
     if not job:
@@ -301,13 +302,13 @@ async def download_artifact(
 async def retry_job(
     job_id: UUID,
     background_tasks: BackgroundTasks,
-    current_user: User = Depends(get_current_active_user),
+    context: CurrentUserContext = Depends(get_current_active_user_with_org),
     db: Session = Depends(get_db)
 ):
     """Retry failed job."""
     job = db.query(Job).filter(
         Job.id == job_id,
-        Job.user_id == current_user.id
+        Job.organization_id == context.organization_id
     ).first()
     
     if not job:
@@ -341,14 +342,14 @@ async def retry_job(
 @router.delete("/{job_id}/artifacts")
 async def delete_all_job_artifacts(
     job_id: UUID,
-    current_user: User = Depends(get_current_active_user),
+    context: CurrentUserContext = Depends(get_current_active_user_with_org),
     db: Session = Depends(get_db)
 ):
     """Delete all artifacts for a specific job."""
     # Verify job ownership
     job = db.query(Job).filter(
         Job.id == job_id,
-        Job.user_id == current_user.id
+        Job.organization_id == context.organization_id
     ).first()
     
     if not job:
@@ -374,14 +375,14 @@ async def delete_all_job_artifacts(
 async def delete_job_artifact(
     job_id: UUID,
     artifact_id: UUID,
-    current_user: User = Depends(get_current_active_user),
+    context: CurrentUserContext = Depends(get_current_active_user_with_org),
     db: Session = Depends(get_db)
 ):
     """Delete a specific artifact."""
     # Verify job ownership
     job = db.query(Job).filter(
         Job.id == job_id,
-        Job.user_id == current_user.id
+        Job.organization_id == context.organization_id
     ).first()
     
     if not job:
@@ -415,14 +416,14 @@ async def delete_job_artifact(
 @router.post("/preview", response_model=JiraPreviewResponse)
 async def preview_jira_query(
     preview_request: JiraPreviewRequest,
-    current_user: User = Depends(get_current_active_user),
+    context: CurrentUserContext = Depends(get_current_active_user_with_org),
     db: Session = Depends(get_db)
 ):
     """Preview JQL query results."""
     # Get Jira credential
     credential = db.query(Credential).filter(
         Credential.id == preview_request.credential_id,
-        Credential.user_id == current_user.id,
+        Credential.organization_id == context.organization_id,
         Credential.type == "jira"
     ).first()
     
@@ -462,14 +463,14 @@ async def preview_jira_query(
 async def rerun_job(
     job_id: UUID,
     background_tasks: BackgroundTasks,
-    current_user: User = Depends(get_current_active_user),
+    context: CurrentUserContext = Depends(get_current_active_user_with_org),
     db: Session = Depends(get_db)
 ):
     """Rerun a job with the same parameters."""
     # Get the original job
     original_job = db.query(Job).filter(
         Job.id == job_id,
-        Job.user_id == current_user.id
+        Job.organization_id == context.organization_id
     ).first()
     
     if not original_job:
@@ -480,7 +481,8 @@ async def rerun_job(
     
     # Create a new job with the same parameters
     new_job = Job(
-        user_id=current_user.id,
+        user_id=context.user.id,
+        organization_id=context.organization_id,
         instruction_set_id=original_job.instruction_set_id,
         ai_credential_id=original_job.ai_credential_id,
         jql_query=original_job.jql_query,

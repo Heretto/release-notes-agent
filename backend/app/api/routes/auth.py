@@ -4,7 +4,8 @@ from sqlalchemy.orm import Session
 from datetime import timedelta
 
 from app.models.database import get_db, User
-from app.models.schemas import UserCreate, UserResponse, LoginRequest, TokenResponse
+from app.models.organization import Organization, OrganizationMember, OrganizationRole
+from app.models.schemas import UserCreate, UserResponse, LoginRequest, TokenResponse, OrganizationCreate
 from app.core.security import (
     verify_password, 
     get_password_hash, 
@@ -13,16 +14,26 @@ from app.core.security import (
     decode_token
 )
 from app.config import get_settings
+import uuid
+import re
 
 router = APIRouter(prefix="/auth")
 settings = get_settings()
+
+def create_slug(name: str) -> str:
+    """Create a URL-safe slug from a name."""
+    # Convert to lowercase and replace non-alphanumeric characters with hyphens
+    slug = re.sub(r'[^a-z0-9]+', '-', name.lower())
+    # Remove leading/trailing hyphens
+    slug = slug.strip('-')
+    return slug
 
 @router.post("/register", response_model=UserResponse)
 async def register(
     user_data: UserCreate,
     db: Session = Depends(get_db)
 ):
-    """Register a new user."""
+    """Register a new user with organization."""
     # Check if user exists
     existing_user = db.query(User).filter(User.email == user_data.email).first()
     if existing_user:
@@ -31,6 +42,30 @@ async def register(
             detail="Email already registered"
         )
     
+    # Check if organization name is provided and unique
+    org_name = getattr(user_data, 'organization_name', None)
+    if not org_name:
+        # Default organization name from email
+        org_name = user_data.email.split('@')[0] + "'s Organization"
+    
+    # Check if organization name already exists
+    existing_org = db.query(Organization).filter(Organization.name == org_name).first()
+    if existing_org:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Organization name already exists"
+        )
+    
+    # Create slug for organization
+    base_slug = create_slug(org_name)
+    slug = base_slug
+    counter = 1
+    
+    # Ensure unique slug
+    while db.query(Organization).filter(Organization.slug == slug).first():
+        slug = f"{base_slug}-{counter}"
+        counter += 1
+    
     # Create new user
     new_user = User(
         email=user_data.email,
@@ -38,6 +73,27 @@ async def register(
     )
     
     db.add(new_user)
+    db.flush()  # Flush to get the user ID
+    
+    # Create organization
+    new_organization = Organization(
+        id=uuid.uuid4(),
+        name=org_name,
+        slug=slug
+    )
+    
+    db.add(new_organization)
+    db.flush()  # Flush to get the organization ID
+    
+    # Add user as admin of the organization
+    org_member = OrganizationMember(
+        id=uuid.uuid4(),
+        organization_id=new_organization.id,
+        user_id=new_user.id,
+        role=OrganizationRole.ADMIN
+    )
+    
+    db.add(org_member)
     db.commit()
     db.refresh(new_user)
     
@@ -65,13 +121,26 @@ async def login(
             detail="Inactive user"
         )
     
+    # Get user's organizations
+    user_orgs = db.query(OrganizationMember).filter(
+        OrganizationMember.user_id == user.id
+    ).all()
+    
+    # Include organization info in token (use first org as default)
+    token_data = {
+        "sub": str(user.id),
+        "email": user.email
+    }
+    
+    if user_orgs:
+        # Add default organization to token
+        default_org = user_orgs[0]
+        token_data["org_id"] = str(default_org.organization_id)
+        token_data["org_role"] = default_org.role.value
+    
     # Create tokens
-    access_token = create_access_token(
-        data={"sub": str(user.id), "email": user.email}
-    )
-    refresh_token = create_refresh_token(
-        data={"sub": str(user.id)}
-    )
+    access_token = create_access_token(data=token_data)
+    refresh_token = create_refresh_token(data={"sub": str(user.id)})
     
     return {
         "access_token": access_token,
