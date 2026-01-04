@@ -75,6 +75,7 @@ async def list_jira_credentials(
     db: Session = Depends(get_db)
 ):
     """List all Jira credentials for current user."""
+    # Filter by user_id for now (TODO: add organization-level sharing later)
     credentials = db.query(Credential).filter(
         Credential.user_id == current_user.id,
         Credential.type == CredentialType.JIRA
@@ -83,17 +84,23 @@ async def list_jira_credentials(
     # Decrypt and return full credential data
     result = []
     for cred in credentials:
-        decrypted = decrypt_credentials(cred.encrypted_data)
-        result.append(JiraCredentialResponse(
-            id=cred.id,
-            type=cred.type,
-            name=cred.name,
-            server_url=decrypted.get("server_url", ""),
-            email=decrypted.get("email", ""),
-            api_token=decrypted.get("api_token", ""),
-            created_at=cred.created_at,
-            updated_at=cred.updated_at
-        ))
+        try:
+            decrypted = decrypt_credentials(cred.encrypted_data)
+            result.append(JiraCredentialResponse(
+                id=cred.id,
+                type=cred.type,
+                name=cred.name,
+                server_url=decrypted.get("server_url", ""),
+                email=decrypted.get("email", ""),
+                api_token=decrypted.get("api_token", ""),
+                created_at=cred.created_at,
+                updated_at=cred.updated_at
+            ))
+        except Exception as e:
+            # Log the error but skip this credential
+            print(f"[ERROR] Failed to decrypt credential {cred.id}: {e}")
+            # Optionally, return a placeholder or skip
+            continue
     
     return result
 
