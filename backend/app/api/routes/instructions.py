@@ -10,37 +10,38 @@ from app.models.schemas import (
     InstructionSetUpdate,
     InstructionSetResponse
 )
-from app.api.dependencies import get_current_active_user
+from app.api.dependencies import get_current_active_user, get_current_active_user_with_org, CurrentUserContext
 
 router = APIRouter(prefix="/instructions")
 
 @router.get("/", response_model=List[InstructionSetResponse])
 async def list_instruction_sets(
-    current_user: User = Depends(get_current_active_user),
+    context: CurrentUserContext = Depends(get_current_active_user_with_org),
     db: Session = Depends(get_db)
 ):
-    """List all instruction sets for current user."""
+    """List all instruction sets for current organization."""
     instruction_sets = db.query(InstructionSet).filter(
-        InstructionSet.user_id == current_user.id
+        InstructionSet.organization_id == context.organization_id
     ).all()
     return instruction_sets
 
 @router.post("/", response_model=InstructionSetResponse)
 async def create_instruction_set(
     instruction_data: InstructionSetCreate,
-    current_user: User = Depends(get_current_active_user),
+    context: CurrentUserContext = Depends(get_current_active_user_with_org),
     db: Session = Depends(get_db)
 ):
     """Create new instruction set."""
-    # If setting as default, unset other defaults
+    # If setting as default, unset other defaults in organization
     if instruction_data.is_default:
         db.query(InstructionSet).filter(
-            InstructionSet.user_id == current_user.id,
+            InstructionSet.organization_id == context.organization_id,
             InstructionSet.is_default == True
         ).update({"is_default": False})
     
     new_instruction = InstructionSet(
-        user_id=current_user.id,
+        user_id=context.user.id,
+        organization_id=context.organization_id,
         **instruction_data.model_dump()
     )
     
@@ -53,13 +54,13 @@ async def create_instruction_set(
 @router.get("/{instruction_id}", response_model=InstructionSetResponse)
 async def get_instruction_set(
     instruction_id: UUID,
-    current_user: User = Depends(get_current_active_user),
+    context: CurrentUserContext = Depends(get_current_active_user_with_org),
     db: Session = Depends(get_db)
 ):
     """Get specific instruction set."""
     instruction_set = db.query(InstructionSet).filter(
         InstructionSet.id == instruction_id,
-        InstructionSet.user_id == current_user.id
+        InstructionSet.organization_id == context.organization_id
     ).first()
     
     if not instruction_set:
@@ -74,13 +75,13 @@ async def get_instruction_set(
 async def update_instruction_set(
     instruction_id: UUID,
     instruction_data: InstructionSetUpdate,
-    current_user: User = Depends(get_current_active_user),
+    context: CurrentUserContext = Depends(get_current_active_user_with_org),
     db: Session = Depends(get_db)
 ):
     """Update instruction set."""
     instruction_set = db.query(InstructionSet).filter(
         InstructionSet.id == instruction_id,
-        InstructionSet.user_id == current_user.id
+        InstructionSet.organization_id == context.organization_id
     ).first()
     
     if not instruction_set:
@@ -89,10 +90,10 @@ async def update_instruction_set(
             detail="Instruction set not found"
         )
     
-    # If setting as default, unset other defaults
+    # If setting as default, unset other defaults in organization
     if instruction_data.is_default and not instruction_set.is_default:
         db.query(InstructionSet).filter(
-            InstructionSet.user_id == current_user.id,
+            InstructionSet.organization_id == context.organization_id,
             InstructionSet.is_default == True
         ).update({"is_default": False})
     
@@ -108,13 +109,13 @@ async def update_instruction_set(
 @router.delete("/{instruction_id}")
 async def delete_instruction_set(
     instruction_id: UUID,
-    current_user: User = Depends(get_current_active_user),
+    context: CurrentUserContext = Depends(get_current_active_user_with_org),
     db: Session = Depends(get_db)
 ):
     """Delete instruction set."""
     instruction_set = db.query(InstructionSet).filter(
         InstructionSet.id == instruction_id,
-        InstructionSet.user_id == current_user.id
+        InstructionSet.organization_id == context.organization_id
     ).first()
     
     if not instruction_set:
@@ -135,7 +136,7 @@ class TestQueryRequest(BaseModel):
 async def test_instruction_query(
     instruction_id: UUID,
     request: TestQueryRequest,
-    current_user: User = Depends(get_current_active_user),
+    context: CurrentUserContext = Depends(get_current_active_user_with_org),
     db: Session = Depends(get_db)
 ):
     """Test the JQL query from an instruction set."""
@@ -147,7 +148,7 @@ async def test_instruction_query(
     # Get the instruction set
     instruction_set = db.query(InstructionSet).filter(
         InstructionSet.id == instruction_id,
-        InstructionSet.user_id == current_user.id
+        InstructionSet.organization_id == context.organization_id
     ).first()
     
     if not instruction_set:
@@ -159,7 +160,7 @@ async def test_instruction_query(
     # Get Jira credentials - use the provided credential_id from request
     jira_credential = db.query(Credential).filter(
         Credential.id == request.credential_id,
-        Credential.user_id == current_user.id,
+        Credential.organization_id == context.organization_id,
         Credential.type == CredentialType.JIRA
     ).first()
     
