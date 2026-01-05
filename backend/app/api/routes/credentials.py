@@ -728,6 +728,7 @@ async def test_credential(
                         "Content-Type": "application/json",
                         "Authorization": f"Bearer {api_key[:10] + '...' + api_key[-4:] if len(api_key) > 14 else '***'}"
                     }
+                    # Use max_completion_tokens for newer models, with max_tokens as fallback
                     request_body = {
                         "model": model or "gpt-4-turbo-preview",
                         "messages": [
@@ -740,8 +741,7 @@ async def test_credential(
                                 "content": "Please respond with exactly: 'Connection successful'"
                             }
                         ],
-                        "temperature": 0.1,
-                        "max_tokens": 20
+                        "max_completion_tokens": 20  # Changed from max_tokens for compatibility with newer models
                     }
                 else:
                     api_url = "Unknown provider"
@@ -766,6 +766,22 @@ async def test_credential(
                         json=request_body,
                         timeout=30.0
                     )
+                    
+                    # Handle OpenAI parameter compatibility issue
+                    if provider == "openai" and response.status_code == 400:
+                        error_text = response.text
+                        if "max_tokens" in error_text and "max_completion_tokens" in error_text:
+                            # Retry with max_tokens instead
+                            request_body["max_tokens"] = request_body.pop("max_completion_tokens")
+                            response = await client.post(
+                                api_url,
+                                headers=real_headers,
+                                json=request_body,
+                                timeout=30.0
+                            )
+                        elif "max_completion_tokens" in error_text and "max_tokens" in error_text:
+                            # This shouldn't happen since we use max_completion_tokens by default
+                            pass
                     
                     # Prepare response headers (sanitize sensitive data)
                     response_headers = dict(response.headers)
