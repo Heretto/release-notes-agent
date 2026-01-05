@@ -74,10 +74,13 @@ async def list_jira_credentials(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """List all Jira credentials for current user."""
-    # Filter by user_id for now (TODO: add organization-level sharing later)
+    """List all Jira credentials for current user's organization."""
+    # Filter by organization_id for organization-wide access
+    if not current_user.current_organization_id:
+        return []  # User not part of any organization
+    
     credentials = db.query(Credential).filter(
-        Credential.user_id == current_user.id,
+        Credential.organization_id == current_user.current_organization_id,
         Credential.type == CredentialType.JIRA
     ).all()
     
@@ -110,10 +113,17 @@ async def create_jira_credential(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """Create new Jira credential."""
-    # Check if credential with same name exists
+    """Create new Jira credential for the organization."""
+    # Check user has an organization
+    if not current_user.current_organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User must be part of an organization to create credentials"
+        )
+    
+    # Check if credential with same name exists in the organization
     existing = db.query(Credential).filter(
-        Credential.user_id == current_user.id,
+        Credential.organization_id == current_user.current_organization_id,
         Credential.type == CredentialType.JIRA,
         Credential.name == credential_data.get("name")
     ).first()
@@ -141,10 +151,12 @@ async def create_jira_credential(
     encrypted_data = encrypt_credentials(jira_creds)
     
     new_credential = Credential(
-        user_id=current_user.id,
+        user_id=current_user.id,  # Track who created it
+        organization_id=current_user.current_organization_id,  # Owned by organization
         type=CredentialType.JIRA,
         name=credential_data.get("name"),
-        encrypted_data=encrypted_data
+        encrypted_data=encrypted_data,
+        created_by=current_user.email  # For display purposes
     )
     
     db.add(new_credential)
@@ -311,9 +323,12 @@ async def list_ai_credentials(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """List all AI provider credentials for current user."""
+    """List all AI provider credentials for current user's organization."""
+    if not current_user.current_organization_id:
+        return []  # User not part of any organization
+    
     credentials = db.query(Credential).filter(
-        Credential.user_id == current_user.id,
+        Credential.organization_id == current_user.current_organization_id,
         Credential.type.in_([CredentialType.GEMINI, CredentialType.OPENAI, CredentialType.ANTHROPIC])
     ).all()
     return credentials
@@ -342,9 +357,16 @@ async def create_ai_credential(
     
     credential_type = type_mapping[provider]
     
-    # Check if credential with same name exists
+    # Check user has an organization
+    if not current_user.current_organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User must be part of an organization to create credentials"
+        )
+    
+    # Check if credential with same name exists in the organization
     existing = db.query(Credential).filter(
-        Credential.user_id == current_user.id,
+        Credential.organization_id == current_user.current_organization_id,
         Credential.type == credential_type,
         Credential.name == credential_data.get("name")
     ).first()
@@ -371,10 +393,12 @@ async def create_ai_credential(
     encrypted_data = encrypt_credentials(ai_creds)
     
     new_credential = Credential(
-        user_id=current_user.id,
+        user_id=current_user.id,  # Track who created it
+        organization_id=current_user.current_organization_id,  # Owned by organization
         type=credential_type,
         name=credential_data.get("name"),
-        encrypted_data=encrypted_data
+        encrypted_data=encrypted_data,
+        created_by=current_user.email  # For display purposes
     )
     
     db.add(new_credential)
@@ -537,15 +561,20 @@ async def test_credential(
             # Try the simplest endpoint first - get current user
             test_url = f"{server_url}/rest/api/3/myself"
             
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
                 # First try to get current user info (most reliable test)
-                response = await client.get(test_url, headers=headers, timeout=10.0)
+                response = await client.get(test_url, headers=headers)
                 
                 if response.status_code == 200:
-                    # Success! Now try to get some issues
+                    # Success! Now try to get some issues using POST /search/jql endpoint
                     user_data = response.json()
-                    search_url = f"{server_url}/rest/api/3/search?maxResults=5"
-                    search_response = await client.get(search_url, headers=headers, timeout=10.0)
+                    search_url = f"{server_url}/rest/api/3/search/jql"
+                    search_body = {
+                        "jql": "created >= -30d order by created desc",  # Search for issues created in last 30 days
+                        "maxResults": 5,
+                        "fields": ["summary", "status", "created", "key"]
+                    }
+                    search_response = await client.post(search_url, headers=headers, json=search_body, timeout=10.0)
                     
                     if search_response.status_code == 200:
                         search_data = search_response.json()
@@ -857,6 +886,38 @@ async def test_credential(
                 "timestamp": datetime.utcnow().isoformat()
             }
             
+    except httpx.ConnectError as e:
+        # Connection-specific errors
+        error_msg = str(e)
+        if "All connection attempts failed" in error_msg:
+            return {
+                "success": False,
+                "status_code": 503,
+                "message": "Unable to connect to the server. Please check the server URL and your network connection.",
+                "timestamp": datetime.utcnow().isoformat(),
+                "error_details": f"Connection failed: {error_msg}",
+                "troubleshooting": [
+                    "Verify the server URL is correct",
+                    "Check if the server is accessible from your network",
+                    "Ensure there are no firewall or proxy issues",
+                    "Try accessing the URL directly in a browser"
+                ]
+            }
+        return {
+            "success": False,
+            "status_code": 503,
+            "message": f"Connection error: {error_msg}",
+            "timestamp": datetime.utcnow().isoformat(),
+            "error_details": str(e)
+        }
+    except httpx.TimeoutException as e:
+        return {
+            "success": False,
+            "status_code": 504,
+            "message": "Connection timed out. The server took too long to respond.",
+            "timestamp": datetime.utcnow().isoformat(),
+            "error_details": str(e)
+        }
     except Exception as e:
         return {
             "success": False,

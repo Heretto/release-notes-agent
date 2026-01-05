@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, String, Boolean, DateTime, Text, Integer, ForeignKey, Enum as SQLEnum, ARRAY, LargeBinary
+from sqlalchemy import create_engine, Column, String, Boolean, DateTime, Text, Integer, ForeignKey, Enum as SQLEnum, ARRAY, LargeBinary, Table
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship, Session
@@ -38,6 +38,36 @@ class JobTrigger(str, enum.Enum):
     WEBHOOK = "webhook"
     SCHEDULED = "scheduled"
 
+class OrganizationRole(str, enum.Enum):
+    OWNER = "owner"
+    ADMIN = "admin"
+    MEMBER = "member"
+
+# Association table for many-to-many relationship between users and organizations
+user_organizations = Table(
+    'user_organizations',
+    Base.metadata,
+    Column('user_id', UUID(as_uuid=True), ForeignKey('users.id', ondelete='CASCADE'), primary_key=True),
+    Column('organization_id', UUID(as_uuid=True), ForeignKey('organizations.id', ondelete='CASCADE'), primary_key=True),
+    Column('role', String(50), default='member'),  # 'owner', 'admin', 'member'
+    Column('joined_at', DateTime(timezone=True), server_default=func.now())
+)
+
+# Models
+class Organization(Base):
+    __tablename__ = "organizations"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String(255), nullable=False)
+    slug = Column(String(255), unique=True, nullable=False)  # URL-friendly identifier
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # Relationships
+    users = relationship("User", secondary=user_organizations, back_populates="organizations")
+    credentials = relationship("Credential", back_populates="organization", cascade="all, delete-orphan")
+
 # Models
 class User(Base):
     __tablename__ = "users"
@@ -50,7 +80,12 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
+    # Current organization (for quick access to active organization)
+    current_organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
+    
     # Relationships
+    organizations = relationship("Organization", secondary=user_organizations, back_populates="users")
+    current_organization = relationship("Organization", foreign_keys=[current_organization_id])
     credentials = relationship("Credential", back_populates="user", cascade="all, delete-orphan")
     instruction_sets = relationship("InstructionSet", back_populates="user", cascade="all, delete-orphan")
     jobs = relationship("Job", back_populates="user", cascade="all, delete-orphan")
@@ -61,15 +96,18 @@ class Credential(Base):
     __tablename__ = "credentials"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)  # Who created it
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)  # Who owns it
     type = Column(SQLEnum(CredentialType), nullable=False)
     name = Column(String(255), nullable=False)
     encrypted_data = Column(LargeBinary, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    created_by = Column(String(255), nullable=True)  # Email of creator for display
     
     # Relationships
     user = relationship("User", back_populates="credentials")
+    organization = relationship("Organization", back_populates="credentials")
 
 class InstructionSet(Base):
     __tablename__ = "instruction_sets"
