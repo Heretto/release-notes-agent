@@ -544,7 +544,6 @@ export class CredentialsComponent implements OnInit {
       'anthropic': 'Anthropic',
       'gemini': 'Google AI',
       'google': 'Google AI',
-      'azure': 'Azure OpenAI',
       'custom': 'Custom'
     };
     return providerMap[provider] || provider;

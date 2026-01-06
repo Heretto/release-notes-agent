@@ -67,6 +67,26 @@ class Organization(Base):
     # Relationships
     users = relationship("User", secondary=user_organizations, back_populates="organizations")
     credentials = relationship("Credential", back_populates="organization", cascade="all, delete-orphan")
+    invitations = relationship("OrganizationInvitation", back_populates="organization", cascade="all, delete-orphan")
+    instruction_sets = relationship("InstructionSet", foreign_keys="InstructionSet.organization_id", cascade="all, delete-orphan")
+    jobs = relationship("Job", foreign_keys="Job.organization_id", cascade="all, delete-orphan")
+
+class OrganizationInvitation(Base):
+    __tablename__ = "organization_invitations"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
+    email = Column(String(255), nullable=False)
+    role = Column(String(50), default="member")
+    token = Column(String(255), unique=True, nullable=False)
+    invited_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    accepted_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Relationships
+    organization = relationship("Organization", back_populates="invitations")
+    inviter = relationship("User", foreign_keys=[invited_by])
 
 # Models
 class User(Base):
@@ -114,6 +134,7 @@ class InstructionSet(Base):
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True)
     name = Column(String(255), nullable=False)
     description = Column(Text)
     jql_query = Column(Text, nullable=False)  # Jira query to execute
@@ -126,6 +147,7 @@ class InstructionSet(Base):
     
     # Relationships
     user = relationship("User", back_populates="instruction_sets")
+    organization = relationship("Organization", foreign_keys=[organization_id])
     dita_template = relationship("DitaTemplate")
     jobs = relationship("Job", back_populates="instruction_set")
 
@@ -134,6 +156,7 @@ class Job(Base):
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True)
     instruction_set_id = Column(UUID(as_uuid=True), ForeignKey("instruction_sets.id"))
     ai_credential_id = Column(UUID(as_uuid=True), ForeignKey("credentials.id"), nullable=True)
     jql_query = Column(Text, nullable=False)
@@ -152,6 +175,7 @@ class Job(Base):
     
     # Relationships
     user = relationship("User", back_populates="jobs")
+    organization = relationship("Organization", foreign_keys=[organization_id])
     instruction_set = relationship("InstructionSet", back_populates="jobs")
     ai_credential = relationship("Credential", foreign_keys=[ai_credential_id])
     artifacts = relationship("JobArtifact", back_populates="job", cascade="all, delete-orphan")
