@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from typing import List
 from uuid import UUID
 
@@ -185,7 +186,10 @@ async def update_jira_credential(
     """Update existing Jira credential."""
     credential = db.query(Credential).filter(
         Credential.id == credential_id,
-        Credential.user_id == current_user.id,
+        or_(
+            Credential.user_id == current_user.id,
+            Credential.organization_id == current_user.current_organization_id
+        ),
         Credential.type == CredentialType.JIRA
     ).first()
     
@@ -240,7 +244,10 @@ async def delete_jira_credential(
     """Delete Jira credential."""
     credential = db.query(Credential).filter(
         Credential.id == credential_id,
-        Credential.user_id == current_user.id,
+        or_(
+            Credential.user_id == current_user.id,
+            Credential.organization_id == current_user.current_organization_id
+        ),
         Credential.type == CredentialType.JIRA
     ).first()
     
@@ -318,7 +325,7 @@ async def create_heretto_credential(
     return new_credential
 
 # AI provider endpoints
-@router.get("/ai", response_model=List[CredentialResponse])
+@router.get("/ai")
 async def list_ai_credentials(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -331,7 +338,35 @@ async def list_ai_credentials(
         Credential.organization_id == current_user.current_organization_id,
         Credential.type.in_([CredentialType.GEMINI, CredentialType.OPENAI, CredentialType.ANTHROPIC])
     ).all()
-    return credentials
+    
+    # Map credential type to provider name
+    provider_mapping = {
+        CredentialType.GEMINI: "gemini",
+        CredentialType.OPENAI: "openai", 
+        CredentialType.ANTHROPIC: "anthropic"
+    }
+    
+    # Return with provider field added and model from decrypted data
+    result = []
+    for cred in credentials:
+        # Decrypt to get model information
+        try:
+            decrypted_data = decrypt_credentials(cred.encrypted_data)
+            model = decrypted_data.get("model", "")
+        except:
+            model = ""
+        
+        result.append({
+            "id": str(cred.id),
+            "type": cred.type.value,
+            "provider": provider_mapping.get(cred.type, cred.type.value),
+            "name": cred.name,
+            "model": model if model else "Default",
+            "created_at": cred.created_at.isoformat() if cred.created_at else None,
+            "updated_at": cred.updated_at.isoformat() if cred.updated_at else None
+        })
+    
+    return result
 
 @router.post("/ai", response_model=CredentialResponse)
 async def create_ai_credential(
@@ -458,15 +493,18 @@ async def update_credential(
     """Update existing credential."""
     credential = db.query(Credential).filter(
         Credential.id == credential_id,
-        Credential.user_id == current_user.id
+        or_(
+            Credential.user_id == current_user.id,
+            Credential.organization_id == current_user.current_organization_id
+        )
     ).first()
-    
+
     if not credential:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Credential not found"
         )
-    
+
     if credential_data.name:
         credential.name = credential_data.name
     
@@ -499,9 +537,12 @@ async def delete_credential(
     """Delete credential."""
     credential = db.query(Credential).filter(
         Credential.id == credential_id,
-        Credential.user_id == current_user.id
+        or_(
+            Credential.user_id == current_user.id,
+            Credential.organization_id == current_user.current_organization_id
+        )
     ).first()
-    
+
     if not credential:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -526,15 +567,18 @@ async def test_credential(
     
     credential = db.query(Credential).filter(
         Credential.id == credential_id,
-        Credential.user_id == current_user.id
+        or_(
+            Credential.user_id == current_user.id,
+            Credential.organization_id == current_user.current_organization_id
+        )
     ).first()
-    
+
     if not credential:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Credential not found"
         )
-    
+
     # Decrypt credentials
     decrypted = decrypt_credentials(credential.encrypted_data)
     
