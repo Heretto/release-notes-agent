@@ -103,19 +103,6 @@ import { TestResultsDialogComponent } from './test-results-dialog.component';
               </div>
             </mat-tab>
             
-            <mat-tab label="Heretto">
-              <div class="tab-content">
-                <div class="header-row">
-                  <h3>Heretto CCMS Credentials</h3>
-                  <button mat-raised-button color="primary" (click)="addHerettoCredential()">
-                    <mat-icon>add</mat-icon>
-                    Add Heretto Credentials
-                  </button>
-                </div>
-                <p class="no-data">No Heretto credentials configured.</p>
-              </div>
-            </mat-tab>
-            
             <mat-tab label="AI Providers">
               <div class="tab-content">
                 <div class="header-row">
@@ -181,6 +168,20 @@ import { TestResultsDialogComponent } from './test-results-dialog.component';
                 </p>
               </div>
             </mat-tab>
+            
+            <mat-tab label="Heretto">
+              <div class="tab-content">
+                <div class="header-row">
+                  <h3>Heretto CCMS Credentials</h3>
+                  <button mat-raised-button color="primary" (click)="addHerettoCredential()">
+                    <mat-icon>add</mat-icon>
+                    Add Heretto Credentials
+                  </button>
+                </div>
+                <p class="no-data">No Heretto credentials configured.</p>
+              </div>
+            </mat-tab>
+            
           </mat-tab-group>
         </mat-card-content>
       </mat-card>
