@@ -580,8 +580,14 @@ async def test_credential(
         )
 
     # Decrypt credentials
-    decrypted = decrypt_credentials(credential.encrypted_data)
-    
+    try:
+        decrypted = decrypt_credentials(credential.encrypted_data)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to decrypt credential: {type(e).__name__}. The credential may need to be re-created."
+        )
+
     try:
         if credential.type.value == "jira":
             # Make a test request to Jira API
