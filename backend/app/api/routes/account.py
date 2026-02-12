@@ -3,8 +3,8 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 
-from app.models.database import get_db, User
-from app.models.organization import OrganizationMember, OrganizationRole
+from app.models.database import get_db, User, user_organizations
+from app.models.organization import Organization, OrganizationRole
 from app.api.dependencies import get_current_active_user, get_current_active_user_with_org
 from app.core.security import get_password_hash, verify_password
 
@@ -40,12 +40,13 @@ async def get_account_info(
     )
     
     # Get organization membership if exists
-    membership = db.query(OrganizationMember).filter(
-        OrganizationMember.user_id == current_user.id
-    ).first()
+    from sqlalchemy import select
+    stmt = select(user_organizations).where(
+        user_organizations.c.user_id == current_user.id
+    )
+    membership = db.execute(stmt).first()
     
     if membership:
-        from app.models.organization import Organization
         org = db.query(Organization).filter(
             Organization.id == membership.organization_id
         ).first()

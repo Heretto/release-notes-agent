@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, String, Boolean, DateTime, Text, Integer, ForeignKey, Enum as SQLEnum, ARRAY, LargeBinary
+from sqlalchemy import create_engine, Column, String, Boolean, DateTime, Text, Integer, ForeignKey, Enum as SQLEnum, ARRAY, LargeBinary, Table
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship, Session
@@ -38,6 +38,56 @@ class JobTrigger(str, enum.Enum):
     WEBHOOK = "webhook"
     SCHEDULED = "scheduled"
 
+class OrganizationRole(str, enum.Enum):
+    OWNER = "owner"
+    ADMIN = "admin"
+    MEMBER = "member"
+
+# Association table for many-to-many relationship between users and organizations
+user_organizations = Table(
+    'user_organizations',
+    Base.metadata,
+    Column('user_id', UUID(as_uuid=True), ForeignKey('users.id', ondelete='CASCADE'), primary_key=True),
+    Column('organization_id', UUID(as_uuid=True), ForeignKey('organizations.id', ondelete='CASCADE'), primary_key=True),
+    Column('role', String(50), default='member'),  # 'owner', 'admin', 'member'
+    Column('joined_at', DateTime(timezone=True), server_default=func.now())
+)
+
+# Models
+class Organization(Base):
+    __tablename__ = "organizations"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String(255), nullable=False)
+    slug = Column(String(255), unique=True, nullable=False)  # URL-friendly identifier
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # Relationships
+    users = relationship("User", secondary=user_organizations, back_populates="organizations")
+    credentials = relationship("Credential", back_populates="organization", cascade="all, delete-orphan")
+    invitations = relationship("OrganizationInvitation", back_populates="organization", cascade="all, delete-orphan")
+    instruction_sets = relationship("InstructionSet", foreign_keys="InstructionSet.organization_id", cascade="all, delete-orphan")
+    jobs = relationship("Job", foreign_keys="Job.organization_id", cascade="all, delete-orphan")
+
+class OrganizationInvitation(Base):
+    __tablename__ = "organization_invitations"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
+    email = Column(String(255), nullable=False)
+    role = Column(String(50), default="member")
+    token = Column(String(255), unique=True, nullable=False)
+    invited_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    accepted_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Relationships
+    organization = relationship("Organization", back_populates="invitations")
+    inviter = relationship("User", foreign_keys=[invited_by])
+
 # Models
 class User(Base):
     __tablename__ = "users"
@@ -50,28 +100,30 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
+    # Current organization (for quick access to active organization)
+    current_organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
+    
     # Relationships
-    # Note: Direct relationships are being phased out in favor of organization-based access
+    organizations = relationship("Organization", secondary=user_organizations, back_populates="users")
+    current_organization = relationship("Organization", foreign_keys=[current_organization_id])
     credentials = relationship("Credential", back_populates="user", cascade="all, delete-orphan")
     instruction_sets = relationship("InstructionSet", back_populates="user", cascade="all, delete-orphan")
     jobs = relationship("Job", back_populates="user", cascade="all, delete-orphan")
     webhook_configs = relationship("WebhookConfig", back_populates="user", cascade="all, delete-orphan")
     dita_templates = relationship("DitaTemplate", back_populates="user", cascade="all, delete-orphan")
-    
-    # Organization relationships
-    organization_memberships = relationship("OrganizationMember", foreign_keys="OrganizationMember.user_id", back_populates="user", cascade="all, delete-orphan")
 
 class Credential(Base):
     __tablename__ = "credentials"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True)  # Nullable for migration
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)  # Who created it
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)  # Who owns it
     type = Column(SQLEnum(CredentialType), nullable=False)
     name = Column(String(255), nullable=False)
     encrypted_data = Column(LargeBinary, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    created_by = Column(String(255), nullable=True)  # Email of creator for display
     
     # Relationships
     user = relationship("User", back_populates="credentials")
@@ -82,7 +134,7 @@ class InstructionSet(Base):
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True)  # Nullable for migration
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True)
     name = Column(String(255), nullable=False)
     description = Column(Text)
     jql_query = Column(Text, nullable=False)  # Jira query to execute
@@ -95,7 +147,7 @@ class InstructionSet(Base):
     
     # Relationships
     user = relationship("User", back_populates="instruction_sets")
-    organization = relationship("Organization", back_populates="instruction_sets")
+    organization = relationship("Organization", foreign_keys=[organization_id])
     dita_template = relationship("DitaTemplate")
     jobs = relationship("Job", back_populates="instruction_set")
 
@@ -104,7 +156,7 @@ class Job(Base):
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True)  # Nullable for migration
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True)
     instruction_set_id = Column(UUID(as_uuid=True), ForeignKey("instruction_sets.id"))
     ai_credential_id = Column(UUID(as_uuid=True), ForeignKey("credentials.id"), nullable=True)
     jql_query = Column(Text, nullable=False)
@@ -123,7 +175,7 @@ class Job(Base):
     
     # Relationships
     user = relationship("User", back_populates="jobs")
-    organization = relationship("Organization", back_populates="jobs")
+    organization = relationship("Organization", foreign_keys=[organization_id])
     instruction_set = relationship("InstructionSet", back_populates="jobs")
     ai_credential = relationship("Credential", foreign_keys=[ai_credential_id])
     artifacts = relationship("JobArtifact", back_populates="job", cascade="all, delete-orphan")
@@ -164,7 +216,6 @@ class WebhookConfig(Base):
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True)  # Nullable for migration
     name = Column(String(255), nullable=False)
     trigger_events = Column(ARRAY(Text), nullable=False)
     jql_filter = Column(Text)
@@ -176,7 +227,6 @@ class WebhookConfig(Base):
     
     # Relationships
     user = relationship("User", back_populates="webhook_configs")
-    organization = relationship("Organization", back_populates="webhook_configs")
     instruction_set = relationship("InstructionSet")
 
 class DitaTemplate(Base):
@@ -184,7 +234,6 @@ class DitaTemplate(Base):
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True)  # Nullable for migration
     name = Column(String(255), nullable=False)
     template_type = Column(String(50), nullable=False)
     content = Column(Text, nullable=False)
@@ -193,10 +242,6 @@ class DitaTemplate(Base):
     
     # Relationships
     user = relationship("User", back_populates="dita_templates")
-    organization = relationship("Organization", back_populates="dita_templates")
-
-# Import organization models to ensure relationships are registered
-from app.models.organization import Organization, OrganizationMember, OrganizationRole, OrganizationInvitation
 
 # Database initialization
 async def init_db():

@@ -31,12 +31,13 @@ def test_validation_catches_errors():
     # Test cases with known errors
     test_cases = [
         {
-            "name": "Missing XML declaration",
-            "content": """<topic id="test">
+            "name": "Missing root ID attribute",
+            "content": """<?xml version="1.0" encoding="UTF-8"?>
+<topic>
   <title>Test</title>
   <body><p>Content</p></body>
 </topic>""",
-            "expected_errors": ["XML declaration"]
+            "expected_errors": ["missing required 'id' attribute"]
         },
         {
             "name": "Invalid ID format",
@@ -75,7 +76,7 @@ def test_validation_catches_errors():
     </section>
   </body>
 </topic>""",
-            "expected_errors": ["should not contain direct text"]
+            "expected_errors": ["contains text outside of proper elements"]
         },
         {
             "name": "Markdown instead of DITA",

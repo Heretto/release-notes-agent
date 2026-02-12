@@ -88,10 +88,6 @@ export interface AICredential {
               <mat-icon>auto_awesome</mat-icon>
               Google AI Studio (Gemini)
             </mat-option>
-            <mat-option value="azure">
-              <mat-icon>cloud</mat-icon>
-              Azure OpenAI
-            </mat-option>
             <mat-option value="custom">
               <mat-icon>settings</mat-icon>
               Custom/Other
@@ -125,7 +121,7 @@ export interface AICredential {
           <mat-label>Base URL (Optional)</mat-label>
           <input matInput formControlName="base_url" 
                  placeholder="https://api.openai.com/v1">
-          <mat-hint>Custom API endpoint (for Azure or self-hosted)</mat-hint>
+          <mat-hint>Custom API endpoint (for self-hosted or alternative providers)</mat-hint>
         </mat-form-field>
 
         <mat-form-field appearance="fill" class="full-width" 
@@ -332,7 +328,7 @@ export class AICredentialDialogComponent {
 
   get showBaseUrl(): boolean {
     const provider = this.form.get('provider')?.value;
-    return provider === 'azure' || provider === 'custom';
+    return provider === 'custom';
   }
 
   get showOrganizationId(): boolean {
@@ -349,8 +345,6 @@ export class AICredentialDialogComponent {
         return 'e.g., claude-3-5-sonnet-20241022, claude-3-opus-20240229';
       case 'gemini':
         return 'e.g., gemini-2.5-pro, gemini-2.0-flash, gemini-pro-vision';
-      case 'azure':
-        return 'e.g., gpt-4, gpt-35-turbo (deployment name)';
       default:
         return 'Enter the model identifier';
     }
@@ -365,8 +359,6 @@ export class AICredentialDialogComponent {
         return 'Specify the Claude model version to use (leave empty for default)';
       case 'gemini':
         return 'Specify the Gemini model to use (leave empty for default)';
-      case 'azure':
-        return 'Enter your Azure OpenAI deployment name';
       default:
         return 'Enter the specific model identifier for this provider';
     }

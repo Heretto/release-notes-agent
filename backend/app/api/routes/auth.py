@@ -3,8 +3,8 @@ from fastapi.security import HTTPBearer
 from sqlalchemy.orm import Session
 from datetime import timedelta
 
-from app.models.database import get_db, User
-from app.models.organization import Organization, OrganizationMember, OrganizationRole
+from app.models.database import get_db, User, user_organizations
+from app.models.organization import Organization, OrganizationRole
 from app.models.schemas import UserCreate, UserResponse, LoginRequest, TokenResponse, OrganizationCreate
 from app.core.security import (
     verify_password, 
@@ -86,14 +86,13 @@ async def register(
     db.flush()  # Flush to get the organization ID
     
     # Add user as admin of the organization
-    org_member = OrganizationMember(
-        id=uuid.uuid4(),
-        organization_id=new_organization.id,
+    from sqlalchemy import insert
+    stmt = insert(user_organizations).values(
         user_id=new_user.id,
-        role=OrganizationRole.ADMIN
+        organization_id=new_organization.id,
+        role=OrganizationRole.ADMIN.value
     )
-    
-    db.add(org_member)
+    db.execute(stmt)
     db.commit()
     db.refresh(new_user)
     
@@ -122,9 +121,9 @@ async def login(
         )
     
     # Get user's organizations
-    user_orgs = db.query(OrganizationMember).filter(
-        OrganizationMember.user_id == user.id
-    ).all()
+    from sqlalchemy import select
+    stmt = select(user_organizations).where(user_organizations.c.user_id == user.id)
+    user_orgs = db.execute(stmt).fetchall()
     
     # Include organization info in token (use first org as default)
     token_data = {
@@ -136,7 +135,7 @@ async def login(
         # Add default organization to token
         default_org = user_orgs[0]
         token_data["org_id"] = str(default_org.organization_id)
-        token_data["org_role"] = default_org.role.value
+        token_data["org_role"] = default_org.role
     
     # Create tokens
     access_token = create_access_token(data=token_data)

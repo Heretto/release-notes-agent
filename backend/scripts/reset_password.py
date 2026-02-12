@@ -18,15 +18,33 @@ import argparse
 import getpass
 from pathlib import Path
 from typing import Optional
+from datetime import datetime
 
 # Add parent directory to path to import app modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, Column, String, Boolean, DateTime, text
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.sql import func
 from app.config import get_settings
-from app.models.database import User
 import hashlib
+import uuid
+
+# Create a simplified User model that matches the actual database
+Base = declarative_base()
+
+class User(Base):
+    __tablename__ = "users"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    password_hash = Column(String(255), nullable=False)
+    is_active = Column(Boolean, default=True)
+    is_superuser = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
 def get_password_hash(password: str) -> str:
     """Hash a password using SHA256."""
@@ -116,22 +134,38 @@ class PasswordManager:
         print(f"  • Superuser: {'Yes' if user.is_superuser else 'No'}")
         print(f"  • Created: {user.created_at.strftime('%Y-%m-%d %H:%M') if user.created_at else 'Unknown'}")
         
-        # Check if user has organization membership
-        from app.models.organization import OrganizationMember, Organization
-        
-        memberships = self.session.query(OrganizationMember).filter(
-            OrganizationMember.user_id == user.id
-        ).all()
-        
-        if memberships:
-            print(f"\n🏢 Organization Memberships:")
-            for membership in memberships:
-                org = self.session.query(Organization).filter(
-                    Organization.id == membership.organization_id
-                ).first()
-                if org:
-                    role_icon = "👑" if membership.role.value == 'admin' else "👤"
-                    print(f"  {role_icon} {org.name} ({membership.role.value})")
+        # Check if user has organization membership (if organizations table exists)
+        try:
+            # Check if organizations table exists
+            result = self.session.execute(
+                text("""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables 
+                        WHERE table_name = 'organizations'
+                    )
+                """)
+            ).scalar()
+            
+            if result:
+                # Query the user_organizations association table
+                org_result = self.session.execute(
+                    text("""
+                        SELECT o.name, uo.role 
+                        FROM user_organizations uo
+                        JOIN organizations o ON o.id = uo.organization_id
+                        WHERE uo.user_id = :user_id
+                    """),
+                    {"user_id": user.id}
+                ).fetchall()
+                
+                if org_result:
+                    print(f"\n🏢 Organization Memberships:")
+                    for org_name, role in org_result:
+                        role_icon = "👑" if role == 'owner' else ("🛡️" if role == 'admin' else "👤")
+                        print(f"  {role_icon} {org_name} ({role})")
+        except Exception:
+            # Organizations feature might not be set up yet
+            pass
         
         print("\n📝 You can now log in with the new password")
         return True
