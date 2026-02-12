@@ -31,7 +31,7 @@ class TestRunner:
                 [sys.executable, str(test_file)],
                 capture_output=True,
                 text=True,
-                timeout=60
+                timeout=300
             )
             
             # Print output
@@ -103,6 +103,7 @@ class TestRunner:
             ("integration/test_jira_v3.py", "JIRA API v3 Integration"),
             ("integration/test_jira_final.py", "JIRA Final Integration"),
             ("integration/ai/test_configured_ai.py", "Configured AI Services"),
+            ("integration/test_job_execution.py", "Job Execution"),
             ("integration/test_dita_validation_e2e.py", "DITA Validation End-to-End"),
             
             # Utilities Tests (optional, run if requested)

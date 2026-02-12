@@ -4,7 +4,8 @@ from datetime import datetime
 import logging
 from typing import Optional, Dict, Any
 
-from app.models.database import Job, JobArtifact, JobRequest, InstructionSet, Credential, WebhookConfig
+from sqlalchemy import or_
+from app.models.database import Job, JobArtifact, JobRequest, InstructionSet, Credential, CredentialType, WebhookConfig
 from app.services.jira_service import JiraService
 from app.services.heretto_service import HerettoService
 from app.services.ai_service import AIServiceFactory, GenerationRequest
@@ -39,12 +40,13 @@ class JobOrchestrator:
             job.started_at = datetime.utcnow()
             self.db.commit()
             
-            # Step 1: Get Jira credentials
-            jira_cred = self._get_credential(job.user_id, "jira")
+            # Step 1: Get Jira credentials (check user's own or organization-shared)
+            jira_cred, jira_config = self._get_decryptable_credential(
+                job.user_id, job.organization_id, CredentialType.JIRA
+            )
             if not jira_cred:
-                raise Exception("No Jira credentials found")
-            
-            jira_config = decrypt_credentials(jira_cred.encrypted_data)
+                raise Exception("No Jira credentials found. Please add Jira credentials in the Credentials page.")
+
             jira_service = JiraService(
                 server=jira_config["server_url"],
                 email=jira_config["email"],
@@ -95,33 +97,34 @@ class JobOrchestrator:
             if not tickets:
                 raise Exception("No tickets found matching JQL query")
             
-            # Step 3: Get AI credentials
-            # Use the AI credential specified in the job, or fall back to any available
+            # Step 3: Get AI credentials (check user's own or organization-shared)
             if job.ai_credential_id:
                 ai_cred = self.db.query(Credential).filter(
                     Credential.id == job.ai_credential_id,
-                    Credential.user_id == job.user_id
+                    or_(
+                        Credential.user_id == job.user_id,
+                        Credential.organization_id == job.organization_id
+                    )
                 ).first()
                 if not ai_cred:
                     raise Exception(f"Specified AI credential {job.ai_credential_id} not found")
+                try:
+                    ai_config = decrypt_credentials(ai_cred.encrypted_data)
+                except Exception:
+                    raise Exception(
+                        f"Failed to decrypt AI credential '{ai_cred.name}'. "
+                        "It may need to be re-created."
+                    )
             else:
-                # Fall back to any available AI credential (gemini, anthropic, or openai)
-                ai_cred = self.db.query(Credential).filter(
-                    Credential.user_id == job.user_id,
-                    Credential.type.in_(["GEMINI", "ANTHROPIC", "OPENAI"])
-                ).first()
+                # Fall back to any available AI credential
+                ai_cred, ai_config = self._get_decryptable_credential(
+                    job.user_id, job.organization_id,
+                    [CredentialType.GEMINI, CredentialType.ANTHROPIC, CredentialType.OPENAI]
+                )
                 if not ai_cred:
-                    raise Exception("No AI credentials found")
-            
-            # Determine the provider from credential type
-            provider_map = {
-                "gemini": "gemini",
-                "anthropic": "anthropic", 
-                "openai": "openai"
-            }
-            provider = provider_map.get(ai_cred.type.value, "gemini")
-            
-            ai_config = decrypt_credentials(ai_cred.encrypted_data)
+                    raise Exception("No AI credentials found. Please add AI credentials in the Credentials page.")
+
+            provider = ai_cred.type.value
             ai_service = AIServiceFactory.create(
                 provider=provider,
                 api_key=ai_config["api_key"],
@@ -337,9 +340,10 @@ Content is now valid DITA 1.3.
             
             # Step 9: Publish to Heretto if requested
             if job.auto_publish:
-                heretto_cred = self._get_credential(job.user_id, "heretto")
+                heretto_cred, heretto_config = self._get_decryptable_credential(
+                    job.user_id, job.organization_id, CredentialType.HERETTO
+                )
                 if heretto_cred:
-                    heretto_config = decrypt_credentials(heretto_cred.encrypted_data)
                     heretto_service = HerettoService(
                         base_url=heretto_config.get("base_url", settings.heretto_base_url),
                         api_key=heretto_config["api_key"],
@@ -400,9 +404,10 @@ Content is now valid DITA 1.3.
             logger.info(f"Job {job_id} completed successfully")
             
         except Exception as e:
-            logger.error(f"Job {job_id} failed: {str(e)}")
+            error_msg = str(e) or f"Unexpected error: {type(e).__name__}"
+            logger.error(f"Job {job_id} failed: {error_msg}", exc_info=True)
             job.status = "failed"
-            job.error_message = str(e)
+            job.error_message = error_msg
             job.completed_at = datetime.utcnow()
             self.db.commit()
     
@@ -447,12 +452,37 @@ Content is now valid DITA 1.3.
         except Exception as e:
             logger.error(f"Webhook processing failed: {str(e)}")
     
-    def _get_credential(self, user_id: UUID, cred_type: str) -> Optional[Credential]:
-        """Get first credential of given type for user."""
-        return self.db.query(Credential).filter(
-            Credential.user_id == user_id,
-            Credential.type == cred_type
-        ).first()
+    def _get_decryptable_credential(self, user_id: UUID, organization_id: Optional[UUID], cred_type) -> tuple:
+        """Get a credential that can be successfully decrypted.
+
+        Tries all matching credentials (by user or org) and returns the first
+        one whose encrypted data can be decrypted. Skips stale/corrupt credentials.
+
+        cred_type can be a single CredentialType or a list of CredentialType values.
+
+        Returns (credential, decrypted_config) or (None, None) if none found.
+        """
+        query = self.db.query(Credential).filter(
+            or_(
+                Credential.user_id == user_id,
+                Credential.organization_id == organization_id
+            )
+        )
+        if isinstance(cred_type, list):
+            query = query.filter(Credential.type.in_(cred_type))
+        else:
+            query = query.filter(Credential.type == cred_type)
+
+        credentials = query.all()
+        for cred in credentials:
+            try:
+                config = decrypt_credentials(cred.encrypted_data)
+                return cred, config
+            except Exception:
+                logger.warning(f"Credential '{cred.name}' (id={cred.id}) has stale encryption, skipping")
+                continue
+
+        return None, None
     
     def _extract_version(self, jql: str) -> str:
         """Extract version from JQL query if possible."""
