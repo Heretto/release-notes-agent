@@ -211,6 +211,12 @@ import { TestResultsDialogComponent } from './test-results-dialog.component';
                         <mat-spinner *ngIf="testingCredential === element.id"
                                      diameter="20"></mat-spinner>
                       </button>
+                      <button mat-icon-button color="accent"
+                              (click)="testHerettoUpload(element)"
+                              matTooltip="Test File Upload"
+                              [disabled]="testingCredential === element.id">
+                        <mat-icon>cloud_upload</mat-icon>
+                      </button>
                       <button mat-icon-button color="primary"
                               (click)="editHerettoCredential(element)"
                               matTooltip="Edit">
@@ -563,6 +569,44 @@ export class CredentialsComponent implements OnInit {
             status_code: error.status || 500,
             message: 'Failed to test Heretto credential',
             error_details: error.message || 'Unknown error occurred',
+            timestamp: new Date().toISOString()
+          }
+        });
+      }
+    });
+  }
+
+  testHerettoUpload(credential: HerettoCredential) {
+    if (!credential.id) {
+      this.snackBar.open('Invalid credential ID', 'Close', { duration: 3000 });
+      return;
+    }
+
+    const folderId = prompt('Enter the Heretto folder ID to upload a test file to:');
+    if (!folderId || !folderId.trim()) {
+      return;
+    }
+
+    this.testingCredential = credential.id;
+    this.credentialsService.testHerettoUpload(credential.id, folderId.trim()).subscribe({
+      next: (result) => {
+        this.testingCredential = null;
+        this.dialog.open(TestResultsDialogComponent, {
+          width: '700px',
+          maxHeight: '80vh',
+          data: result
+        });
+      },
+      error: (error) => {
+        this.testingCredential = null;
+        this.dialog.open(TestResultsDialogComponent, {
+          width: '700px',
+          maxHeight: '80vh',
+          data: {
+            success: false,
+            status_code: error.status || 500,
+            message: 'Failed to test Heretto file upload',
+            error_details: error.error?.detail || error.message || 'Unknown error occurred',
             timestamp: new Date().toISOString()
           }
         });

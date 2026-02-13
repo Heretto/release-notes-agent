@@ -73,6 +73,10 @@ export class CredentialsService {
     return this.http.delete<void>(`${this.apiUrl}/heretto/${id}`);
   }
 
+  getHerettoFolderInfo(folderId: string): Observable<{ id: string; name: string; path: string; url: string }> {
+    return this.http.get<{ id: string; name: string; path: string; url: string }>(`${this.apiUrl}/heretto/folder-info/${folderId}`);
+  }
+
   // AI credentials
   getAICredentials(): Observable<AICredential[]> {
     return this.http.get<AICredential[]>(`${this.apiUrl}/ai`);
@@ -116,5 +120,10 @@ export class CredentialsService {
   // Test credential connection
   testCredential(id: string): Observable<any> {
     return this.http.post<any>(`${this.apiUrl}/${id}/test`, {});
+  }
+
+  // Test Heretto upload
+  testHerettoUpload(id: string, folderId: string): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/${id}/test-upload`, { folder_id: folderId });
   }
 }

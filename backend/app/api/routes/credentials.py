@@ -298,6 +298,49 @@ async def list_heretto_credentials(
 
     return result
 
+@router.get("/heretto/folder-info/{folder_id}")
+async def get_heretto_folder_info(
+    folder_id: str,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Get folder information from Heretto CCMS using the first available credential."""
+    if not current_user.current_organization_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No organization selected")
+
+    credential = db.query(Credential).filter(
+        Credential.organization_id == current_user.current_organization_id,
+        Credential.type == CredentialType.HERETTO
+    ).first()
+
+    if not credential:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No Heretto credential found")
+
+    try:
+        decrypted = decrypt_credentials(credential.encrypted_data)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to decrypt Heretto credential. It may need to be re-created."
+        )
+
+    heretto_service = HerettoService(
+        base_url=decrypted["server_url"],
+        username=decrypted["username"],
+        token=decrypted["token"]
+    )
+
+    folder = await heretto_service.get_folder_info(folder_id)
+    if not folder:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Folder not found in Heretto")
+
+    return {
+        "id": folder.id,
+        "name": folder.name,
+        "path": folder.path,
+        "url": f"{decrypted['server_url'].rstrip('/')}/ezdnxtgen/#map-editor;folder={folder.id}"
+    }
+
 @router.post("/heretto", response_model=HerettoCredentialResponse)
 async def create_heretto_credential(
     credential_data: dict,
@@ -1111,3 +1154,78 @@ async def test_credential(
             "timestamp": datetime.utcnow().isoformat(),
             "error_details": str(e)
         }
+
+@router.post("/{credential_id}/test-upload")
+async def test_heretto_upload(
+    credential_id: UUID,
+    body: dict,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Test creating a file in Heretto CCMS using a credential."""
+    from datetime import datetime
+
+    folder_id = body.get("folder_id")
+    if not folder_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="folder_id is required"
+        )
+
+    credential = db.query(Credential).filter(
+        Credential.id == credential_id,
+        or_(
+            Credential.user_id == current_user.id,
+            Credential.organization_id == current_user.current_organization_id
+        ),
+        Credential.type == CredentialType.HERETTO
+    ).first()
+
+    if not credential:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Heretto credential not found"
+        )
+
+    try:
+        decrypted = decrypt_credentials(credential.encrypted_data)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to decrypt credential: {type(e).__name__}. The credential may need to be re-created."
+        )
+
+    heretto_service = HerettoService(
+        base_url=decrypted["server_url"],
+        username=decrypted["username"],
+        token=decrypted["token"]
+    )
+
+    # Create a small test DITA topic
+    timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    test_filename = f"connection-test-{timestamp}.dita"
+    test_content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE topic PUBLIC "-//OASIS//DTD DITA Topic//EN" "topic.dtd">
+<topic id="connection-test-{timestamp}">
+  <title>Connection Test — {timestamp}</title>
+  <body>
+    <p>This file was created by the Release Notes Agent to verify the Heretto CCMS connection.</p>
+    <p>Created at: {datetime.utcnow().isoformat()}Z</p>
+  </body>
+</topic>"""
+
+    result = await heretto_service.upload_dita_topic(
+        content=test_content,
+        filename=test_filename,
+        folder_id=folder_id
+    )
+
+    return {
+        "success": result.success,
+        "status_code": 201 if result.success else 400,
+        "message": result.message,
+        "timestamp": datetime.utcnow().isoformat(),
+        "document_id": result.document_id,
+        "url": result.url,
+        "test_filename": test_filename
+    }

@@ -144,6 +144,33 @@ class HerettoService:
             except Exception:
                 return False
 
+    async def get_folder_info(self, folder_id: str) -> Optional[HerettoFolder]:
+        """Get information about a specific folder by its ID."""
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            try:
+                endpoint = f"{self.base_url}/rest/all-files/{folder_id}"
+                response = await client.get(
+                    endpoint,
+                    headers=self._headers("application/xml"),
+                )
+
+                if response.status_code != 200:
+                    return None
+
+                root = ET.fromstring(response.text)
+                if root.tag != "folder":
+                    return None
+
+                name_el = root.find("name")
+                uri_el = root.find("xmldb-uri")
+                return HerettoFolder(
+                    id=root.get("id", folder_id),
+                    name=name_el.text if name_el is not None and name_el.text else "",
+                    path=uri_el.text if uri_el is not None and uri_el.text else "/"
+                )
+            except Exception:
+                return None
+
     async def list_folders(self, parent_id: Optional[str] = None) -> List[HerettoFolder]:
         """List child folders inside a parent folder."""
         if not parent_id:
