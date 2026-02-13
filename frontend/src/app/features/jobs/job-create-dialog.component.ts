@@ -51,6 +51,11 @@ import { CredentialsService, AICredential } from '../../core/services/credential
           <p class="jql-display">{{ selectedInstructionSet.jql_query }}</p>
         </div>
 
+        <div *ngIf="selectedInstructionSet?.publish_to_heretto" class="heretto-notice">
+          <mat-icon>cloud_upload</mat-icon>
+          <span>Output will be published to Heretto CCMS</span>
+        </div>
+
         <mat-form-field appearance="fill" class="full-width">
           <mat-label>AI Model (Optional)</mat-label>
           <mat-select formControlName="ai_credential_id">
@@ -126,6 +131,18 @@ import { CredentialsService, AICredential } from '../../core/services/credential
 
     .jql-preview {
       margin-bottom: 20px;
+    }
+
+    .heretto-notice {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #e3f2fd;
+      color: #1565c0;
+      padding: 10px 14px;
+      border-radius: 4px;
+      margin-bottom: 20px;
+      font-size: 14px;
     }
 
     .jql-display {
