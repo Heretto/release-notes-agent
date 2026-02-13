@@ -126,6 +126,7 @@ class InstructionSetBase(BaseModel):
     system_prompt: str
     user_instructions: Optional[str] = None
     dita_template_id: Optional[UUID] = None
+    heretto_folder_id: Optional[str] = None
     is_default: bool = False
 
 class InstructionSetCreate(InstructionSetBase):
@@ -138,6 +139,7 @@ class InstructionSetUpdate(BaseModel):
     system_prompt: Optional[str] = None
     user_instructions: Optional[str] = None
     dita_template_id: Optional[UUID] = None
+    heretto_folder_id: Optional[str] = None
     is_default: Optional[bool] = None
 
 class InstructionSetResponse(InstructionSetBase):

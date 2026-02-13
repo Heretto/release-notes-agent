@@ -11,6 +11,7 @@ export interface InstructionSet {
   system_prompt: string;
   user_instructions?: string;
   dita_template_id?: string;
+  heretto_folder_id?: string;
   is_default: boolean;
   created_at?: string;
   updated_at?: string;

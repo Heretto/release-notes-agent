@@ -140,6 +140,11 @@ import { JobCreateDialogComponent } from '../jobs/job-create-dialog.component';
               <pre class="prompt-text">{{ instruction.user_instructions }}</pre>
             </mat-expansion-panel>
 
+            <div *ngIf="instruction.heretto_folder_id" class="heretto-folder-info">
+              <mat-icon>cloud_upload</mat-icon>
+              <span>Heretto Folder ID: <code>{{ instruction.heretto_folder_id }}</code></span>
+            </div>
+
             <div class="metadata">
               <span class="meta-item">
                 <mat-icon>schedule</mat-icon>
@@ -286,6 +291,31 @@ import { JobCreateDialogComponent } from '../jobs/job-create-dialog.component';
       line-height: 1.5;
       white-space: pre-wrap;
       margin: 0;
+    }
+
+    .heretto-folder-info {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 12px;
+      padding: 8px 12px;
+      background: #e8f5e9;
+      border-radius: 4px;
+      font-size: 13px;
+      color: #2e7d32;
+    }
+
+    .heretto-folder-info mat-icon {
+      font-size: 18px;
+      width: 18px;
+      height: 18px;
+    }
+
+    .heretto-folder-info code {
+      background: rgba(0,0,0,0.06);
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: monospace;
     }
 
     .metadata {

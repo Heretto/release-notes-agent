@@ -124,7 +124,7 @@ import { InstructionSet } from '../../core/services/instructions.service';
                 Prompt Writing Tips
               </mat-panel-title>
             </mat-expansion-panel-header>
-            
+
             <div class="tips-content">
               <p><strong>Effective System Prompts Should Include:</strong></p>
               <ul>
@@ -134,11 +134,22 @@ import { InstructionSet } from '../../core/services/instructions.service';
                 <li>Tone and style (e.g., "Use professional, concise language...")</li>
                 <li>Specific requirements (e.g., "Group by feature area, prioritize user impact...")</li>
               </ul>
-              
+
               <p><strong>Example System Prompt:</strong></p>
               <pre class="example-prompt">{{ examplePrompt }}</pre>
             </div>
           </mat-expansion-panel>
+        </div>
+
+        <div class="form-section">
+          <h3>Heretto CCMS</h3>
+
+          <mat-form-field appearance="fill" class="full-width">
+            <mat-label>Heretto Folder ID</mat-label>
+            <input matInput formControlName="heretto_folder_id"
+                   placeholder="e.g., 12345-abcde-67890">
+            <mat-hint>Target folder in Heretto where generated content will be saved</mat-hint>
+          </mat-form-field>
         </div>
       </form>
     </mat-dialog-content>
@@ -273,6 +284,7 @@ Prioritize the most impactful changes first and ensure all content is accurate a
       jql_query: [data?.jql_query || '', Validators.required],
       system_prompt: [data?.system_prompt || this.getDefaultSystemPrompt(), Validators.required],
       user_instructions: [data?.user_instructions || ''],
+      heretto_folder_id: [data?.heretto_folder_id || ''],
       is_default: [data?.is_default || false]
     });
   }

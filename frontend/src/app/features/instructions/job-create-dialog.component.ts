@@ -178,7 +178,7 @@ export class JobCreateDialogComponent implements OnInit {
       additional_instructions: [''],
       jql_query: [''],
       publish_to_heretto: [false],
-      heretto_folder_id: ['']
+      heretto_folder_id: [data?.heretto_folder_id || '']
     });
   }
 

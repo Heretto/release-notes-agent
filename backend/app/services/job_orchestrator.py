@@ -351,27 +351,32 @@ Content is now valid DITA 1.3.
                     )
                     
                     logger.info(f"Publishing to Heretto for job {job_id}")
-                    
+
+                    # Use job's folder ID, falling back to instruction set's
+                    folder_id = job.heretto_folder_id
+                    if not folder_id and instruction_set:
+                        folder_id = instruction_set.heretto_folder_id
+
                     # Log the Heretto request
                     heretto_request = JobRequest(
                         job_id=job.id,
                         request_type="heretto_publish",
                         request_data=json.dumps({
                             "filename": artifact.filename,
-                            "folder_id": job.heretto_folder_id,
+                            "folder_id": folder_id,
                             "content_length": len(dita_content)
                         }),
                         status="pending"
                     )
                     self.db.add(heretto_request)
                     self.db.commit()
-                    
+
                     start_time = time.time()
                     try:
                         upload_result = await heretto_service.upload_dita_topic(
                             content=dita_content,
                             filename=artifact.filename,
-                            folder_id=job.heretto_folder_id
+                            folder_id=folder_id
                         )
                         
                         if upload_result.success:
