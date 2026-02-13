@@ -9,15 +9,71 @@ import sys
 import subprocess
 from pathlib import Path
 
+import requests
+
 # Add tests directory to Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from config import API_BASE_URL, TEST_EMAIL, TEST_PASSWORD
 
 class TestRunner:
-    def __init__(self):
+    def __init__(self, no_cleanup: bool = False):
         self.tests_dir = Path(__file__).parent
         self.test_results = {}
+        self.no_cleanup = no_cleanup
+        self._auth_token = None
+
+    def _get_auth_token(self) -> str:
+        """Get an auth token for API calls."""
+        if self._auth_token:
+            return self._auth_token
+        resp = requests.post(
+            f"{API_BASE_URL}/auth/login",
+            json={"email": TEST_EMAIL, "password": TEST_PASSWORD},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        self._auth_token = resp.json()["access_token"]
+        return self._auth_token
+
+    def _get_job_ids(self) -> set:
+        """Fetch all current job IDs from the API."""
+        token = self._get_auth_token()
+        resp = requests.get(
+            f"{API_BASE_URL}/jobs/?limit=1000",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        return {job["id"] for job in resp.json()}
+
+    def _cleanup_jobs(self, new_job_ids: set):
+        """Delete jobs created during the test run."""
+        if not new_job_ids:
+            print("\nCleanup: No new jobs to delete.")
+            return
+        token = self._get_auth_token()
+        deleted = 0
+        errors = 0
+        for job_id in new_job_ids:
+            try:
+                resp = requests.delete(
+                    f"{API_BASE_URL}/jobs/{job_id}",
+                    headers={"Authorization": f"Bearer {token}"},
+                    timeout=10,
+                )
+                if resp.status_code == 200:
+                    deleted += 1
+                else:
+                    errors += 1
+                    print(f"  Warning: Failed to delete job {job_id} (HTTP {resp.status_code})")
+            except Exception as e:
+                errors += 1
+                print(f"  Warning: Error deleting job {job_id}: {e}")
+        print(f"\nCleanup: Deleted {deleted} test job(s).", end="")
+        if errors:
+            print(f" ({errors} failed)", end="")
+        print()
         
     def run_python_test(self, test_file: Path, description: str) -> bool:
         """Run a Python test file and return success status."""
@@ -58,7 +114,6 @@ class TestRunner:
         print("\nChecking services...")
         
         # Check API
-        import requests
         try:
             resp = requests.get(f"{API_BASE_URL}/health", timeout=5)
             if resp.status_code == 200:
@@ -82,37 +137,44 @@ class TestRunner:
         print("\n" + "="*60)
         print("RELEASE NOTES AGENT - TEST SUITE")
         print("="*60)
-        
+
         # Check services first
         if not self.check_services():
             print("\n⚠️  Services check failed. Please start the application first.")
             return
-        
+
+        # Snapshot existing job IDs before tests
+        try:
+            pre_test_job_ids = self._get_job_ids()
+        except Exception as e:
+            print(f"\nWarning: Could not snapshot jobs before tests: {e}")
+            pre_test_job_ids = None
+
         # Define test order and descriptions
         tests = [
             # Unit Tests
             ("unit/test_dita_validation.py", "DITA Validation"),
             ("unit/test_settings.py", "Settings and Configuration"),
             ("unit/services/test_valid_models.py", "AI Model Names Validation"),
-            
+
             # API Tests
             ("api/test_credentials.py", "Credentials CRUD Operations"),
             ("api/test_delete_artifacts.py", "Artifact Deletion"),
-            
-            # Integration Tests  
+
+            # Integration Tests
             ("integration/test_jira_v3.py", "JIRA API v3 Integration"),
             ("integration/test_jira_final.py", "JIRA Final Integration"),
             ("integration/ai/test_configured_ai.py", "Configured AI Services"),
             ("integration/test_job_execution.py", "Job Execution"),
             ("integration/test_dita_validation_e2e.py", "DITA Validation End-to-End"),
-            
+
             # Utilities Tests (optional, run if requested)
             # ("utilities/database/test_job_model_inspection.py", "Database Inspection"),
         ]
-        
+
         passed = 0
         failed = 0
-        
+
         for test_path, description in tests:
             test_file = self.tests_dir / test_path
             if test_file.exists():
@@ -124,9 +186,23 @@ class TestRunner:
                 print(f"\n⚠️  Test file not found: {test_path}")
                 self.test_results[description] = "⚠️ NOT FOUND"
                 failed += 1
-        
+
         # Print summary
         self.print_summary(passed, failed)
+
+        # Cleanup test jobs
+        if pre_test_job_ids is not None:
+            try:
+                post_test_job_ids = self._get_job_ids()
+                new_job_ids = post_test_job_ids - pre_test_job_ids
+                if self.no_cleanup:
+                    print(f"\nCleanup skipped (--no-cleanup): {len(new_job_ids)} test job(s) left in database.")
+                else:
+                    self._cleanup_jobs(new_job_ids)
+            except Exception as e:
+                print(f"\nWarning: Could not clean up test jobs: {e}")
+
+        print("\nTip: To keep test data after a run: python run_tests.py --no-cleanup")
     
     def print_summary(self, passed: int, failed: int):
         """Print test results summary."""
@@ -156,10 +232,12 @@ def main():
     parser = argparse.ArgumentParser(description='Run Release Notes Agent tests')
     parser.add_argument('--test', help='Run specific test file', default=None)
     parser.add_argument('--list', action='store_true', help='List available tests')
-    
+    parser.add_argument('--no-cleanup', action='store_true',
+                        help='Skip cleanup of test jobs after run')
+
     args = parser.parse_args()
-    
-    runner = TestRunner()
+
+    runner = TestRunner(no_cleanup=args.no_cleanup)
     
     if args.list:
         print("\nAvailable test files:")
