@@ -338,8 +338,11 @@ Content is now valid DITA 1.3.
             
             logger.info(f"Saved clean DITA artifact: {output_filename}")
             
-            # Step 9: Publish to Heretto if requested
-            if job.auto_publish:
+            # Step 9: Publish to Heretto if requested (job flag or instruction set flag)
+            should_publish = job.auto_publish
+            if not should_publish and instruction_set and getattr(instruction_set, 'publish_to_heretto', False):
+                should_publish = True
+            if should_publish:
                 heretto_cred, heretto_config = self._get_decryptable_credential(
                     job.user_id, job.organization_id, CredentialType.HERETTO
                 )
