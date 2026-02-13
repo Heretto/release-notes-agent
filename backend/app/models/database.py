@@ -142,6 +142,7 @@ class InstructionSet(Base):
     user_instructions = Column(Text)
     dita_template_id = Column(UUID(as_uuid=True), ForeignKey("dita_templates.id"))
     heretto_folder_id = Column(String(255))
+    publish_to_heretto = Column(Boolean, default=False)
     is_default = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

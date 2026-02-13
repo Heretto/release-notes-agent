@@ -6,6 +6,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatButtonModule } from '@angular/material/button';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
+import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatExpansionModule } from '@angular/material/expansion';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
@@ -22,6 +23,7 @@ import { InstructionSet } from '../../core/services/instructions.service';
     MatInputModule,
     MatButtonModule,
     MatSlideToggleModule,
+    MatCheckboxModule,
     MatExpansionModule,
     MatIconModule,
     MatTooltipModule
@@ -144,7 +146,14 @@ import { InstructionSet } from '../../core/services/instructions.service';
         <div class="form-section">
           <h3>Heretto CCMS</h3>
 
-          <mat-form-field appearance="fill" class="full-width">
+          <div class="heretto-toggle">
+            <mat-checkbox formControlName="publish_to_heretto">
+              Save generated release notes to Heretto
+            </mat-checkbox>
+          </div>
+
+          <mat-form-field *ngIf="form.get('publish_to_heretto')?.value"
+                          appearance="fill" class="full-width">
             <mat-label>Heretto Folder ID</mat-label>
             <input matInput formControlName="heretto_folder_id"
                    placeholder="e.g., 12345-abcde-67890">
@@ -192,6 +201,10 @@ import { InstructionSet } from '../../core/services/instructions.service';
       align-items: center;
       gap: 10px;
       margin: 15px 0;
+    }
+
+    .heretto-toggle {
+      margin-bottom: 15px;
     }
 
     .info-icon {
@@ -285,6 +298,7 @@ Prioritize the most impactful changes first and ensure all content is accurate a
       system_prompt: [data?.system_prompt || this.getDefaultSystemPrompt(), Validators.required],
       user_instructions: [data?.user_instructions || ''],
       heretto_folder_id: [data?.heretto_folder_id || ''],
+      publish_to_heretto: [data?.publish_to_heretto || false],
       is_default: [data?.is_default || false]
     });
   }

@@ -127,6 +127,7 @@ class InstructionSetBase(BaseModel):
     user_instructions: Optional[str] = None
     dita_template_id: Optional[UUID] = None
     heretto_folder_id: Optional[str] = None
+    publish_to_heretto: bool = False
     is_default: bool = False
 
 class InstructionSetCreate(InstructionSetBase):
@@ -140,6 +141,7 @@ class InstructionSetUpdate(BaseModel):
     user_instructions: Optional[str] = None
     dita_template_id: Optional[UUID] = None
     heretto_folder_id: Optional[str] = None
+    publish_to_heretto: Optional[bool] = None
     is_default: Optional[bool] = None
 
 class InstructionSetResponse(InstructionSetBase):

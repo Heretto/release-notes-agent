@@ -140,9 +140,9 @@ import { JobCreateDialogComponent } from '../jobs/job-create-dialog.component';
               <pre class="prompt-text">{{ instruction.user_instructions }}</pre>
             </mat-expansion-panel>
 
-            <div *ngIf="instruction.heretto_folder_id" class="heretto-folder-info">
+            <div *ngIf="instruction.publish_to_heretto" class="heretto-folder-info">
               <mat-icon>cloud_upload</mat-icon>
-              <span>Heretto Folder ID: <code>{{ instruction.heretto_folder_id }}</code></span>
+              <span>Save to Heretto{{ instruction.heretto_folder_id ? ' — Folder: ' : '' }}<code *ngIf="instruction.heretto_folder_id">{{ instruction.heretto_folder_id }}</code></span>
             </div>
 
             <div class="metadata">
