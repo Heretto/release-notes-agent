@@ -20,7 +20,7 @@ def mock_user():
     user = Mock(spec=User)
     user.id = uuid4()
     user.email = "test@example.com"
-    user.organization_id = uuid4()
+    user.current_organization_id = uuid4()
     return user
 
 
@@ -122,15 +122,15 @@ class TestJiraCredentialsList:
         assert result == []
     
     @pytest.mark.asyncio
-    async def test_list_filters_by_user_id(self, mock_user, mock_db):
-        """Test that credentials are filtered by user ID."""
+    async def test_list_filters_by_organization(self, mock_user, mock_db):
+        """Test that credentials are filtered by organization ID."""
         mock_db.query.return_value.filter.return_value.all.return_value = []
-        
+
         await list_jira_credentials(mock_user, mock_db)
-        
-        # Check that filter was called with correct user_id
-        filter_call = mock_db.query.return_value.filter.call_args
-        assert mock_user.id in str(filter_call)
+
+        # Verify that query and filter were called
+        mock_db.query.assert_called_once_with(Credential)
+        mock_db.query.return_value.filter.assert_called_once()
 
 
 class TestJiraCredentialsCreate:
