@@ -65,8 +65,9 @@ class JiraCredentials(BaseModel):
     api_token: str
 
 class HerettoCredentials(BaseModel):
-    api_key: str
-    organization_id: str
+    server_url: str
+    username: str
+    token: str
 
 class AICredentials(BaseModel):
     api_key: str
@@ -101,6 +102,19 @@ class JiraCredentialResponse(BaseModel):
     created_at: datetime
     updated_at: Optional[datetime]
     
+    class Config:
+        from_attributes = True
+
+class HerettoCredentialResponse(BaseModel):
+    id: UUID
+    type: CredentialTypeEnum
+    name: str
+    server_url: str
+    username: str
+    token: str
+    created_at: datetime
+    updated_at: Optional[datetime]
+
     class Config:
         from_attributes = True
 

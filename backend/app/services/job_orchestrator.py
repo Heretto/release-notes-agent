@@ -345,9 +345,9 @@ Content is now valid DITA 1.3.
                 )
                 if heretto_cred:
                     heretto_service = HerettoService(
-                        base_url=heretto_config.get("base_url", settings.heretto_base_url),
-                        api_key=heretto_config["api_key"],
-                        organization_id=heretto_config["organization_id"]
+                        base_url=heretto_config.get("server_url", settings.heretto_base_url),
+                        username=heretto_config["username"],
+                        token=heretto_config["token"]
                     )
                     
                     logger.info(f"Publishing to Heretto for job {job_id}")

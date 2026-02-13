@@ -14,9 +14,9 @@ export interface JiraCredential {
 export interface HerettoCredential {
   id?: string;
   name: string;
-  api_key: string;
-  organization_id: string;
-  environment: string;
+  server_url: string;
+  username: string;
+  token: string;
 }
 
 export interface AICredential {

@@ -6,14 +6,16 @@ from app.models.schemas import HerettoUploadResult, HerettoFolder
 class HerettoService:
     """Service for interacting with Heretto CCMS API."""
     
-    def __init__(self, base_url: str, api_key: str, organization_id: str):
+    def __init__(self, base_url: str, username: str, token: str):
         self.base_url = base_url.rstrip('/')
-        self.api_key = api_key
-        self.organization_id = organization_id
+        self.username = username
+        self.token = token
+        import base64
+        auth_str = f"{username}:{token}"
+        auth_b64 = base64.b64encode(auth_str.encode()).decode()
         self.headers = {
-            "Authorization": f"Bearer {api_key}",
+            "Authorization": f"Basic {auth_b64}",
             "Content-Type": "application/xml",
-            "X-Organization-Id": organization_id
         }
     
     async def upload_dita_topic(
