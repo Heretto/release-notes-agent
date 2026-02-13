@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from typing import List
 from uuid import UUID
 
@@ -13,7 +14,7 @@ from app.models.schemas import (
     HerettoCredentials,
     AICredentials
 )
-from app.api.dependencies import get_current_active_user, get_current_active_user_with_org, CurrentUserContext
+from app.api.dependencies import get_current_active_user
 from app.core.security import encrypt_credentials, decrypt_credentials
 from app.services.jira_service_v3 import JiraServiceV3
 from app.services.heretto_service import HerettoService
@@ -23,25 +24,25 @@ router = APIRouter(prefix="/credentials")
 # Generic credentials endpoints
 @router.get("/", response_model=List[CredentialResponse])
 async def list_credentials(
-    context: CurrentUserContext = Depends(get_current_active_user_with_org),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """List all credentials for current organization."""
+    """List all credentials for current user."""
     credentials = db.query(Credential).filter(
-        Credential.organization_id == context.organization_id
+        Credential.user_id == current_user.id
     ).all()
     return credentials
 
 @router.post("/", response_model=CredentialResponse)
 async def create_credential(
     credential_data: CredentialCreate,
-    context: CurrentUserContext = Depends(get_current_active_user_with_org),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """Create new credential."""
-    # Check if credential with same name exists in organization
+    # Check if credential with same name exists
     existing = db.query(Credential).filter(
-        Credential.organization_id == context.organization_id,
+        Credential.user_id == current_user.id,
         Credential.type == credential_data.type,
         Credential.name == credential_data.name
     ).first()
@@ -56,8 +57,7 @@ async def create_credential(
     encrypted_data = encrypt_credentials(credential_data.credentials)
     
     new_credential = Credential(
-        user_id=context.user.id,
-        organization_id=context.organization_id,
+        user_id=current_user.id,
         type=credential_data.type,
         name=credential_data.name,
         encrypted_data=encrypted_data
@@ -72,42 +72,59 @@ async def create_credential(
 # Jira-specific endpoints
 @router.get("/jira", response_model=List[JiraCredentialResponse])
 async def list_jira_credentials(
-    context: CurrentUserContext = Depends(get_current_active_user_with_org),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """List all Jira credentials for current organization."""
+    """List all Jira credentials for current user's organization."""
+    # Filter by organization_id for organization-wide access
+    if not current_user.current_organization_id:
+        return []  # User not part of any organization
+    
     credentials = db.query(Credential).filter(
-        Credential.organization_id == context.organization_id,
+        Credential.organization_id == current_user.current_organization_id,
         Credential.type == CredentialType.JIRA
     ).all()
     
     # Decrypt and return full credential data
     result = []
     for cred in credentials:
-        decrypted = decrypt_credentials(cred.encrypted_data)
-        result.append(JiraCredentialResponse(
-            id=cred.id,
-            type=cred.type,
-            name=cred.name,
-            server_url=decrypted.get("server_url", ""),
-            email=decrypted.get("email", ""),
-            api_token=decrypted.get("api_token", ""),
-            created_at=cred.created_at,
-            updated_at=cred.updated_at
-        ))
+        try:
+            decrypted = decrypt_credentials(cred.encrypted_data)
+            result.append(JiraCredentialResponse(
+                id=cred.id,
+                type=cred.type,
+                name=cred.name,
+                server_url=decrypted.get("server_url", ""),
+                email=decrypted.get("email", ""),
+                api_token=decrypted.get("api_token", ""),
+                created_at=cred.created_at,
+                updated_at=cred.updated_at
+            ))
+        except Exception as e:
+            # Log the error but skip this credential
+            print(f"[ERROR] Failed to decrypt credential {cred.id}: {e}")
+            # Optionally, return a placeholder or skip
+            continue
     
     return result
 
 @router.post("/jira", response_model=JiraCredentialResponse)
 async def create_jira_credential(
     credential_data: dict,
-    context: CurrentUserContext = Depends(get_current_active_user_with_org),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """Create new Jira credential."""
-    # Check if credential with same name exists in organization
+    """Create new Jira credential for the organization."""
+    # Check user has an organization
+    if not current_user.current_organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User must be part of an organization to create credentials"
+        )
+    
+    # Check if credential with same name exists in the organization
     existing = db.query(Credential).filter(
-        Credential.organization_id == context.organization_id,
+        Credential.organization_id == current_user.current_organization_id,
         Credential.type == CredentialType.JIRA,
         Credential.name == credential_data.get("name")
     ).first()
@@ -135,11 +152,12 @@ async def create_jira_credential(
     encrypted_data = encrypt_credentials(jira_creds)
     
     new_credential = Credential(
-        user_id=context.user.id,
-        organization_id=context.organization_id,
+        user_id=current_user.id,  # Track who created it
+        organization_id=current_user.current_organization_id,  # Owned by organization
         type=CredentialType.JIRA,
         name=credential_data.get("name"),
-        encrypted_data=encrypted_data
+        encrypted_data=encrypted_data,
+        created_by=current_user.email  # For display purposes
     )
     
     db.add(new_credential)
@@ -162,13 +180,16 @@ async def create_jira_credential(
 async def update_jira_credential(
     credential_id: UUID,
     credential_data: dict,
-    context: CurrentUserContext = Depends(get_current_active_user_with_org),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """Update existing Jira credential."""
     credential = db.query(Credential).filter(
         Credential.id == credential_id,
-        Credential.organization_id == context.organization_id,
+        or_(
+            Credential.user_id == current_user.id,
+            Credential.organization_id == current_user.current_organization_id
+        ),
         Credential.type == CredentialType.JIRA
     ).first()
     
@@ -217,13 +238,16 @@ async def update_jira_credential(
 @router.delete("/jira/{credential_id}")
 async def delete_jira_credential(
     credential_id: UUID,
-    context: CurrentUserContext = Depends(get_current_active_user_with_org),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """Delete Jira credential."""
     credential = db.query(Credential).filter(
         Credential.id == credential_id,
-        Credential.organization_id == context.organization_id,
+        or_(
+            Credential.user_id == current_user.id,
+            Credential.organization_id == current_user.current_organization_id
+        ),
         Credential.type == CredentialType.JIRA
     ).first()
     
@@ -241,12 +265,12 @@ async def delete_jira_credential(
 # Heretto-specific endpoints
 @router.get("/heretto", response_model=List[CredentialResponse])
 async def list_heretto_credentials(
-    context: CurrentUserContext = Depends(get_current_active_user_with_org),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """List all Heretto credentials for current organization."""
+    """List all Heretto credentials for current user."""
     credentials = db.query(Credential).filter(
-        Credential.organization_id == context.organization_id,
+        Credential.user_id == current_user.id,
         Credential.type == CredentialType.HERETTO
     ).all()
     return credentials
@@ -254,13 +278,13 @@ async def list_heretto_credentials(
 @router.post("/heretto", response_model=CredentialResponse)
 async def create_heretto_credential(
     credential_data: dict,
-    context: CurrentUserContext = Depends(get_current_active_user_with_org),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """Create new Heretto credential."""
-    # Check if credential with same name exists in organization
+    # Check if credential with same name exists
     existing = db.query(Credential).filter(
-        Credential.organization_id == context.organization_id,
+        Credential.user_id == current_user.id,
         Credential.type == CredentialType.HERETTO,
         Credential.name == credential_data.get("name")
     ).first()
@@ -288,8 +312,7 @@ async def create_heretto_credential(
     encrypted_data = encrypt_credentials(heretto_creds)
     
     new_credential = Credential(
-        user_id=context.user.id,
-        organization_id=context.organization_id,
+        user_id=current_user.id,
         type=CredentialType.HERETTO,
         name=credential_data.get("name"),
         encrypted_data=encrypted_data
@@ -302,22 +325,53 @@ async def create_heretto_credential(
     return new_credential
 
 # AI provider endpoints
-@router.get("/ai", response_model=List[CredentialResponse])
+@router.get("/ai")
 async def list_ai_credentials(
-    context: CurrentUserContext = Depends(get_current_active_user_with_org),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """List all AI provider credentials for current organization."""
+    """List all AI provider credentials for current user's organization."""
+    if not current_user.current_organization_id:
+        return []  # User not part of any organization
+    
     credentials = db.query(Credential).filter(
-        Credential.organization_id == context.organization_id,
+        Credential.organization_id == current_user.current_organization_id,
         Credential.type.in_([CredentialType.GEMINI, CredentialType.OPENAI, CredentialType.ANTHROPIC])
     ).all()
-    return credentials
+    
+    # Map credential type to provider name
+    provider_mapping = {
+        CredentialType.GEMINI: "gemini",
+        CredentialType.OPENAI: "openai", 
+        CredentialType.ANTHROPIC: "anthropic"
+    }
+    
+    # Return with provider field added and model from decrypted data
+    result = []
+    for cred in credentials:
+        # Decrypt to get model information
+        try:
+            decrypted_data = decrypt_credentials(cred.encrypted_data)
+            model = decrypted_data.get("model", "")
+        except:
+            model = ""
+        
+        result.append({
+            "id": str(cred.id),
+            "type": cred.type.value,
+            "provider": provider_mapping.get(cred.type, cred.type.value),
+            "name": cred.name,
+            "model": model if model else "Default",
+            "created_at": cred.created_at.isoformat() if cred.created_at else None,
+            "updated_at": cred.updated_at.isoformat() if cred.updated_at else None
+        })
+    
+    return result
 
 @router.post("/ai", response_model=CredentialResponse)
 async def create_ai_credential(
     credential_data: dict,
-    context: CurrentUserContext = Depends(get_current_active_user_with_org),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """Create new AI provider credential."""
@@ -338,9 +392,16 @@ async def create_ai_credential(
     
     credential_type = type_mapping[provider]
     
-    # Check if credential with same name exists in organization
+    # Check user has an organization
+    if not current_user.current_organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User must be part of an organization to create credentials"
+        )
+    
+    # Check if credential with same name exists in the organization
     existing = db.query(Credential).filter(
-        Credential.organization_id == context.organization_id,
+        Credential.organization_id == current_user.current_organization_id,
         Credential.type == credential_type,
         Credential.name == credential_data.get("name")
     ).first()
@@ -367,11 +428,12 @@ async def create_ai_credential(
     encrypted_data = encrypt_credentials(ai_creds)
     
     new_credential = Credential(
-        user_id=context.user.id,
-        organization_id=context.organization_id,
+        user_id=current_user.id,  # Track who created it
+        organization_id=current_user.current_organization_id,  # Owned by organization
         type=credential_type,
         name=credential_data.get("name"),
-        encrypted_data=encrypted_data
+        encrypted_data=encrypted_data,
+        created_by=current_user.email  # For display purposes
     )
     
     db.add(new_credential)
@@ -383,13 +445,13 @@ async def create_ai_credential(
 @router.get("/ai/{credential_id}")
 async def get_ai_credential(
     credential_id: UUID,
-    context: CurrentUserContext = Depends(get_current_active_user_with_org),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """Get single AI credential with details (API key masked)."""
     credential = db.query(Credential).filter(
         Credential.id == credential_id,
-        Credential.organization_id == context.organization_id,
+        Credential.user_id == current_user.id,
         Credential.type.in_([CredentialType.GEMINI, CredentialType.OPENAI, CredentialType.ANTHROPIC])
     ).first()
     
@@ -425,21 +487,24 @@ async def get_ai_credential(
 async def update_credential(
     credential_id: UUID,
     credential_data: CredentialUpdate,
-    context: CurrentUserContext = Depends(get_current_active_user_with_org),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """Update existing credential."""
     credential = db.query(Credential).filter(
         Credential.id == credential_id,
-        Credential.organization_id == context.organization_id
+        or_(
+            Credential.user_id == current_user.id,
+            Credential.organization_id == current_user.current_organization_id
+        )
     ).first()
-    
+
     if not credential:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Credential not found"
         )
-    
+
     if credential_data.name:
         credential.name = credential_data.name
     
@@ -466,15 +531,18 @@ async def update_credential(
 @router.delete("/{credential_id}")
 async def delete_credential(
     credential_id: UUID,
-    context: CurrentUserContext = Depends(get_current_active_user_with_org),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """Delete credential."""
     credential = db.query(Credential).filter(
         Credential.id == credential_id,
-        Credential.organization_id == context.organization_id
+        or_(
+            Credential.user_id == current_user.id,
+            Credential.organization_id == current_user.current_organization_id
+        )
     ).first()
-    
+
     if not credential:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -489,7 +557,7 @@ async def delete_credential(
 @router.post("/{credential_id}/test")
 async def test_credential(
     credential_id: UUID,
-    context: CurrentUserContext = Depends(get_current_active_user_with_org),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """Test credential connection with detailed response."""
@@ -499,18 +567,27 @@ async def test_credential(
     
     credential = db.query(Credential).filter(
         Credential.id == credential_id,
-        Credential.organization_id == context.organization_id
+        or_(
+            Credential.user_id == current_user.id,
+            Credential.organization_id == current_user.current_organization_id
+        )
     ).first()
-    
+
     if not credential:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Credential not found"
         )
-    
+
     # Decrypt credentials
-    decrypted = decrypt_credentials(credential.encrypted_data)
-    
+    try:
+        decrypted = decrypt_credentials(credential.encrypted_data)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to decrypt credential: {type(e).__name__}. The credential may need to be re-created."
+        )
+
     try:
         if credential.type.value == "jira":
             # Make a test request to Jira API
@@ -534,15 +611,20 @@ async def test_credential(
             # Try the simplest endpoint first - get current user
             test_url = f"{server_url}/rest/api/3/myself"
             
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
                 # First try to get current user info (most reliable test)
-                response = await client.get(test_url, headers=headers, timeout=10.0)
+                response = await client.get(test_url, headers=headers)
                 
                 if response.status_code == 200:
-                    # Success! Now try to get some issues
+                    # Success! Now try to get some issues using POST /search/jql endpoint
                     user_data = response.json()
-                    search_url = f"{server_url}/rest/api/3/search?maxResults=5"
-                    search_response = await client.get(search_url, headers=headers, timeout=10.0)
+                    search_url = f"{server_url}/rest/api/3/search/jql"
+                    search_body = {
+                        "jql": "created >= -30d order by created desc",  # Search for issues created in last 30 days
+                        "maxResults": 5,
+                        "fields": ["summary", "status", "created", "key"]
+                    }
+                    search_response = await client.post(search_url, headers=headers, json=search_body, timeout=10.0)
                     
                     if search_response.status_code == 200:
                         search_data = search_response.json()
@@ -640,57 +722,203 @@ async def test_credential(
             }
                 
         elif credential.type.value in ["gemini", "openai", "anthropic"]:
-            # Test AI provider connection
-            from app.services.ai_service import AIServiceFactory, GenerationRequest
-            import asyncio
+            # Test AI provider connection with full request/response capture
+            import json
+            import logging
             
             try:
-                # Debug logging for API key
                 api_key = decrypted.get("api_key", "")
-                print(f"[Credential Test] Provider: {credential.type.value.lower()}")
-                print(f"[Credential Test] API key length: {len(api_key)}")
-                print(f"[Credential Test] API key first 10 chars: {api_key[:10] if len(api_key) >= 10 else 'too short'}")
-                print(f"[Credential Test] Model: {decrypted.get('model', 'default')}")
+                model = decrypted.get("model")
+                provider = credential.type.value.lower()
                 
-                # Create AI service instance
-                ai_service = AIServiceFactory.create(
-                    provider=credential.type.value.lower(),
-                    api_key=api_key,
-                    model=decrypted.get("model")
-                )
-                
-                # Create a simple test request
-                test_request = GenerationRequest(
-                    system_prompt="You are a helpful assistant.",
-                    user_prompt="Please respond with exactly: 'Connection successful'",
-                    max_tokens=20,
-                    temperature=0.1
-                )
-                
-                # Log the request details
-                request_info = {
-                    "provider": credential.type.value.lower(),
-                    "model": ai_service.get_model_name(),
-                    "prompt": test_request.user_prompt,
-                    "max_tokens": test_request.max_tokens,
-                    "temperature": test_request.temperature
-                }
-                
-                # Try to generate a response
-                response = await ai_service.generate(test_request)
-                
-                return {
-                    "success": True,
-                    "status_code": 200,
-                    "message": f"{credential.type.value.capitalize()} connection successful",
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "request": request_info,
-                    "response": {
-                        "model": response.model,
-                        "content": response.content[:100] if response.content else "",
-                        "finish_reason": response.finish_reason
+                # Prepare test request details
+                if provider == "anthropic":
+                    api_url = "https://api.anthropic.com/v1/messages"
+                    headers = {
+                        "Content-Type": "application/json",
+                        "anthropic-version": "2023-06-01",
+                        "x-api-key": api_key[:10] + "..." + api_key[-4:] if len(api_key) > 14 else "***"
                     }
-                }
+                    request_body = {
+                        "model": model or "claude-3-5-sonnet-20241022",
+                        "max_tokens": 20,
+                        "temperature": 0.1,
+                        "system": "You are a helpful assistant.",
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": "Please respond with exactly: 'Connection successful'"
+                            }
+                        ]
+                    }
+                elif provider == "gemini":
+                    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model or 'gemini-2.5-pro'}:generateContent"
+                    headers = {
+                        "Content-Type": "application/json",
+                        "x-goog-api-key": api_key[:10] + "..." + api_key[-4:] if len(api_key) > 14 else "***"
+                    }
+                    request_body = {
+                        "contents": [
+                            {
+                                "parts": [
+                                    {
+                                        "text": "You are a helpful assistant. Please respond with exactly: 'Connection successful'"
+                                    }
+                                ]
+                            }
+                        ],
+                        "generationConfig": {
+                            "temperature": 0.1,
+                            "maxOutputTokens": 20
+                        }
+                    }
+                elif provider == "openai":
+                    api_url = "https://api.openai.com/v1/chat/completions"
+                    headers = {
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {api_key[:10] + '...' + api_key[-4:] if len(api_key) > 14 else '***'}"
+                    }
+                    # Use max_completion_tokens for newer models, with max_tokens as fallback
+                    request_body = {
+                        "model": model or "gpt-4-turbo-preview",
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": "You are a helpful assistant."
+                            },
+                            {
+                                "role": "user",
+                                "content": "Please respond with exactly: 'Connection successful'"
+                            }
+                        ],
+                        "max_completion_tokens": 20  # Changed from max_tokens for compatibility with newer models
+                    }
+                else:
+                    api_url = "Unknown provider"
+                    headers = {}
+                    request_body = {}
+                
+                # Make the actual API call
+                async with httpx.AsyncClient() as client:
+                    # Build full headers for actual request (with real API key)
+                    real_headers = headers.copy()
+                    if provider == "anthropic":
+                        real_headers["x-api-key"] = api_key
+                    elif provider == "gemini":
+                        real_headers["x-goog-api-key"] = api_key
+                    elif provider == "openai":
+                        real_headers["Authorization"] = f"Bearer {api_key}"
+                    
+                    # Make request
+                    response = await client.post(
+                        api_url if provider != "gemini" else api_url + f"?key={api_key}",
+                        headers=real_headers if provider != "gemini" else {"Content-Type": "application/json"},
+                        json=request_body,
+                        timeout=30.0
+                    )
+                    
+                    # Handle OpenAI parameter compatibility issue
+                    if provider == "openai" and response.status_code == 400:
+                        error_text = response.text
+                        if "max_tokens" in error_text and "max_completion_tokens" in error_text:
+                            # Retry with max_tokens instead
+                            request_body["max_tokens"] = request_body.pop("max_completion_tokens")
+                            response = await client.post(
+                                api_url,
+                                headers=real_headers,
+                                json=request_body,
+                                timeout=30.0
+                            )
+                        elif "max_completion_tokens" in error_text and "max_tokens" in error_text:
+                            # This shouldn't happen since we use max_completion_tokens by default
+                            pass
+                    
+                    # Prepare response headers (sanitize sensitive data)
+                    response_headers = dict(response.headers)
+                    if "x-api-key" in response_headers:
+                        response_headers["x-api-key"] = "***"
+                    if "authorization" in response_headers:
+                        response_headers["authorization"] = "***"
+                    
+                    # Parse response
+                    try:
+                        response_data = response.json()
+                    except:
+                        response_data = {"text": response.text[:500] if response.text else "No response body"}
+                    
+                    # Special handling for Gemini 404 errors - list available models
+                    if provider == "gemini" and response.status_code == 404:
+                        try:
+                            import google.generativeai as genai
+                            genai.configure(api_key=api_key)
+                            
+                            # Get list of available models
+                            available_models = []
+                            for m in genai.list_models():
+                                if 'generateContent' in m.supported_generation_methods:
+                                    model_name = m.name
+                                    if model_name.startswith("models/"):
+                                        model_name = model_name[7:]  # Remove "models/" prefix
+                                    available_models.append(model_name)
+                            
+                            # Create helpful error message
+                            error_message = f"Model '{model or 'gemini-2.5-pro'}' not found. Available Gemini models: {', '.join(available_models)}"
+                            
+                            return {
+                                "success": False,
+                                "status_code": 404,
+                                "message": error_message,
+                                "timestamp": datetime.utcnow().isoformat(),
+                                "request": {
+                                    "url": api_url,
+                                    "method": "POST",
+                                    "headers": headers,  # Sanitized headers
+                                    "body": request_body
+                                },
+                                "response": {
+                                    "status_code": response.status_code,
+                                    "headers": response_headers,
+                                    "body": response_data,
+                                    "available_models": available_models
+                                }
+                            }
+                        except Exception as list_error:
+                            # If we can't list models, return original error with suggestion
+                            return {
+                                "success": False,
+                                "status_code": 404,
+                                "message": f"Model '{model or 'gemini-2.5-pro'}' not found. Try models like: gemini-1.5-pro, gemini-1.5-flash, gemini-pro",
+                                "timestamp": datetime.utcnow().isoformat(),
+                                "request": {
+                                    "url": api_url,
+                                    "method": "POST",
+                                    "headers": headers,  # Sanitized headers
+                                    "body": request_body
+                                },
+                                "response": {
+                                    "status_code": response.status_code,
+                                    "headers": response_headers,
+                                    "body": response_data
+                                }
+                            }
+                    
+                    return {
+                        "success": response.status_code == 200,
+                        "status_code": response.status_code,
+                        "message": f"{provider.capitalize()} connection {'successful' if response.status_code == 200 else 'failed'}",
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "request": {
+                            "url": api_url,
+                            "method": "POST",
+                            "headers": headers,  # Sanitized headers
+                            "body": request_body
+                        },
+                        "response": {
+                            "status_code": response.status_code,
+                            "headers": response_headers,
+                            "body": response_data if isinstance(response_data, dict) else {"text": str(response_data)[:500]}
+                        }
+                    }
             except Exception as e:
                 error_msg = str(e)
                 # Extract more specific error info if available
@@ -724,6 +952,38 @@ async def test_credential(
                 "timestamp": datetime.utcnow().isoformat()
             }
             
+    except httpx.ConnectError as e:
+        # Connection-specific errors
+        error_msg = str(e)
+        if "All connection attempts failed" in error_msg:
+            return {
+                "success": False,
+                "status_code": 503,
+                "message": "Unable to connect to the server. Please check the server URL and your network connection.",
+                "timestamp": datetime.utcnow().isoformat(),
+                "error_details": f"Connection failed: {error_msg}",
+                "troubleshooting": [
+                    "Verify the server URL is correct",
+                    "Check if the server is accessible from your network",
+                    "Ensure there are no firewall or proxy issues",
+                    "Try accessing the URL directly in a browser"
+                ]
+            }
+        return {
+            "success": False,
+            "status_code": 503,
+            "message": f"Connection error: {error_msg}",
+            "timestamp": datetime.utcnow().isoformat(),
+            "error_details": str(e)
+        }
+    except httpx.TimeoutException as e:
+        return {
+            "success": False,
+            "status_code": 504,
+            "message": "Connection timed out. The server took too long to respond.",
+            "timestamp": datetime.utcnow().isoformat(),
+            "error_details": str(e)
+        }
     except Exception as e:
         return {
             "success": False,

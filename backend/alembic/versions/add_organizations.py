@@ -1,126 +1,102 @@
-"""Add organizations for multi-tenancy support
+"""Add organizations and update credentials for organization-wide access
 
 Revision ID: add_organizations
-Revises: add_max_tickets
-Create Date: 2026-01-02
+Revises: 
+Create Date: 2024-01-04
 
 """
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
-import uuid
-
 
 # revision identifiers, used by Alembic.
 revision = 'add_organizations'
-down_revision = 'add_max_tickets'
+down_revision = None
 branch_labels = None
 depends_on = None
 
 
 def upgrade():
     # Create organizations table
-    op.create_table(
-        'organizations',
-        sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True, default=uuid.uuid4),
-        sa.Column('name', sa.String(255), nullable=False, unique=True),
-        sa.Column('slug', sa.String(255), nullable=False, unique=True),
-        sa.Column('settings', sa.JSON(), nullable=True, server_default='{}'),
+    op.create_table('organizations',
+        sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column('name', sa.String(255), nullable=False),
+        sa.Column('slug', sa.String(255), nullable=False),
+        sa.Column('is_active', sa.Boolean(), default=True),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
-        sa.Column('updated_at', sa.DateTime(timezone=True), onupdate=sa.func.now())
+        sa.Column('updated_at', sa.DateTime(timezone=True), onupdate=sa.func.now()),
+        sa.PrimaryKeyConstraint('id'),
+        sa.UniqueConstraint('slug')
     )
     
-    # Create index on slug for faster lookups
-    op.create_index('ix_organizations_name', 'organizations', ['name'])
-    op.create_index('ix_organizations_slug', 'organizations', ['slug'])
-    
-    # Create organization_members table
-    op.create_table(
-        'organization_members',
-        sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True, default=uuid.uuid4),
-        sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=False),
+    # Create user_organizations association table
+    op.create_table('user_organizations',
         sa.Column('user_id', postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column('role', sa.Enum('admin', 'member', name='organizationrole'), nullable=False, server_default='member'),
-        sa.Column('invited_by', postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column('joined_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
-        sa.ForeignKeyConstraint(['organization_id'], ['organizations.id'], ondelete='CASCADE'),
-        sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
-        sa.ForeignKeyConstraint(['invited_by'], ['users.id']),
-        sa.UniqueConstraint('organization_id', 'user_id', name='unique_org_member')
-    )
-    
-    # Create organization_invitations table
-    op.create_table(
-        'organization_invitations',
-        sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True, default=uuid.uuid4),
         sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column('email', sa.String(255), nullable=False),
-        sa.Column('role', sa.Enum('admin', 'member', name='organizationrole'), nullable=False, server_default='member'),
-        sa.Column('token', sa.String(255), nullable=False, unique=True),
-        sa.Column('invited_by', postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column('expires_at', sa.DateTime(timezone=True), nullable=False),
-        sa.Column('accepted_at', sa.DateTime(timezone=True), nullable=True),
-        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column('role', sa.String(50), default='member'),
+        sa.Column('joined_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['organization_id'], ['organizations.id'], ondelete='CASCADE'),
-        sa.ForeignKeyConstraint(['invited_by'], ['users.id'])
+        sa.PrimaryKeyConstraint('user_id', 'organization_id')
     )
     
-    # Create index on invitation token for faster lookups
-    op.create_index('ix_organization_invitations_token', 'organization_invitations', ['token'])
+    # Add current_organization_id to users table
+    op.add_column('users', sa.Column('current_organization_id', postgresql.UUID(as_uuid=True), nullable=True))
+    op.create_foreign_key('fk_users_current_org', 'users', 'organizations', ['current_organization_id'], ['id'])
     
-    # Add organization_id to existing tables (nullable for migration)
+    # Add organization_id and created_by to credentials table
     op.add_column('credentials', sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=True))
-    op.add_column('instruction_sets', sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=True))
-    op.add_column('jobs', sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=True))
-    op.add_column('webhook_configs', sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=True))
-    op.add_column('dita_templates', sa.Column('organization_id', postgresql.UUID(as_uuid=True), nullable=True))
+    op.add_column('credentials', sa.Column('created_by', sa.String(255), nullable=True))
     
-    # Add foreign key constraints for organization_id
-    op.create_foreign_key('fk_credentials_organization', 'credentials', 'organizations', ['organization_id'], ['id'], ondelete='CASCADE')
-    op.create_foreign_key('fk_instruction_sets_organization', 'instruction_sets', 'organizations', ['organization_id'], ['id'], ondelete='CASCADE')
-    op.create_foreign_key('fk_jobs_organization', 'jobs', 'organizations', ['organization_id'], ['id'], ondelete='CASCADE')
-    op.create_foreign_key('fk_webhook_configs_organization', 'webhook_configs', 'organizations', ['organization_id'], ['id'], ondelete='CASCADE')
-    op.create_foreign_key('fk_dita_templates_organization', 'dita_templates', 'organizations', ['organization_id'], ['id'], ondelete='CASCADE')
+    # Create a default organization for existing data
+    op.execute("""
+        INSERT INTO organizations (id, name, slug, is_active)
+        VALUES ('00000000-0000-0000-0000-000000000001', 'Default Organization', 'default', true)
+    """)
     
-    # Create indexes for organization_id for faster queries
-    op.create_index('ix_credentials_organization_id', 'credentials', ['organization_id'])
-    op.create_index('ix_instruction_sets_organization_id', 'instruction_sets', ['organization_id'])
-    op.create_index('ix_jobs_organization_id', 'jobs', ['organization_id'])
-    op.create_index('ix_webhook_configs_organization_id', 'webhook_configs', ['organization_id'])
-    op.create_index('ix_dita_templates_organization_id', 'dita_templates', ['organization_id'])
+    # Associate all existing users with the default organization
+    op.execute("""
+        INSERT INTO user_organizations (user_id, organization_id, role)
+        SELECT id, '00000000-0000-0000-0000-000000000001', 'member'
+        FROM users
+    """)
+    
+    # Update existing users to have the default organization as current
+    op.execute("""
+        UPDATE users 
+        SET current_organization_id = '00000000-0000-0000-0000-000000000001'
+    """)
+    
+    # Update existing credentials to belong to the default organization
+    op.execute("""
+        UPDATE credentials 
+        SET organization_id = '00000000-0000-0000-0000-000000000001',
+            created_by = (SELECT email FROM users WHERE users.id = credentials.user_id)
+    """)
+    
+    # Now make organization_id NOT NULL
+    op.alter_column('credentials', 'organization_id', nullable=False)
+    
+    # Add foreign key constraint
+    op.create_foreign_key('fk_credentials_org', 'credentials', 'organizations', ['organization_id'], ['id'], ondelete='CASCADE')
+    
+    # Make user_id nullable (since credentials are org-owned, not user-owned)
+    op.alter_column('credentials', 'user_id', nullable=True)
 
 
 def downgrade():
-    # Drop indexes on organization_id columns
-    op.drop_index('ix_dita_templates_organization_id', 'dita_templates')
-    op.drop_index('ix_webhook_configs_organization_id', 'webhook_configs')
-    op.drop_index('ix_jobs_organization_id', 'jobs')
-    op.drop_index('ix_instruction_sets_organization_id', 'instruction_sets')
-    op.drop_index('ix_credentials_organization_id', 'credentials')
+    # Remove foreign key constraints
+    op.drop_constraint('fk_credentials_org', 'credentials', type_='foreignkey')
+    op.drop_constraint('fk_users_current_org', 'users', type_='foreignkey')
     
-    # Drop foreign key constraints
-    op.drop_constraint('fk_dita_templates_organization', 'dita_templates', type_='foreignkey')
-    op.drop_constraint('fk_webhook_configs_organization', 'webhook_configs', type_='foreignkey')
-    op.drop_constraint('fk_jobs_organization', 'jobs', type_='foreignkey')
-    op.drop_constraint('fk_instruction_sets_organization', 'instruction_sets', type_='foreignkey')
-    op.drop_constraint('fk_credentials_organization', 'credentials', type_='foreignkey')
+    # Make user_id NOT NULL again
+    op.alter_column('credentials', 'user_id', nullable=False)
     
-    # Drop organization_id columns from existing tables
-    op.drop_column('dita_templates', 'organization_id')
-    op.drop_column('webhook_configs', 'organization_id')
-    op.drop_column('jobs', 'organization_id')
-    op.drop_column('instruction_sets', 'organization_id')
+    # Remove columns
+    op.drop_column('credentials', 'created_by')
     op.drop_column('credentials', 'organization_id')
+    op.drop_column('users', 'current_organization_id')
     
-    # Drop organization tables
-    op.drop_index('ix_organization_invitations_token', 'organization_invitations')
-    op.drop_table('organization_invitations')
-    op.drop_table('organization_members')
-    
-    # Drop indexes and the organizations table
-    op.drop_index('ix_organizations_slug', 'organizations')
-    op.drop_index('ix_organizations_name', 'organizations')
+    # Drop tables
+    op.drop_table('user_organizations')
     op.drop_table('organizations')
-    
-    # Drop the enum type
-    op.execute('DROP TYPE IF EXISTS organizationrole')

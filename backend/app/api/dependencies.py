@@ -3,8 +3,8 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from typing import Optional
 
-from app.models.database import get_db, User
-from app.models.organization import Organization, OrganizationMember, OrganizationRole
+from app.models.database import get_db, User, user_organizations
+from app.models.organization import Organization, OrganizationRole
 from app.core.security import decode_token
 from app.core.exceptions import AuthenticationError
 from dataclasses import dataclass
@@ -84,19 +84,23 @@ async def get_current_user_context(
         
         if org_id:
             # Verify user is member of this organization
-            membership = db.query(OrganizationMember).filter(
-                OrganizationMember.user_id == user.id,
-                OrganizationMember.organization_id == org_id
-            ).first()
+            from sqlalchemy import select
+            stmt = select(user_organizations).where(
+                user_organizations.c.user_id == user.id,
+                user_organizations.c.organization_id == org_id
+            )
+            membership = db.execute(stmt).first()
             
             if membership:
                 org = db.query(Organization).filter(Organization.id == org_id).first()
                 org_role = membership.role
         else:
             # Get user's first organization as default
-            membership = db.query(OrganizationMember).filter(
-                OrganizationMember.user_id == user.id
-            ).first()
+            from sqlalchemy import select
+            stmt = select(user_organizations).where(
+                user_organizations.c.user_id == user.id
+            )
+            membership = db.execute(stmt).first()
             
             if membership:
                 org_id = membership.organization_id

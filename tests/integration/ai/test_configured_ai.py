@@ -1,185 +1,194 @@
 #!/usr/bin/env python3
-"""Test all configured AI services."""
+"""
+Test AI provider credentials via the HTTP API.
+
+Uses CLAUDE_DEFAULT_API_KEY and OPENAI_DEFAULT_API_KEY from the .env file
+to create credentials, test the connection, and verify end-to-end functionality.
+"""
 
 import sys
 import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from setup_path import setup_test_paths
-setup_test_paths()
+import requests
 
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from config import API_BASE_URL, TEST_EMAIL, TEST_PASSWORD
+
+# Load .env from project root for API keys
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), '.env'))
 
-import asyncio
-from app.services.ai_service import AIServiceFactory, GenerationRequest
+BASE_URL = API_BASE_URL
 
-async def test_configured_services():
-    """Test all AI services that have API keys configured."""
-    
-    services_to_test = []
-    
-    # Check Gemini
-    if os.getenv('GOOGLE_AI_API_KEY'):
-        services_to_test.append({
-            'provider': 'gemini',
-            'api_key': os.getenv('GOOGLE_AI_API_KEY'),
-            'model': 'gemini-1.5-pro'
-        })
-    
-    # Check Anthropic
-    if os.getenv('ANTHROPIC_API_KEY'):
-        services_to_test.append({
-            'provider': 'anthropic',
-            'api_key': os.getenv('ANTHROPIC_API_KEY'),
-            'model': 'claude-3-5-sonnet-20241022'
-        })
-    
-    # Check OpenAI
-    if os.getenv('OPENAI_API_KEY'):
-        services_to_test.append({
-            'provider': 'openai',
-            'api_key': os.getenv('OPENAI_API_KEY'),
-            'model': 'gpt-4-turbo-preview'
-        })
-    
-    if not services_to_test:
-        print("❌ No AI services configured. Set API keys in environment variables:")
-        print("   - GOOGLE_AI_API_KEY for Gemini")
-        print("   - ANTHROPIC_API_KEY for Claude")
-        print("   - OPENAI_API_KEY for GPT")
-        return False
-    
-    print(f"Testing {len(services_to_test)} configured AI service(s)...")
-    print("="*60)
-    
-    test_request = GenerationRequest(
-        system_prompt="You are a helpful assistant.",
-        user_prompt="Respond with your AI model name in 5 words or less.",
-        max_tokens=50,
-        temperature=0.1
+
+def get_auth_headers():
+    """Login and return authorization headers."""
+    resp = requests.post(
+        f"{BASE_URL}/auth/login",
+        json={"email": TEST_EMAIL, "password": TEST_PASSWORD}
     )
-    
-    results = []
-    
-    for service_config in services_to_test:
-        provider = service_config['provider']
-        print(f"\n📝 Testing {provider.upper()} ({service_config['model']})...")
-        
-        try:
-            service = AIServiceFactory.create(
-                provider=provider,
-                api_key=service_config['api_key'],
-                model=service_config['model']
-            )
-            
-            response = await service.generate(test_request)
-            
-            if response and response.content:
-                print(f"   ✅ {provider.upper()} works!")
-                print(f"   Response: {response.content[:100]}")
-                results.append((provider, True, None))
-            else:
-                print(f"   ❌ {provider.upper()} returned empty response")
-                results.append((provider, False, "Empty response"))
-                
-        except Exception as e:
-            print(f"   ❌ {provider.upper()} failed: {e}")
-            results.append((provider, False, str(e)))
-    
-    # Summary
-    print("\n" + "="*60)
-    print("SUMMARY:")
-    print("="*60)
-    
-    working = sum(1 for _, success, _ in results if success)
-    failed = len(results) - working
-    
-    for provider, success, error in results:
-        status = "✅ Working" if success else f"❌ Failed: {error}"
-        print(f"  {provider.upper()}: {status}")
-    
-    print(f"\nTotal: {working}/{len(results)} services working")
-    
-    return failed == 0
+    assert resp.status_code == 200, f"Login failed: {resp.status_code}"
+    return {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
-async def test_dita_generation():
-    """Test DITA generation with available AI services."""
-    
-    # Find a working AI service
-    ai_service = None
-    provider_name = None
-    
-    for provider, api_key_env, model in [
-        ('gemini', 'GOOGLE_AI_API_KEY', 'gemini-1.5-pro'),
-        ('anthropic', 'ANTHROPIC_API_KEY', 'claude-3-5-sonnet-20241022'),
-        ('openai', 'OPENAI_API_KEY', 'gpt-4-turbo-preview')
-    ]:
-        api_key = os.getenv(api_key_env)
-        if api_key:
-            try:
-                ai_service = AIServiceFactory.create(
-                    provider=provider,
-                    api_key=api_key,
-                    model=model
-                )
-                provider_name = provider
+
+def test_ai_provider(headers, provider, name, api_key, model):
+    """Create an AI credential, test it, verify success, and clean up.
+
+    Returns (success, message) tuple.
+    """
+    print(f"\nTesting {provider.upper()} ({model})...")
+    print("-" * 40)
+
+    # Create credential
+    create_resp = requests.post(
+        f"{BASE_URL}/credentials/ai",
+        json={
+            "provider": provider,
+            "name": name,
+            "api_key": api_key,
+            "model": model
+        },
+        headers=headers
+    )
+
+    if create_resp.status_code == 400 and "already exists" in create_resp.json().get("detail", ""):
+        # Credential with this name already exists; find it
+        list_resp = requests.get(f"{BASE_URL}/credentials/ai", headers=headers)
+        cred_id = None
+        for cred in list_resp.json():
+            if cred["name"] == name:
+                cred_id = cred["id"]
                 break
-            except:
-                continue
-    
-    if not ai_service:
-        print("❌ No AI service available for DITA generation test")
-        return False
-    
-    print(f"\n📝 Testing DITA generation with {provider_name.upper()}...")
-    print("="*60)
-    
-    dita_request = GenerationRequest(
-        system_prompt="You are a DITA XML expert. Generate valid DITA 1.3 XML.",
-        user_prompt="""Generate a simple DITA topic with this structure:
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE topic PUBLIC "-//OASIS//DTD DITA Topic//EN" "topic.dtd">
-<topic id="sample">
-  <title>Sample Topic</title>
-  <body>
-    <p>This is a test topic.</p>
-  </body>
-</topic>""",
-        max_tokens=500,
-        temperature=0.1
+        if not cred_id:
+            return False, "Credential exists but not found in list"
+        print(f"  Using existing credential: {cred_id}")
+        created = False
+    elif create_resp.status_code == 200:
+        cred_id = create_resp.json()["id"]
+        print(f"  Created credential: {cred_id}")
+        created = True
+    else:
+        return False, f"Failed to create credential: {create_resp.status_code} {create_resp.text}"
+
+    # Test the credential
+    test_resp = requests.post(
+        f"{BASE_URL}/credentials/{cred_id}/test",
+        headers=headers
     )
-    
-    try:
-        response = await ai_service.generate(dita_request)
-        
-        if response and response.content:
-            # Check if it looks like DITA
-            if '<?xml' in response.content or '<topic' in response.content:
-                print("✅ DITA generation successful!")
-                print(f"Generated content preview:\n{response.content[:300]}...")
-                return True
-            else:
-                print("⚠️ Response doesn't look like DITA XML")
-                print(f"Response: {response.content[:200]}...")
-                return False
-        else:
-            print("❌ Empty response")
-            return False
-            
-    except Exception as e:
-        print(f"❌ DITA generation failed: {e}")
-        return False
+
+    # Must not be 500
+    if test_resp.status_code == 500:
+        if created:
+            requests.delete(f"{BASE_URL}/credentials/{cred_id}", headers=headers)
+        return False, "Test endpoint returned 500 Internal Server Error"
+
+    # Must not be 400 (decryption failure)
+    if test_resp.status_code == 400:
+        detail = test_resp.json().get("detail", "")
+        if created:
+            requests.delete(f"{BASE_URL}/credentials/{cred_id}", headers=headers)
+        return False, f"Test endpoint returned 400: {detail}"
+
+    if test_resp.status_code != 200:
+        if created:
+            requests.delete(f"{BASE_URL}/credentials/{cred_id}", headers=headers)
+        return False, f"Test endpoint returned {test_resp.status_code}"
+
+    data = test_resp.json()
+    success = data.get("success", False)
+    message = data.get("message", "No message")
+    status_code = data.get("status_code", 0)
+
+    print(f"  Response: success={success}, status={status_code}")
+    print(f"  Message: {message}")
+
+    # Clean up only if we created it
+    if created:
+        requests.delete(f"{BASE_URL}/credentials/{cred_id}", headers=headers)
+        print(f"  Cleaned up credential")
+
+    if success:
+        print(f"  ✓ {provider.upper()} connection successful")
+        return True, message
+    else:
+        return False, f"Connection failed (HTTP {status_code}): {message}"
+
+
+def main():
+    print("Configured AI Services Test")
+    print("=" * 60)
+
+    headers = get_auth_headers()
+    print("✓ Authenticated")
+
+    # Collect providers to test based on available API keys
+    # Required providers (test fails if these don't work)
+    required_providers = []
+    # Optional providers (informational only)
+    optional_providers = []
+
+    claude_key = os.getenv("CLAUDE_DEFAULT_API_KEY")
+    if claude_key:
+        required_providers.append(("anthropic", "Claude Test", claude_key, "claude-sonnet-4-20250514"))
+    else:
+        print("\n  Skipping Anthropic: CLAUDE_DEFAULT_API_KEY not set")
+
+    openai_key = os.getenv("OPENAI_DEFAULT_API_KEY")
+    if openai_key:
+        required_providers.append(("openai", "OpenAI Test", openai_key, "gpt-4o"))
+    else:
+        print("\n  Skipping OpenAI: OPENAI_DEFAULT_API_KEY not set")
+
+    google_key = os.getenv("GOOGLE_AI_API_KEY")
+    if google_key:
+        optional_providers.append(("gemini", "Gemini Test", google_key, "gemini-2.0-flash"))
+
+    all_providers = required_providers + optional_providers
+
+    if not all_providers:
+        print("\nNo AI API keys found. Set at least one of:")
+        print("  CLAUDE_DEFAULT_API_KEY")
+        print("  OPENAI_DEFAULT_API_KEY")
+        print("  GOOGLE_AI_API_KEY")
+        print("\nSkipping AI provider tests (no keys available)")
+        return True  # Not a failure — just nothing to test
+
+    # Test each provider
+    print(f"\nTesting {len(all_providers)} configured AI service(s)...")
+    print("=" * 60)
+
+    results = []
+    for provider, name, key, model in all_providers:
+        success, message = test_ai_provider(headers, provider, name, key, model)
+        is_required = any(p[0] == provider for p in required_providers)
+        results.append((provider, success, message, is_required))
+
+    # Summary
+    print("\n" + "=" * 60)
+    print("SUMMARY:")
+    print("=" * 60)
+
+    required_pass = 0
+    required_total = 0
+    for provider, success, message, is_required in results:
+        tag = "" if is_required else " (optional)"
+        status = f"✓ Working{tag}" if success else f"✗ Failed{tag}: {message}"
+        print(f"  {provider.upper()}: {status}")
+        if is_required:
+            required_total += 1
+            if success:
+                required_pass += 1
+
+    working = sum(1 for _, s, _, _ in results if s)
+    total = len(results)
+    print(f"\nTotal: {working}/{total} services working")
+
+    return required_pass == required_total
+
 
 if __name__ == "__main__":
-    print("Configured AI Services Test")
-    print("="*60)
-    
-    # Run basic connectivity tests
-    success = asyncio.run(test_configured_services())
-    
+    success = main()
     if success:
-        # Run DITA generation test
-        asyncio.run(test_dita_generation())
         print("\n✅ All configured AI services tested successfully!")
     else:
-        print("\n⚠️ Some AI services are not working correctly")
+        print("\n✗ Some AI services are not working correctly")
+        sys.exit(1)

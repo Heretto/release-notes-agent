@@ -44,9 +44,8 @@ class AIServiceFactory:
         elif provider == "anthropic":
             from app.services.anthropic_adapter import AnthropicAdapter
             return AnthropicAdapter(api_key=api_key, model_name=model or "claude-3-5-sonnet-20241022")
-        # Future providers can be added here
-        # elif provider == "openai":
-        #     from app.services.openai_adapter import OpenAIAdapter
-        #     return OpenAIAdapter(api_key=api_key, model_name=model or "gpt-4")
+        elif provider == "openai":
+            from app.services.openai_adapter import OpenAIAdapter
+            return OpenAIAdapter(api_key=api_key, model_name=model or "gpt-4-turbo-preview")
         else:
             raise ValueError(f"Unknown AI provider: {provider}")

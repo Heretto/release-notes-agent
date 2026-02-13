@@ -103,19 +103,6 @@ import { TestResultsDialogComponent } from './test-results-dialog.component';
               </div>
             </mat-tab>
             
-            <mat-tab label="Heretto">
-              <div class="tab-content">
-                <div class="header-row">
-                  <h3>Heretto CCMS Credentials</h3>
-                  <button mat-raised-button color="primary" (click)="addHerettoCredential()">
-                    <mat-icon>add</mat-icon>
-                    Add Heretto Credentials
-                  </button>
-                </div>
-                <p class="no-data">No Heretto credentials configured.</p>
-              </div>
-            </mat-tab>
-            
             <mat-tab label="AI Providers">
               <div class="tab-content">
                 <div class="header-row">
@@ -181,6 +168,20 @@ import { TestResultsDialogComponent } from './test-results-dialog.component';
                 </p>
               </div>
             </mat-tab>
+            
+            <mat-tab label="Heretto">
+              <div class="tab-content">
+                <div class="header-row">
+                  <h3>Heretto CCMS Credentials</h3>
+                  <button mat-raised-button color="primary" (click)="addHerettoCredential()">
+                    <mat-icon>add</mat-icon>
+                    Add Heretto Credentials
+                  </button>
+                </div>
+                <p class="no-data">No Heretto credentials configured.</p>
+              </div>
+            </mat-tab>
+            
           </mat-tab-group>
         </mat-card-content>
       </mat-card>
@@ -283,7 +284,8 @@ export class CredentialsComponent implements OnInit {
       if (result) {
         this.credentialsService.createJiraCredential(result).subscribe({
           next: (credential) => {
-            this.jiraCredentials.push(credential);
+            // Create a new array reference to trigger change detection
+            this.jiraCredentials = [...this.jiraCredentials, credential];
             this.snackBar.open('Jira credential added successfully', 'Close', {
               duration: 3000
             });
@@ -311,7 +313,12 @@ export class CredentialsComponent implements OnInit {
           next: (updated) => {
             const index = this.jiraCredentials.findIndex(c => c.id === credential.id);
             if (index >= 0) {
-              this.jiraCredentials[index] = updated;
+              // Create a new array reference to trigger change detection
+              this.jiraCredentials = [
+                ...this.jiraCredentials.slice(0, index),
+                updated,
+                ...this.jiraCredentials.slice(index + 1)
+              ];
             }
             this.snackBar.open('Jira credential updated successfully', 'Close', {
               duration: 3000
@@ -414,7 +421,8 @@ export class CredentialsComponent implements OnInit {
       if (result) {
         this.credentialsService.createAICredential(result).subscribe({
           next: (credential) => {
-            this.aiCredentials.push(credential);
+            // Create a new array reference to trigger change detection
+            this.aiCredentials = [...this.aiCredentials, credential];
             this.snackBar.open('AI credential added successfully', 'Close', {
               duration: 3000
             });
@@ -445,7 +453,12 @@ export class CredentialsComponent implements OnInit {
               next: (updated) => {
                 const index = this.aiCredentials.findIndex(c => c.id === credential.id);
                 if (index >= 0) {
-                  this.aiCredentials[index] = updated;
+                  // Create a new array reference to trigger change detection
+                  this.aiCredentials = [
+                    ...this.aiCredentials.slice(0, index),
+                    updated,
+                    ...this.aiCredentials.slice(index + 1)
+                  ];
                 }
                 this.snackBar.open('AI credential updated successfully', 'Close', {
                   duration: 3000
@@ -532,7 +545,6 @@ export class CredentialsComponent implements OnInit {
       'anthropic': 'Anthropic',
       'gemini': 'Google AI',
       'google': 'Google AI',
-      'azure': 'Azure OpenAI',
       'custom': 'Custom'
     };
     return providerMap[provider] || provider;
