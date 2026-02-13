@@ -398,13 +398,9 @@ export class JobsComponent implements OnInit, OnDestroy {
           return;
         }
 
-        // Get default or first instruction set
-        const defaultInstruction = instructions.find(i => i.is_default) || instructions[0];
-        console.log('Using instruction:', defaultInstruction);
-        
         const dialogRef = this.dialog.open(JobCreateDialogComponent, {
           width: '600px',
-          data: defaultInstruction
+          data: { instructionSets: instructions }
         });
 
         dialogRef.afterClosed().subscribe(jobData => {
