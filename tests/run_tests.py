@@ -102,6 +102,7 @@ class TestRunner:
             # Integration Tests  
             ("integration/test_jira_v3.py", "JIRA API v3 Integration"),
             ("integration/test_jira_final.py", "JIRA Final Integration"),
+            ("integration/test_heretto.py", "Heretto CCMS Integration"),
             ("integration/ai/test_configured_ai.py", "Configured AI Services"),
             ("integration/test_job_execution.py", "Job Execution"),
             ("integration/test_dita_validation_e2e.py", "DITA Validation End-to-End"),
