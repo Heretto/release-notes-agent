@@ -65,8 +65,9 @@ class JiraCredentials(BaseModel):
     api_token: str
 
 class HerettoCredentials(BaseModel):
-    api_key: str
-    organization_id: str
+    server_url: str
+    username: str
+    token: str
 
 class AICredentials(BaseModel):
     api_key: str
@@ -104,6 +105,19 @@ class JiraCredentialResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class HerettoCredentialResponse(BaseModel):
+    id: UUID
+    type: CredentialTypeEnum
+    name: str
+    server_url: str
+    username: str
+    token: str
+    created_at: datetime
+    updated_at: Optional[datetime]
+
+    class Config:
+        from_attributes = True
+
 # Instruction set schemas
 class InstructionSetBase(BaseModel):
     name: str
@@ -112,6 +126,8 @@ class InstructionSetBase(BaseModel):
     system_prompt: str
     user_instructions: Optional[str] = None
     dita_template_id: Optional[UUID] = None
+    heretto_folder_id: Optional[str] = None
+    publish_to_heretto: bool = False
     is_default: bool = False
 
 class InstructionSetCreate(InstructionSetBase):
@@ -124,6 +140,8 @@ class InstructionSetUpdate(BaseModel):
     system_prompt: Optional[str] = None
     user_instructions: Optional[str] = None
     dita_template_id: Optional[UUID] = None
+    heretto_folder_id: Optional[str] = None
+    publish_to_heretto: Optional[bool] = None
     is_default: Optional[bool] = None
 
 class InstructionSetResponse(InstructionSetBase):

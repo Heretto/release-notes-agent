@@ -15,6 +15,7 @@ import {
   AICredential 
 } from '../../core/services/credentials.service';
 import { JiraCredentialDialogComponent } from './jira-credential-dialog.component';
+import { HerettoCredentialDialogComponent } from './heretto-credential-dialog.component';
 import { AICredentialDialogComponent } from './ai-credential-dialog.component';
 import { TestResultsDialogComponent } from './test-results-dialog.component';
 
@@ -178,7 +179,64 @@ import { TestResultsDialogComponent } from './test-results-dialog.component';
                     Add Heretto Credentials
                   </button>
                 </div>
-                <p class="no-data">No Heretto credentials configured.</p>
+
+                <div *ngIf="loadingHeretto" class="loading-container">
+                  <mat-spinner></mat-spinner>
+                </div>
+
+                <table mat-table [dataSource]="herettoCredentials" class="full-width" *ngIf="!loadingHeretto && herettoCredentials.length > 0">
+                  <ng-container matColumnDef="name">
+                    <th mat-header-cell *matHeaderCellDef>Name</th>
+                    <td mat-cell *matCellDef="let element">{{ element.name }}</td>
+                  </ng-container>
+
+                  <ng-container matColumnDef="server_url">
+                    <th mat-header-cell *matHeaderCellDef>Server URL</th>
+                    <td mat-cell *matCellDef="let element">{{ element.server_url }}</td>
+                  </ng-container>
+
+                  <ng-container matColumnDef="username">
+                    <th mat-header-cell *matHeaderCellDef>Username</th>
+                    <td mat-cell *matCellDef="let element">{{ element.username }}</td>
+                  </ng-container>
+
+                  <ng-container matColumnDef="actions">
+                    <th mat-header-cell *matHeaderCellDef>Actions</th>
+                    <td mat-cell *matCellDef="let element">
+                      <button mat-icon-button color="accent"
+                              (click)="testHerettoCredential(element)"
+                              matTooltip="Test Connection"
+                              [disabled]="testingCredential === element.id">
+                        <mat-icon *ngIf="testingCredential !== element.id">speed</mat-icon>
+                        <mat-spinner *ngIf="testingCredential === element.id"
+                                     diameter="20"></mat-spinner>
+                      </button>
+                      <button mat-icon-button color="accent"
+                              (click)="testHerettoUpload(element)"
+                              matTooltip="Test File Upload"
+                              [disabled]="testingCredential === element.id">
+                        <mat-icon>cloud_upload</mat-icon>
+                      </button>
+                      <button mat-icon-button color="primary"
+                              (click)="editHerettoCredential(element)"
+                              matTooltip="Edit">
+                        <mat-icon>edit</mat-icon>
+                      </button>
+                      <button mat-icon-button color="warn"
+                              (click)="deleteHerettoCredential(element)"
+                              matTooltip="Delete">
+                        <mat-icon>delete</mat-icon>
+                      </button>
+                    </td>
+                  </ng-container>
+
+                  <tr mat-header-row *matHeaderRowDef="herettoColumns"></tr>
+                  <tr mat-row *matRowDef="let row; columns: herettoColumns;"></tr>
+                </table>
+
+                <p *ngIf="herettoCredentials.length === 0 && !loadingHeretto" class="no-data">
+                  No Heretto credentials configured. Click "Add Heretto Credentials" to get started.
+                </p>
               </div>
             </mat-tab>
             
@@ -253,10 +311,12 @@ export class CredentialsComponent implements OnInit {
   testingCredential: string | null = null;
 
   jiraColumns: string[] = ['name', 'server_url', 'email', 'actions'];
+  herettoColumns: string[] = ['name', 'server_url', 'username', 'actions'];
   aiColumns: string[] = ['name', 'provider', 'model', 'actions'];
 
   ngOnInit() {
     this.loadJiraCredentials();
+    this.loadHerettoCredentials();
     this.loadAICredentials();
   }
 
@@ -391,9 +451,166 @@ export class CredentialsComponent implements OnInit {
     });
   }
 
+  loadHerettoCredentials() {
+    this.loadingHeretto = true;
+    this.credentialsService.getHerettoCredentials().subscribe({
+      next: (credentials) => {
+        this.herettoCredentials = credentials;
+        this.loadingHeretto = false;
+      },
+      error: (error) => {
+        console.error('Failed to load Heretto credentials:', error);
+        this.loadingHeretto = false;
+      }
+    });
+  }
+
   addHerettoCredential() {
-    this.snackBar.open('Heretto credential dialog coming soon', 'Close', {
-      duration: 3000
+    const dialogRef = this.dialog.open(HerettoCredentialDialogComponent, {
+      width: '500px',
+      data: null
+    });
+
+    dialogRef.afterClosed().subscribe(result => {
+      if (result) {
+        this.credentialsService.createHerettoCredential(result).subscribe({
+          next: (credential) => {
+            this.herettoCredentials = [...this.herettoCredentials, credential];
+            this.snackBar.open('Heretto credential added successfully', 'Close', {
+              duration: 3000
+            });
+          },
+          error: (error) => {
+            this.snackBar.open('Failed to add Heretto credential', 'Close', {
+              duration: 3000
+            });
+            console.error('Error adding credential:', error);
+          }
+        });
+      }
+    });
+  }
+
+  editHerettoCredential(credential: HerettoCredential) {
+    const dialogRef = this.dialog.open(HerettoCredentialDialogComponent, {
+      width: '500px',
+      data: credential
+    });
+
+    dialogRef.afterClosed().subscribe(result => {
+      if (result && credential.id) {
+        this.credentialsService.updateHerettoCredential(credential.id, result).subscribe({
+          next: (updated) => {
+            const index = this.herettoCredentials.findIndex(c => c.id === credential.id);
+            if (index >= 0) {
+              this.herettoCredentials = [
+                ...this.herettoCredentials.slice(0, index),
+                updated,
+                ...this.herettoCredentials.slice(index + 1)
+              ];
+            }
+            this.snackBar.open('Heretto credential updated successfully', 'Close', {
+              duration: 3000
+            });
+          },
+          error: (error) => {
+            this.snackBar.open('Failed to update Heretto credential', 'Close', {
+              duration: 3000
+            });
+            console.error('Error updating credential:', error);
+          }
+        });
+      }
+    });
+  }
+
+  deleteHerettoCredential(credential: HerettoCredential) {
+    if (credential.id && confirm(`Are you sure you want to delete "${credential.name}"?`)) {
+      this.credentialsService.deleteHerettoCredential(credential.id).subscribe({
+        next: () => {
+          this.herettoCredentials = this.herettoCredentials.filter(c => c.id !== credential.id);
+          this.snackBar.open('Heretto credential deleted successfully', 'Close', {
+            duration: 3000
+          });
+        },
+        error: (error) => {
+          this.snackBar.open('Failed to delete Heretto credential', 'Close', {
+            duration: 3000
+          });
+          console.error('Error deleting credential:', error);
+        }
+      });
+    }
+  }
+
+  testHerettoCredential(credential: HerettoCredential) {
+    if (!credential.id) {
+      this.snackBar.open('Invalid credential ID', 'Close', { duration: 3000 });
+      return;
+    }
+
+    this.testingCredential = credential.id;
+    this.credentialsService.testCredential(credential.id).subscribe({
+      next: (result) => {
+        this.testingCredential = null;
+        this.dialog.open(TestResultsDialogComponent, {
+          width: '700px',
+          maxHeight: '80vh',
+          data: result
+        });
+      },
+      error: (error) => {
+        this.testingCredential = null;
+        this.dialog.open(TestResultsDialogComponent, {
+          width: '700px',
+          maxHeight: '80vh',
+          data: {
+            success: false,
+            status_code: error.status || 500,
+            message: 'Failed to test Heretto credential',
+            error_details: error.message || 'Unknown error occurred',
+            timestamp: new Date().toISOString()
+          }
+        });
+      }
+    });
+  }
+
+  testHerettoUpload(credential: HerettoCredential) {
+    if (!credential.id) {
+      this.snackBar.open('Invalid credential ID', 'Close', { duration: 3000 });
+      return;
+    }
+
+    const folderId = prompt('Enter the Heretto folder ID to upload a test file to:');
+    if (!folderId || !folderId.trim()) {
+      return;
+    }
+
+    this.testingCredential = credential.id;
+    this.credentialsService.testHerettoUpload(credential.id, folderId.trim()).subscribe({
+      next: (result) => {
+        this.testingCredential = null;
+        this.dialog.open(TestResultsDialogComponent, {
+          width: '700px',
+          maxHeight: '80vh',
+          data: result
+        });
+      },
+      error: (error) => {
+        this.testingCredential = null;
+        this.dialog.open(TestResultsDialogComponent, {
+          width: '700px',
+          maxHeight: '80vh',
+          data: {
+            success: false,
+            status_code: error.status || 500,
+            message: 'Failed to test Heretto file upload',
+            error_details: error.error?.detail || error.message || 'Unknown error occurred',
+            timestamp: new Date().toISOString()
+          }
+        });
+      }
     });
   }
 

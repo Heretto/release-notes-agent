@@ -338,40 +338,48 @@ Content is now valid DITA 1.3.
             
             logger.info(f"Saved clean DITA artifact: {output_filename}")
             
-            # Step 9: Publish to Heretto if requested
-            if job.auto_publish:
+            # Step 9: Publish to Heretto if requested (job flag or instruction set flag)
+            should_publish = job.auto_publish
+            if not should_publish and instruction_set and getattr(instruction_set, 'publish_to_heretto', False):
+                should_publish = True
+            if should_publish:
                 heretto_cred, heretto_config = self._get_decryptable_credential(
                     job.user_id, job.organization_id, CredentialType.HERETTO
                 )
                 if heretto_cred:
                     heretto_service = HerettoService(
-                        base_url=heretto_config.get("base_url", settings.heretto_base_url),
-                        api_key=heretto_config["api_key"],
-                        organization_id=heretto_config["organization_id"]
+                        base_url=heretto_config.get("server_url", settings.heretto_base_url),
+                        username=heretto_config["username"],
+                        token=heretto_config["token"]
                     )
                     
                     logger.info(f"Publishing to Heretto for job {job_id}")
-                    
+
+                    # Use job's folder ID, falling back to instruction set's
+                    folder_id = job.heretto_folder_id
+                    if not folder_id and instruction_set:
+                        folder_id = instruction_set.heretto_folder_id
+
                     # Log the Heretto request
                     heretto_request = JobRequest(
                         job_id=job.id,
                         request_type="heretto_publish",
                         request_data=json.dumps({
                             "filename": artifact.filename,
-                            "folder_id": job.heretto_folder_id,
+                            "folder_id": folder_id,
                             "content_length": len(dita_content)
                         }),
                         status="pending"
                     )
                     self.db.add(heretto_request)
                     self.db.commit()
-                    
+
                     start_time = time.time()
                     try:
                         upload_result = await heretto_service.upload_dita_topic(
                             content=dita_content,
                             filename=artifact.filename,
-                            folder_id=job.heretto_folder_id
+                            folder_id=folder_id
                         )
                         
                         if upload_result.success:

@@ -6,10 +6,11 @@ from uuid import UUID
 
 from app.models.database import get_db, User, Credential, CredentialType
 from app.models.schemas import (
-    CredentialCreate, 
-    CredentialUpdate, 
+    CredentialCreate,
+    CredentialUpdate,
     CredentialResponse,
     JiraCredentialResponse,
+    HerettoCredentialResponse,
     JiraCredentials,
     HerettoCredentials,
     AICredentials
@@ -263,66 +264,227 @@ async def delete_jira_credential(
     return {"message": "Jira credential deleted successfully"}
 
 # Heretto-specific endpoints
-@router.get("/heretto", response_model=List[CredentialResponse])
+@router.get("/heretto", response_model=List[HerettoCredentialResponse])
 async def list_heretto_credentials(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """List all Heretto credentials for current user."""
+    """List all Heretto credentials for current user's organization."""
+    if not current_user.current_organization_id:
+        return []
+
     credentials = db.query(Credential).filter(
-        Credential.user_id == current_user.id,
+        Credential.organization_id == current_user.current_organization_id,
         Credential.type == CredentialType.HERETTO
     ).all()
-    return credentials
 
-@router.post("/heretto", response_model=CredentialResponse)
+    result = []
+    for cred in credentials:
+        try:
+            decrypted = decrypt_credentials(cred.encrypted_data)
+            result.append(HerettoCredentialResponse(
+                id=cred.id,
+                type=cred.type,
+                name=cred.name,
+                server_url=decrypted.get("server_url", ""),
+                username=decrypted.get("username", ""),
+                token=decrypted.get("token", ""),
+                created_at=cred.created_at,
+                updated_at=cred.updated_at
+            ))
+        except Exception as e:
+            print(f"[ERROR] Failed to decrypt credential {cred.id}: {e}")
+            continue
+
+    return result
+
+@router.get("/heretto/folder-info/{folder_id}")
+async def get_heretto_folder_info(
+    folder_id: str,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Get folder information from Heretto CCMS using the first available credential."""
+    if not current_user.current_organization_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No organization selected")
+
+    credential = db.query(Credential).filter(
+        Credential.organization_id == current_user.current_organization_id,
+        Credential.type == CredentialType.HERETTO
+    ).first()
+
+    if not credential:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No Heretto credential found")
+
+    try:
+        decrypted = decrypt_credentials(credential.encrypted_data)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to decrypt Heretto credential. It may need to be re-created."
+        )
+
+    heretto_service = HerettoService(
+        base_url=decrypted["server_url"],
+        username=decrypted["username"],
+        token=decrypted["token"]
+    )
+
+    folder = await heretto_service.get_folder_info(folder_id)
+    if not folder:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Folder not found in Heretto")
+
+    return {
+        "id": folder.id,
+        "name": folder.name,
+        "path": folder.path,
+        "url": f"{decrypted['server_url'].rstrip('/')}/ezdnxtgen/#map-editor;folder={folder.id}"
+    }
+
+@router.post("/heretto", response_model=HerettoCredentialResponse)
 async def create_heretto_credential(
     credential_data: dict,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """Create new Heretto credential."""
-    # Check if credential with same name exists
+    """Create new Heretto credential for the organization."""
+    if not current_user.current_organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User must be part of an organization to create credentials"
+        )
+
     existing = db.query(Credential).filter(
-        Credential.user_id == current_user.id,
+        Credential.organization_id == current_user.current_organization_id,
         Credential.type == CredentialType.HERETTO,
         Credential.name == credential_data.get("name")
     ).first()
-    
+
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Heretto credential with this name already exists"
         )
-    
-    # Extract and validate Heretto-specific fields
+
     heretto_creds = {
-        "api_key": credential_data.get("api_key"),
-        "organization_id": credential_data.get("organization_id"),
-        "environment": credential_data.get("environment", "production")
+        "server_url": credential_data.get("server_url"),
+        "username": credential_data.get("username"),
+        "token": credential_data.get("token")
     }
-    
-    if not heretto_creds.get("api_key") or not heretto_creds.get("organization_id"):
+
+    if not all(heretto_creds.values()):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Missing required Heretto credential fields"
         )
-    
-    # Encrypt and store credential
+
     encrypted_data = encrypt_credentials(heretto_creds)
-    
+
     new_credential = Credential(
         user_id=current_user.id,
+        organization_id=current_user.current_organization_id,
         type=CredentialType.HERETTO,
         name=credential_data.get("name"),
-        encrypted_data=encrypted_data
+        encrypted_data=encrypted_data,
+        created_by=current_user.email
     )
-    
+
     db.add(new_credential)
     db.commit()
     db.refresh(new_credential)
-    
-    return new_credential
+
+    return HerettoCredentialResponse(
+        id=new_credential.id,
+        type=new_credential.type,
+        name=new_credential.name,
+        server_url=heretto_creds["server_url"],
+        username=heretto_creds["username"],
+        token=heretto_creds["token"],
+        created_at=new_credential.created_at,
+        updated_at=new_credential.updated_at
+    )
+
+@router.put("/heretto/{credential_id}", response_model=HerettoCredentialResponse)
+async def update_heretto_credential(
+    credential_id: UUID,
+    credential_data: dict,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Update existing Heretto credential."""
+    credential = db.query(Credential).filter(
+        Credential.id == credential_id,
+        or_(
+            Credential.user_id == current_user.id,
+            Credential.organization_id == current_user.current_organization_id
+        ),
+        Credential.type == CredentialType.HERETTO
+    ).first()
+
+    if not credential:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Heretto credential not found"
+        )
+
+    if credential_data.get("name"):
+        credential.name = credential_data.get("name")
+
+    existing_creds = decrypt_credentials(credential.encrypted_data)
+
+    heretto_creds = {}
+    if credential_data.get("server_url"):
+        heretto_creds["server_url"] = credential_data.get("server_url")
+    if credential_data.get("username"):
+        heretto_creds["username"] = credential_data.get("username")
+    if credential_data.get("token"):
+        heretto_creds["token"] = credential_data.get("token")
+
+    if heretto_creds:
+        existing_creds.update(heretto_creds)
+        encrypted_data = encrypt_credentials(existing_creds)
+        credential.encrypted_data = encrypted_data
+
+    db.commit()
+    db.refresh(credential)
+
+    return HerettoCredentialResponse(
+        id=credential.id,
+        type=credential.type,
+        name=credential.name,
+        server_url=existing_creds.get("server_url", ""),
+        username=existing_creds.get("username", ""),
+        token=existing_creds.get("token", ""),
+        created_at=credential.created_at,
+        updated_at=credential.updated_at
+    )
+
+@router.delete("/heretto/{credential_id}")
+async def delete_heretto_credential(
+    credential_id: UUID,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Delete Heretto credential."""
+    credential = db.query(Credential).filter(
+        Credential.id == credential_id,
+        or_(
+            Credential.user_id == current_user.id,
+            Credential.organization_id == current_user.current_organization_id
+        ),
+        Credential.type == CredentialType.HERETTO
+    ).first()
+
+    if not credential:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Heretto credential not found"
+        )
+
+    db.delete(credential)
+    db.commit()
+
+    return {"message": "Heretto credential deleted successfully"}
 
 # AI provider endpoints
 @router.get("/ai")
@@ -709,9 +871,9 @@ async def test_credential(
             
         elif credential.type.value == "heretto":
             heretto_service = HerettoService(
-                base_url=decrypted.get("base_url", "https://api.heretto.com"),
-                api_key=decrypted["api_key"],
-                organization_id=decrypted["organization_id"]
+                base_url=decrypted["server_url"],
+                username=decrypted["username"],
+                token=decrypted["token"]
             )
             success = await heretto_service.validate_connection()
             return {
@@ -992,3 +1154,78 @@ async def test_credential(
             "timestamp": datetime.utcnow().isoformat(),
             "error_details": str(e)
         }
+
+@router.post("/{credential_id}/test-upload")
+async def test_heretto_upload(
+    credential_id: UUID,
+    body: dict,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Test creating a file in Heretto CCMS using a credential."""
+    from datetime import datetime
+
+    folder_id = body.get("folder_id")
+    if not folder_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="folder_id is required"
+        )
+
+    credential = db.query(Credential).filter(
+        Credential.id == credential_id,
+        or_(
+            Credential.user_id == current_user.id,
+            Credential.organization_id == current_user.current_organization_id
+        ),
+        Credential.type == CredentialType.HERETTO
+    ).first()
+
+    if not credential:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Heretto credential not found"
+        )
+
+    try:
+        decrypted = decrypt_credentials(credential.encrypted_data)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to decrypt credential: {type(e).__name__}. The credential may need to be re-created."
+        )
+
+    heretto_service = HerettoService(
+        base_url=decrypted["server_url"],
+        username=decrypted["username"],
+        token=decrypted["token"]
+    )
+
+    # Create a small test DITA topic
+    timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    test_filename = f"connection-test-{timestamp}.dita"
+    test_content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE topic PUBLIC "-//OASIS//DTD DITA Topic//EN" "topic.dtd">
+<topic id="connection-test-{timestamp}">
+  <title>Connection Test — {timestamp}</title>
+  <body>
+    <p>This file was created by the Release Notes Agent to verify the Heretto CCMS connection.</p>
+    <p>Created at: {datetime.utcnow().isoformat()}Z</p>
+  </body>
+</topic>"""
+
+    result = await heretto_service.upload_dita_topic(
+        content=test_content,
+        filename=test_filename,
+        folder_id=folder_id
+    )
+
+    return {
+        "success": result.success,
+        "status_code": 201 if result.success else 400,
+        "message": result.message,
+        "timestamp": datetime.utcnow().isoformat(),
+        "document_id": result.document_id,
+        "url": result.url,
+        "test_filename": test_filename
+    }

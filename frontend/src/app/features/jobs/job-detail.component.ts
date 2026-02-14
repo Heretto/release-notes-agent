@@ -14,6 +14,7 @@ import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { JobsService, Job } from '../../core/services/jobs.service';
 import { CredentialsService, AICredential } from '../../core/services/credentials.service';
+import { InstructionsService, InstructionSet } from '../../core/services/instructions.service';
 import { interval, Subscription } from 'rxjs';
 import { switchMap, startWith } from 'rxjs/operators';
 
@@ -184,6 +185,14 @@ interface JobArtifact {
               <div class="summary-item full-width" *ngIf="job.output_filename">
                 <span class="label">Output File:</span>
                 <span>{{ job.output_filename }}</span>
+              </div>
+              <div class="summary-item full-width" *ngIf="herettoFolderUrl">
+                <span class="label">Heretto CCMS:</span>
+                <a [href]="herettoFolderUrl" target="_blank" rel="noopener" class="heretto-link">
+                  <mat-icon class="heretto-link-icon">cloud_upload</mat-icon>
+                  {{ herettoFolderPath || 'View folder in Heretto' }}
+                  <mat-icon class="heretto-link-icon">open_in_new</mat-icon>
+                </a>
               </div>
             </div>
           </mat-card-content>
@@ -376,6 +385,9 @@ interface JobArtifact {
     .summary-item .label{font-weight:500;opacity:0.9;font-size:14px}
     .ticket-count{background:rgba(255,255,255,0.2);padding:4px 12px;border-radius:12px;display:inline-block;font-weight:500}
     .jql-query{background:rgba(0,0,0,0.1);padding:8px 12px;border-radius:4px;font-family:monospace;display:inline-block}
+    .heretto-link{color:white;display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,0.15);padding:6px 12px;border-radius:4px;text-decoration:none;font-size:14px;transition:background 0.2s}
+    .heretto-link:hover{background:rgba(255,255,255,0.3)}
+    .heretto-link-icon{font-size:16px;width:16px;height:16px}
     .error-card{background:#fff3e0;border-left:4px solid #ff9800}
     .error-card mat-card-title{display:flex;align-items:center;gap:10px;color:#ff6f00}
     .error-message{background:#fff;padding:15px;border-radius:4px;border:1px solid #ffe0b2;white-space:pre-wrap;word-wrap:break-word;margin:0;font-family:monospace;font-size:13px}
@@ -445,12 +457,15 @@ export class JobDetailComponent implements OnInit, OnDestroy {
   private router = inject(Router);
   private jobsService = inject(JobsService);
   private credentialsService = inject(CredentialsService);
+  private instructionsService = inject(InstructionsService);
   private snackBar = inject(MatSnackBar);
 
   jobId: string | null = null;
   job: Job | null = null;
   loading = true;
   aiCredential: AICredential | null = null;
+  herettoFolderUrl: string | null = null;
+  herettoFolderPath: string | null = null;
   
   logs: JobLog[] = [];
   requests: JobRequest[] = [];
@@ -512,6 +527,10 @@ export class JobDetailComponent implements OnInit, OnDestroy {
         if (job.ai_credential_id) {
           this.loadAICredential(job.ai_credential_id);
         }
+        // Load instruction set to check Heretto publish settings
+        if (job.instruction_set_id) {
+          this.loadHerettoInfo(job.instruction_set_id);
+        }
       },
       error: (error) => {
         console.error('Failed to load job:', error);
@@ -530,6 +549,21 @@ export class JobDetailComponent implements OnInit, OnDestroy {
       },
       error: (error) => {
         console.error('Failed to load AI credential details:', error);
+      }
+    });
+  }
+
+  loadHerettoInfo(instructionSetId: string) {
+    this.instructionsService.getInstructionSet(instructionSetId).subscribe({
+      next: (instructionSet) => {
+        if (instructionSet.publish_to_heretto && instructionSet.heretto_folder_id) {
+          this.credentialsService.getHerettoFolderInfo(instructionSet.heretto_folder_id).subscribe({
+            next: (folderInfo) => {
+              this.herettoFolderUrl = folderInfo.url;
+              this.herettoFolderPath = folderInfo.path;
+            }
+          });
+        }
       }
     });
   }
