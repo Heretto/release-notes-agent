@@ -339,6 +339,29 @@ async def retry_job(
     
     return job
 
+@router.delete("/{job_id}")
+async def delete_job(
+    job_id: UUID,
+    context: CurrentUserContext = Depends(get_current_active_user_with_org),
+    db: Session = Depends(get_db)
+):
+    """Delete a job and all its associated artifacts and requests."""
+    job = db.query(Job).filter(
+        Job.id == job_id,
+        Job.organization_id == context.organization_id
+    ).first()
+
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Job not found"
+        )
+
+    db.delete(job)
+    db.commit()
+
+    return {"message": "Job deleted successfully", "job_id": str(job_id)}
+
 @router.delete("/{job_id}/artifacts")
 async def delete_all_job_artifacts(
     job_id: UUID,
