@@ -30,10 +30,10 @@ def get_auth_headers():
     return {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
 
-def test_ai_provider(headers, provider, name, api_key, model):
+def test_ai_provider(headers, provider, name, api_key, model, max_retries=3):
     """Create an AI credential, test it, verify success, and clean up.
 
-    Returns (success, message) tuple.
+    Returns (success, message) tuple. Retries on transient errors (429, 529).
     """
     print(f"\nTesting {provider.upper()} ({model})...")
     print("-" * 40)
@@ -69,37 +69,53 @@ def test_ai_provider(headers, provider, name, api_key, model):
     else:
         return False, f"Failed to create credential: {create_resp.status_code} {create_resp.text}"
 
-    # Test the credential
-    test_resp = requests.post(
-        f"{BASE_URL}/credentials/{cred_id}/test",
-        headers=headers
-    )
+    transient_codes = {429, 529, 503}
 
-    # Must not be 500
-    if test_resp.status_code == 500:
-        if created:
-            requests.delete(f"{BASE_URL}/credentials/{cred_id}", headers=headers)
-        return False, "Test endpoint returned 500 Internal Server Error"
+    for attempt in range(1, max_retries + 1):
+        # Test the credential
+        test_resp = requests.post(
+            f"{BASE_URL}/credentials/{cred_id}/test",
+            headers=headers
+        )
 
-    # Must not be 400 (decryption failure)
-    if test_resp.status_code == 400:
-        detail = test_resp.json().get("detail", "")
-        if created:
-            requests.delete(f"{BASE_URL}/credentials/{cred_id}", headers=headers)
-        return False, f"Test endpoint returned 400: {detail}"
+        # Must not be 500
+        if test_resp.status_code == 500:
+            if created:
+                requests.delete(f"{BASE_URL}/credentials/{cred_id}", headers=headers)
+            return False, "Test endpoint returned 500 Internal Server Error"
 
-    if test_resp.status_code != 200:
-        if created:
-            requests.delete(f"{BASE_URL}/credentials/{cred_id}", headers=headers)
-        return False, f"Test endpoint returned {test_resp.status_code}"
+        # Must not be 400 (decryption failure)
+        if test_resp.status_code == 400:
+            detail = test_resp.json().get("detail", "")
+            if created:
+                requests.delete(f"{BASE_URL}/credentials/{cred_id}", headers=headers)
+            return False, f"Test endpoint returned 400: {detail}"
 
-    data = test_resp.json()
-    success = data.get("success", False)
-    message = data.get("message", "No message")
-    status_code = data.get("status_code", 0)
+        if test_resp.status_code != 200:
+            if created:
+                requests.delete(f"{BASE_URL}/credentials/{cred_id}", headers=headers)
+            return False, f"Test endpoint returned {test_resp.status_code}"
 
-    print(f"  Response: success={success}, status={status_code}")
-    print(f"  Message: {message}")
+        data = test_resp.json()
+        success = data.get("success", False)
+        message = data.get("message", "No message")
+        status_code = data.get("status_code", 0)
+
+        print(f"  Response: success={success}, status={status_code} (attempt {attempt}/{max_retries})")
+        print(f"  Message: {message}")
+
+        if success:
+            break
+
+        # Retry on transient errors
+        if status_code in transient_codes and attempt < max_retries:
+            print(f"  ⚠ Transient error ({status_code}), retrying in 10s...")
+            import time
+            time.sleep(10)
+            continue
+
+        # Non-transient failure or final attempt
+        break
 
     # Clean up only if we created it
     if created:
