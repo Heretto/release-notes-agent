@@ -6,6 +6,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatButtonModule } from '@angular/material/button';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
+import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatExpansionModule } from '@angular/material/expansion';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
@@ -22,6 +23,7 @@ import { InstructionSet } from '../../core/services/instructions.service';
     MatInputModule,
     MatButtonModule,
     MatSlideToggleModule,
+    MatCheckboxModule,
     MatExpansionModule,
     MatIconModule,
     MatTooltipModule
@@ -124,7 +126,7 @@ import { InstructionSet } from '../../core/services/instructions.service';
                 Prompt Writing Tips
               </mat-panel-title>
             </mat-expansion-panel-header>
-            
+
             <div class="tips-content">
               <p><strong>Effective System Prompts Should Include:</strong></p>
               <ul>
@@ -134,11 +136,29 @@ import { InstructionSet } from '../../core/services/instructions.service';
                 <li>Tone and style (e.g., "Use professional, concise language...")</li>
                 <li>Specific requirements (e.g., "Group by feature area, prioritize user impact...")</li>
               </ul>
-              
+
               <p><strong>Example System Prompt:</strong></p>
               <pre class="example-prompt">{{ examplePrompt }}</pre>
             </div>
           </mat-expansion-panel>
+        </div>
+
+        <div class="form-section">
+          <h3>Heretto CCMS</h3>
+
+          <div class="heretto-toggle">
+            <mat-checkbox formControlName="publish_to_heretto">
+              Save generated release notes to Heretto
+            </mat-checkbox>
+          </div>
+
+          <mat-form-field *ngIf="form.get('publish_to_heretto')?.value"
+                          appearance="fill" class="full-width">
+            <mat-label>Heretto Folder ID</mat-label>
+            <input matInput formControlName="heretto_folder_id"
+                   placeholder="e.g., 12345-abcde-67890">
+            <mat-hint>Target folder in Heretto where generated content will be saved</mat-hint>
+          </mat-form-field>
         </div>
       </form>
     </mat-dialog-content>
@@ -181,6 +201,10 @@ import { InstructionSet } from '../../core/services/instructions.service';
       align-items: center;
       gap: 10px;
       margin: 15px 0;
+    }
+
+    .heretto-toggle {
+      margin-bottom: 15px;
     }
 
     .info-icon {
@@ -273,6 +297,8 @@ Prioritize the most impactful changes first and ensure all content is accurate a
       jql_query: [data?.jql_query || '', Validators.required],
       system_prompt: [data?.system_prompt || this.getDefaultSystemPrompt(), Validators.required],
       user_instructions: [data?.user_instructions || ''],
+      heretto_folder_id: [data?.heretto_folder_id || ''],
+      publish_to_heretto: [data?.publish_to_heretto || false],
       is_default: [data?.is_default || false]
     });
   }
