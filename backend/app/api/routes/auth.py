@@ -3,7 +3,7 @@ from fastapi.security import HTTPBearer
 from sqlalchemy.orm import Session
 from datetime import timedelta
 
-from app.models.database import get_db, User, user_organizations
+from app.models.database import get_db, User, OrganizationMember, user_organizations
 from app.models.organization import Organization, OrganizationRole
 from app.models.schemas import UserCreate, UserResponse, LoginRequest, TokenResponse, OrganizationCreate
 from app.core.security import (
@@ -71,31 +71,33 @@ async def register(
         email=user_data.email,
         password_hash=get_password_hash(user_data.password)
     )
-    
+
     db.add(new_user)
     db.flush()  # Flush to get the user ID
-    
+
     # Create organization
     new_organization = Organization(
         id=uuid.uuid4(),
         name=org_name,
         slug=slug
     )
-    
+
     db.add(new_organization)
     db.flush()  # Flush to get the organization ID
-    
+
+    # Set user's current organization
+    new_user.current_organization_id = new_organization.id
+
     # Add user as admin of the organization
-    from sqlalchemy import insert
-    stmt = insert(user_organizations).values(
+    membership = OrganizationMember(
         user_id=new_user.id,
         organization_id=new_organization.id,
-        role=OrganizationRole.ADMIN.value
+        role=OrganizationRole.ADMIN
     )
-    db.execute(stmt)
+    db.add(membership)
     db.commit()
     db.refresh(new_user)
-    
+
     return new_user
 
 @router.post("/login", response_model=TokenResponse)
@@ -121,9 +123,9 @@ async def login(
         )
     
     # Get user's organizations
-    from sqlalchemy import select
-    stmt = select(user_organizations).where(user_organizations.c.user_id == user.id)
-    user_orgs = db.execute(stmt).fetchall()
+    user_orgs = db.query(OrganizationMember).filter(
+        OrganizationMember.user_id == user.id
+    ).all()
     
     # Include organization info in token (use first org as default)
     token_data = {
@@ -135,7 +137,8 @@ async def login(
         # Add default organization to token
         default_org = user_orgs[0]
         token_data["org_id"] = str(default_org.organization_id)
-        token_data["org_role"] = default_org.role
+        role_val = default_org.role.value if hasattr(default_org.role, 'value') else default_org.role
+        token_data["org_role"] = role_val.lower() if isinstance(role_val, str) else role_val
     
     # Create tokens
     access_token = create_access_token(data=token_data)

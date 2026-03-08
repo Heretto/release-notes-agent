@@ -150,9 +150,14 @@ async def create_organization(
     )
     
     db.add(org_member)
+
+    # Set current organization if user doesn't have one
+    if not current_user.current_organization_id:
+        current_user.current_organization_id = new_org.id
+
     db.commit()
     db.refresh(new_org)
-    
+
     return OrganizationResponse(
         id=new_org.id,
         name=new_org.name,
@@ -229,12 +234,13 @@ async def list_organization_members(
                 inviter = db.query(User).filter(User.id == member.invited_by).first()
                 inviter_email = inviter.email if inviter else None
             
+            role_val = member.role.value if hasattr(member.role, 'value') else member.role
             member_responses.append(OrganizationMemberResponse(
                 id=member.id,
                 user_id=member.user_id,
                 user_email=user.email,
                 user_name=None,  # User model doesn't have a name field yet
-                role=member.role.value if hasattr(member.role, 'value') else member.role,
+                role=role_val.lower() if isinstance(role_val, str) else role_val,
                 joined_at=member.joined_at,
                 invited_by=member.invited_by
             ))
@@ -280,12 +286,13 @@ async def update_member_role(
     
     user = db.query(User).filter(User.id == member.user_id).first()
     
+    role_val = member.role.value if hasattr(member.role, 'value') else member.role
     return OrganizationMemberResponse(
         id=member.id,
         user_id=member.user_id,
         user_email=user.email if user else "",
         user_name=None,  # User model doesn't have a name field yet
-        role=member.role.value if hasattr(member.role, 'value') else member.role,
+        role=role_val.lower() if isinstance(role_val, str) else role_val,
         joined_at=member.joined_at,
         invited_by=member.invited_by
     )
@@ -502,10 +509,14 @@ async def accept_invitation(
     )
     
     db.add(member)
-    
+
+    # Set current organization if user doesn't have one
+    if not current_user.current_organization_id:
+        current_user.current_organization_id = invitation.organization_id
+
     # Mark invitation as accepted
     invitation.accepted_at = datetime.now(timezone.utc)
-    
+
     db.commit()
-    
+
     return {"message": "Successfully joined the organization"}

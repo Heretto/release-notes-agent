@@ -86,7 +86,7 @@ async def get_invitation_info(
     return InvitationInfoResponse(
         email=invitation.email,
         organization_name=organization.name,
-        role=invitation.role.value if hasattr(invitation.role, 'value') else invitation.role,
+        role=str(invitation.role.value if hasattr(invitation.role, 'value') else invitation.role).lower(),
         invited_by_email=inviter.email if inviter else "Unknown",
         expires_at=invitation.expires_at,
         is_existing_user=existing_user is not None
@@ -185,14 +185,17 @@ async def accept_invitation_new_user(
         joined_at=datetime.now(timezone.utc)
     )
     db.add(member)
-    
+
+    # Set current organization if user doesn't have one
+    if not user.current_organization_id:
+        user.current_organization_id = invitation.organization_id
+
     # Mark invitation as accepted
     invitation.accepted_at = datetime.now(timezone.utc)
-    invitation.accepted_by = user.id
-    
+
     # Commit all changes
     db.commit()
-    
+
     return AcceptInvitationResponse(
         message="Invitation accepted successfully. You can now log in with your email and password.",
         email=user.email,
@@ -272,11 +275,14 @@ async def accept_invitation_existing_user(
         joined_at=datetime.now(timezone.utc)
     )
     db.add(member)
-    
+
+    # Set current organization if user doesn't have one
+    if not user.current_organization_id:
+        user.current_organization_id = invitation.organization_id
+
     # Mark invitation as accepted
     invitation.accepted_at = datetime.now(timezone.utc)
-    invitation.accepted_by = user.id
-    
+
     db.commit()
     
     # Get organization
