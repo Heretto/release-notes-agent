@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, String, Boolean, DateTime, Text, Integer, ForeignKey, Enum as SQLEnum, ARRAY, LargeBinary, Table
+from sqlalchemy import create_engine, Column, String, Boolean, DateTime, Text, Integer, ForeignKey, Enum as SQLEnum, ARRAY, LargeBinary, Table, JSON
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship, Session
@@ -39,19 +39,27 @@ class JobTrigger(str, enum.Enum):
     SCHEDULED = "scheduled"
 
 class OrganizationRole(str, enum.Enum):
-    OWNER = "owner"
-    ADMIN = "admin"
-    MEMBER = "member"
+    ADMIN = "ADMIN"
+    MEMBER = "MEMBER"
 
-# Association table for many-to-many relationship between users and organizations
-user_organizations = Table(
-    'user_organizations',
-    Base.metadata,
-    Column('user_id', UUID(as_uuid=True), ForeignKey('users.id', ondelete='CASCADE'), primary_key=True),
-    Column('organization_id', UUID(as_uuid=True), ForeignKey('organizations.id', ondelete='CASCADE'), primary_key=True),
-    Column('role', String(50), default='member'),  # 'owner', 'admin', 'member'
-    Column('joined_at', DateTime(timezone=True), server_default=func.now())
-)
+# Organization membership model
+class OrganizationMember(Base):
+    __tablename__ = "organization_members"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey('organizations.id', ondelete='CASCADE'), nullable=False)
+    role = Column(SQLEnum(OrganizationRole, name='organizationrole', create_type=False), nullable=False, default=OrganizationRole.MEMBER)
+    invited_by = Column(UUID(as_uuid=True), ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    joined_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id], back_populates="memberships")
+    organization = relationship("Organization", foreign_keys=[organization_id], back_populates="members")
+    inviter = relationship("User", foreign_keys=[invited_by])
+
+# Backward-compatible alias for the legacy table (still exists but unused for new code)
+user_organizations = OrganizationMember.__table__
 
 # Models
 class Organization(Base):
@@ -60,12 +68,13 @@ class Organization(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String(255), nullable=False)
     slug = Column(String(255), unique=True, nullable=False)  # URL-friendly identifier
+    settings = Column(JSON, nullable=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-    
+
     # Relationships
-    users = relationship("User", secondary=user_organizations, back_populates="organizations")
+    members = relationship("OrganizationMember", foreign_keys="OrganizationMember.organization_id", back_populates="organization", cascade="all, delete-orphan")
     credentials = relationship("Credential", back_populates="organization", cascade="all, delete-orphan")
     invitations = relationship("OrganizationInvitation", back_populates="organization", cascade="all, delete-orphan")
     instruction_sets = relationship("InstructionSet", foreign_keys="InstructionSet.organization_id", cascade="all, delete-orphan")
@@ -104,7 +113,7 @@ class User(Base):
     current_organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
     
     # Relationships
-    organizations = relationship("Organization", secondary=user_organizations, back_populates="users")
+    memberships = relationship("OrganizationMember", foreign_keys="OrganizationMember.user_id", back_populates="user", cascade="all, delete-orphan")
     current_organization = relationship("Organization", foreign_keys=[current_organization_id])
     credentials = relationship("Credential", back_populates="user", cascade="all, delete-orphan")
     instruction_sets = relationship("InstructionSet", back_populates="user", cascade="all, delete-orphan")

@@ -3,7 +3,7 @@ from fastapi.security import HTTPBearer
 from sqlalchemy.orm import Session
 from datetime import timedelta
 
-from app.models.database import get_db, User, user_organizations
+from app.models.database import get_db, User, OrganizationMember, user_organizations
 from app.models.organization import Organization, OrganizationRole
 from app.models.schemas import UserCreate, UserResponse, LoginRequest, TokenResponse, OrganizationCreate, UserOrganizationInfo
 from app.core.security import (
@@ -71,31 +71,33 @@ async def register(
         email=user_data.email,
         password_hash=get_password_hash(user_data.password)
     )
-    
+
     db.add(new_user)
     db.flush()  # Flush to get the user ID
-    
+
     # Create organization
     new_organization = Organization(
         id=uuid.uuid4(),
         name=org_name,
         slug=slug
     )
-    
+
     db.add(new_organization)
     db.flush()  # Flush to get the organization ID
-    
+
+    # Set user's current organization
+    new_user.current_organization_id = new_organization.id
+
     # Add user as admin of the organization
-    from sqlalchemy import insert
-    stmt = insert(user_organizations).values(
+    membership = OrganizationMember(
         user_id=new_user.id,
         organization_id=new_organization.id,
-        role=OrganizationRole.ADMIN.value
+        role=OrganizationRole.ADMIN
     )
-    db.execute(stmt)
+    db.add(membership)
     db.commit()
     db.refresh(new_user)
-    
+
     return new_user
 
 @router.post("/login", response_model=TokenResponse)

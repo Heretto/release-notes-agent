@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 
-from app.models.database import get_db, User, user_organizations
+from app.models.database import get_db, User, OrganizationMember
 from app.models.organization import Organization, OrganizationRole
 from app.api.dependencies import get_current_active_user, get_current_active_user_with_org, get_current_user_context, CurrentUserContext
 from app.core.security import get_password_hash, verify_password

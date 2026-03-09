@@ -5,7 +5,7 @@ from typing import Optional
 from pydantic import BaseModel
 
 # Import the models from database.py to avoid duplication
-from app.models.database import Organization, OrganizationRole, user_organizations, OrganizationInvitation
+from app.models.database import Organization, OrganizationRole, OrganizationMember, user_organizations, OrganizationInvitation
 
 # Pydantic schemas
 class OrganizationCreate(BaseModel):
@@ -28,7 +28,7 @@ class OrganizationResponse(BaseModel):
     class Config:
         from_attributes = True
 
-class OrganizationMember(BaseModel):
+class OrganizationMemberSchema(BaseModel):
     user_id: str
     email: str
     role: OrganizationRole
