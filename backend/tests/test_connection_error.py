@@ -3,7 +3,9 @@
 
 import httpx
 import asyncio
+import pytest
 
+@pytest.mark.asyncio
 async def test_various_urls():
     """Test different URL scenarios that might cause connection errors."""
     

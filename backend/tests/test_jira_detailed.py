@@ -6,6 +6,7 @@ import asyncio
 import base64
 import sys
 from pathlib import Path
+import pytest
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -16,6 +17,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from app.config import get_settings
 
+@pytest.mark.asyncio
 async def test_jira_api():
     """Test Jira API with detailed error reporting."""
     settings = get_settings()

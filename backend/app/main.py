@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 import logging
 
 from app.config import get_settings
-from app.api.routes import auth, credentials, instructions, jobs, webhooks, health, admin, account, organizations, invitations
+from app.api.routes import auth, credentials, instructions, jobs, webhooks, health, admin, account, organizations, invitations, superadmin
 from app.core.logging import setup_logging
 from app.models.database import init_db
 
@@ -49,6 +49,7 @@ app.include_router(jobs.router, prefix=settings.api_prefix, tags=["jobs"])
 app.include_router(webhooks.router, prefix=settings.api_prefix, tags=["webhooks"])
 app.include_router(account.router, prefix=settings.api_prefix, tags=["account"])
 app.include_router(organizations.router, prefix=settings.api_prefix, tags=["organizations"])
+app.include_router(superadmin.router, prefix=settings.api_prefix, tags=["superadmin"])
 
 # Admin routes (development only)
 if settings.app_env == "development":

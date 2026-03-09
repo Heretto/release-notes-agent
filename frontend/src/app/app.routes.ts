@@ -1,5 +1,6 @@
 import { Routes } from '@angular/router';
 import { AuthGuard } from './core/auth/auth.guard';
+import { SuperuserGuard } from './core/auth/superuser.guard';
 
 export const routes: Routes = [
   // Public routes (no layout)
@@ -49,6 +50,16 @@ export const routes: Routes = [
       {
         path: 'admin',
         loadComponent: () => import('./features/admin/admin.component').then(m => m.AdminComponent)
+      },
+      {
+        path: 'superadmin',
+        canActivate: [SuperuserGuard],
+        loadComponent: () => import('./features/superadmin/superadmin.component').then(m => m.SuperadminComponent)
+      },
+      {
+        path: 'superadmin/:id',
+        canActivate: [SuperuserGuard],
+        loadComponent: () => import('./features/superadmin/superadmin-org-detail.component').then(m => m.SuperadminOrgDetailComponent)
       },
       {
         path: '',

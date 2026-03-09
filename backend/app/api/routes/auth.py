@@ -5,7 +5,7 @@ from datetime import timedelta
 
 from app.models.database import get_db, User, OrganizationMember, user_organizations
 from app.models.organization import Organization, OrganizationRole
-from app.models.schemas import UserCreate, UserResponse, LoginRequest, TokenResponse, OrganizationCreate
+from app.models.schemas import UserCreate, UserResponse, LoginRequest, TokenResponse, OrganizationCreate, UserOrganizationInfo
 from app.core.security import (
     verify_password, 
     get_password_hash, 
@@ -123,31 +123,45 @@ async def login(
         )
     
     # Get user's organizations
-    user_orgs = db.query(OrganizationMember).filter(
-        OrganizationMember.user_id == user.id
-    ).all()
-    
+    from sqlalchemy import select
+    stmt = select(user_organizations).where(user_organizations.c.user_id == user.id)
+    user_orgs = db.execute(stmt).fetchall()
+
     # Include organization info in token (use first org as default)
     token_data = {
         "sub": str(user.id),
         "email": user.email
     }
-    
+
+    # Build organizations list for response
+    org_list = []
     if user_orgs:
         # Add default organization to token
         default_org = user_orgs[0]
         token_data["org_id"] = str(default_org.organization_id)
-        role_val = default_org.role.value if hasattr(default_org.role, 'value') else default_org.role
-        token_data["org_role"] = role_val.lower() if isinstance(role_val, str) else role_val
-    
+        token_data["org_role"] = default_org.role
+
+        # Build full org list
+        for uo in user_orgs:
+            org = db.query(Organization).filter(Organization.id == uo.organization_id).first()
+            if org:
+                role_val = uo.role.value if hasattr(uo.role, 'value') else uo.role
+                org_list.append(UserOrganizationInfo(
+                    id=org.id,
+                    name=org.name,
+                    slug=org.slug,
+                    role=role_val,
+                ))
+
     # Create tokens
     access_token = create_access_token(data=token_data)
     refresh_token = create_refresh_token(data={"sub": str(user.id)})
-    
+
     return {
         "access_token": access_token,
         "refresh_token": refresh_token,
-        "token_type": "bearer"
+        "token_type": "bearer",
+        "organizations": org_list,
     }
 
 @router.post("/refresh", response_model=TokenResponse)

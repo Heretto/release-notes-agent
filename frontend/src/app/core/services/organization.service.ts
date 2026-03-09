@@ -110,6 +110,17 @@ export class OrganizationService {
     return this.http.post(`${environment.apiUrl}/organizations/invitations/accept/${token}`, {});
   }
   
+  switchOrganization(orgId: string) {
+    return this.http.post<{ access_token: string; refresh_token: string; token_type: string }>(
+      `${environment.apiUrl}/organizations/switch/${orgId}`, {}
+    ).pipe(
+      tap(() => {
+        this.clearCache();
+        this.currentOrganizationSubject.next(null);
+      })
+    );
+  }
+
   private clearCache(): void {
     this.organizationsCache$ = undefined;
   }

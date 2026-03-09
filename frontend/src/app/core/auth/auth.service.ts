@@ -4,10 +4,18 @@ import { Router } from '@angular/router';
 import { BehaviorSubject, Observable, tap } from 'rxjs';
 import { environment } from '../../../environments/environment';
 
-interface LoginResponse {
+export interface UserOrganizationInfo {
+  id: string;
+  name: string;
+  slug: string;
+  role: string;
+}
+
+export interface LoginResponse {
   access_token: string;
   refresh_token: string;
   token_type: string;
+  organizations?: UserOrganizationInfo[];
 }
 
 interface User {
@@ -35,10 +43,17 @@ export class AuthService {
     }).pipe(
       tap(response => {
         this.storeTokens(response);
-        localStorage.setItem('user_email', email); // Store email for organization checks
-        this.router.navigate(['/dashboard']);
+        localStorage.setItem('user_email', email);
       })
     );
+  }
+
+  navigateToDashboard(): void {
+    this.router.navigate(['/dashboard']);
+  }
+
+  updateTokens(response: { access_token: string; refresh_token: string }): void {
+    this.storeTokens(response as LoginResponse);
   }
   
   register(email: string, password: string, organizationName?: string): Observable<any> {
