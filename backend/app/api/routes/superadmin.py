@@ -250,7 +250,7 @@ async def add_existing_user_to_org(
         user_organizations.insert().values(
             user_id=user.id,
             organization_id=org.id,
-            role=request.role,
+            role=request.role.upper() if isinstance(request.role, str) else request.role,
         )
     )
 

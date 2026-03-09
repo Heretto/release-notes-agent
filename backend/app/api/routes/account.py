@@ -43,7 +43,7 @@ async def get_account_info(
     # Use the org from the JWT token context (the user's current org)
     if context.organization_id and context.organization:
         role_val = context.organization_role.value if hasattr(context.organization_role, 'value') else context.organization_role
-        response.organization_role = role_val
+        response.organization_role = role_val.lower() if isinstance(role_val, str) else role_val
         response.organization_id = str(context.organization_id)
         response.organization_name = context.organization.name
 
