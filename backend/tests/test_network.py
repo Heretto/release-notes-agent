@@ -5,7 +5,9 @@ import httpx
 import asyncio
 import socket
 import sys
+import pytest
 
+@pytest.mark.asyncio
 async def test_connection():
     """Test connection to Jira server."""
     jira_host = "jorsek.atlassian.net"

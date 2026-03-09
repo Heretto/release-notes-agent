@@ -9,9 +9,8 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatDividerModule } from '@angular/material/divider';
 import { AuthService } from '../core/auth/auth.service';
-import { OrganizationService } from '../core/services/organization.service';
+import { OrganizationService, Organization } from '../core/services/organization.service';
 import { AccountService } from '../core/services/account.service';
-import { Observable } from 'rxjs';
 
 @Component({
   selector: 'app-main-layout',
@@ -61,6 +60,10 @@ import { Observable } from 'rxjs';
             <mat-icon matListItemIcon>admin_panel_settings</mat-icon>
             <span matListItemTitle>Administration</span>
           </a>
+          <a mat-list-item routerLink="/superadmin" routerLinkActive="active" *ngIf="isSuperuser$ | async">
+            <mat-icon matListItemIcon>security</mat-icon>
+            <span matListItemTitle>System Admin</span>
+          </a>
         </mat-nav-list>
       </mat-sidenav>
       
@@ -86,6 +89,19 @@ import { Observable } from 'rxjs';
                 <strong>{{ org.name }}</strong>
               </div>
               <mat-divider></mat-divider>
+              <!-- Org Switcher -->
+              <ng-container *ngIf="userOrganizations.length > 1">
+                <div class="org-switch-label" mat-menu-item disabled>
+                  <small>Switch Organization</small>
+                </div>
+                <button mat-menu-item *ngFor="let switchOrg of userOrganizations"
+                        [disabled]="switchOrg.id === org.id"
+                        (click)="switchToOrg(switchOrg)">
+                  <mat-icon>{{ switchOrg.id === org.id ? 'check' : 'business' }}</mat-icon>
+                  <span>{{ switchOrg.name }}</span>
+                </button>
+                <mat-divider></mat-divider>
+              </ng-container>
               <button mat-menu-item routerLink="/admin" *ngIf="isAdmin$ | async">
                 <mat-icon>admin_panel_settings</mat-icon>
                 <span>Manage Organization</span>
@@ -101,9 +117,9 @@ import { Observable } from 'rxjs';
               </button>
             </mat-menu>
           </div>
-          
-          <button 
-            mat-icon-button 
+
+          <button
+            mat-icon-button
             (click)="logout()"
             *ngIf="!(currentOrganization$ | async)">
             <mat-icon>logout</mat-icon>
@@ -155,45 +171,72 @@ import { Observable } from 'rxjs';
       padding: 8px 16px;
       cursor: default;
     }
+
+    .org-switch-label {
+      cursor: default;
+      opacity: 0.7;
+    }
   `]
 })
 export class MainLayoutComponent implements OnInit {
   private authService = inject(AuthService);
   private organizationService = inject(OrganizationService);
   private accountService = inject(AccountService);
-  
+
   currentOrganization$ = this.organizationService.currentOrganization$;
   isAdmin$ = this.accountService.isAdmin$;
-  
+  isSuperuser$ = this.accountService.isSuperuser$;
+  userOrganizations: Organization[] = [];
+
   ngOnInit() {
     this.loadUserData();
   }
-  
+
   logout() {
     this.accountService.clearAccountInfo();
     this.authService.logout();
   }
-  
+
+  switchToOrg(org: Organization) {
+    this.organizationService.switchOrganization(org.id).subscribe({
+      next: (response) => {
+        this.authService.updateTokens(response);
+        // Reload the page to refresh all data with new org context
+        window.location.reload();
+      },
+      error: (error) => {
+        console.error('Failed to switch organization:', error);
+      }
+    });
+  }
+
   private loadUserData() {
-    // Load account info (which includes role)
     this.accountService.getAccountInfo().subscribe({
-      next: (info) => {
-        // Account info loaded, now load organization
+      next: () => {
         this.loadOrganizationData();
+        this.loadUserOrganizations();
       },
       error: (error) => {
         console.error('Failed to load account info:', error);
       }
     });
   }
-  
+
   private loadOrganizationData() {
     this.organizationService.getCurrentOrganization().subscribe({
-      next: (org) => {
-        // Organization loaded successfully
-      },
       error: (error) => {
         console.error('Failed to load organization:', error);
+      }
+    });
+  }
+
+  private loadUserOrganizations() {
+    this.organizationService.listUserOrganizations().subscribe({
+      next: (orgs) => {
+        this.userOrganizations = orgs;
+      },
+      error: (error) => {
+        console.error('Failed to load user organizations:', error);
       }
     });
   }
