@@ -2,16 +2,16 @@
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy import select, func as sa_func
 from typing import List, Optional
 from uuid import UUID
 from datetime import datetime, timedelta, timezone
 import secrets
 import re
 
-from app.models.database import get_db, User
+from app.models.database import get_db, User, user_organizations
 from app.models.organization import (
-    Organization, 
-    OrganizationMember, 
+    Organization,
     OrganizationRole,
     OrganizationInvitation
 )
@@ -31,17 +31,44 @@ from app.api.dependencies import (
     require_org_admin,
     CurrentUserContext
 )
+from app.core.security import create_access_token, create_refresh_token
 
 router = APIRouter(prefix="/organizations")
 
 
 def create_slug(name: str) -> str:
     """Create a URL-safe slug from a name."""
-    # Convert to lowercase and replace non-alphanumeric characters with hyphens
     slug = re.sub(r'[^a-z0-9]+', '-', name.lower())
-    # Remove leading/trailing hyphens
     slug = slug.strip('-')
     return slug
+
+
+def _normalize_role(role) -> str:
+    """Normalize a role value to lowercase string for API responses."""
+    val = role.value if hasattr(role, 'value') else role
+    return val.lower() if isinstance(val, str) else val
+
+
+def _count_members(db: Session, org_id) -> int:
+    """Count members in an organization using the user_organizations table."""
+    return db.execute(
+        select(sa_func.count()).select_from(user_organizations).where(
+            user_organizations.c.organization_id == org_id
+        )
+    ).scalar() or 0
+
+
+def _build_org_response(org, member_count: int) -> OrganizationResponse:
+    """Build an OrganizationResponse from an Organization ORM object."""
+    return OrganizationResponse(
+        id=org.id,
+        name=org.name,
+        slug=org.slug,
+        settings=getattr(org, 'settings', None) or {},
+        created_at=org.created_at,
+        updated_at=org.updated_at,
+        member_count=member_count
+    )
 
 
 # Organization endpoints
@@ -51,34 +78,64 @@ async def list_user_organizations(
     db: Session = Depends(get_db)
 ):
     """List all organizations the current user belongs to."""
-    memberships = db.query(OrganizationMember).filter(
-        OrganizationMember.user_id == current_user.id
+    memberships = db.execute(
+        select(user_organizations).where(
+            user_organizations.c.user_id == current_user.id
+        )
     ).all()
-    
+
     organizations = []
     for membership in memberships:
         org = db.query(Organization).filter(
             Organization.id == membership.organization_id
         ).first()
-        
+
         if org:
-            # Add member count
-            member_count = db.query(OrganizationMember).filter(
-                OrganizationMember.organization_id == org.id
-            ).count()
-            
-            org_response = OrganizationResponse(
-                id=org.id,
-                name=org.name,
-                slug=org.slug,
-                settings=org.settings or {},
-                created_at=org.created_at,
-                updated_at=org.updated_at,
-                member_count=member_count
-            )
-            organizations.append(org_response)
-    
+            member_count = _count_members(db, org.id)
+            organizations.append(_build_org_response(org, member_count))
+
     return organizations
+
+
+@router.post("/switch/{org_id}")
+async def switch_organization(
+    org_id: UUID,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Switch the user's current organization and return new tokens."""
+    membership = db.execute(
+        select(user_organizations).where(
+            user_organizations.c.user_id == current_user.id,
+            user_organizations.c.organization_id == org_id
+        )
+    ).first()
+
+    if not membership:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not a member of this organization"
+        )
+
+    current_user.current_organization_id = org_id
+    db.commit()
+
+    role_val = _normalize_role(membership.role)
+    token_data = {
+        "sub": str(current_user.id),
+        "email": current_user.email,
+        "org_id": str(org_id),
+        "org_role": role_val,
+    }
+
+    access_token = create_access_token(data=token_data)
+    refresh_token = create_refresh_token(data={"sub": str(current_user.id)})
+
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer"
+    }
 
 
 @router.get("/current", response_model=OrganizationResponse)
@@ -88,20 +145,8 @@ async def get_current_organization(
 ):
     """Get current organization details."""
     org = context.organization
-    
-    member_count = db.query(OrganizationMember).filter(
-        OrganizationMember.organization_id == org.id
-    ).count()
-    
-    return OrganizationResponse(
-        id=org.id,
-        name=org.name,
-        slug=org.slug,
-        settings=org.settings or {},
-        created_at=org.created_at,
-        updated_at=org.updated_at,
-        member_count=member_count
-    )
+    member_count = _count_members(db, org.id)
+    return _build_org_response(org, member_count)
 
 
 @router.post("/", response_model=OrganizationResponse)
@@ -111,62 +156,45 @@ async def create_organization(
     db: Session = Depends(get_db)
 ):
     """Create a new organization."""
-    # Check if organization name already exists
     existing_org = db.query(Organization).filter(
         Organization.name == org_data.name
     ).first()
-    
+
     if existing_org:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Organization name already exists"
         )
-    
-    # Create slug
+
     base_slug = create_slug(org_data.name) if not org_data.slug else org_data.slug
     slug = base_slug
     counter = 1
-    
-    # Ensure unique slug
+
     while db.query(Organization).filter(Organization.slug == slug).first():
         slug = f"{base_slug}-{counter}"
         counter += 1
-    
-    # Create organization
+
     new_org = Organization(
         name=org_data.name,
         slug=slug,
-        settings=org_data.settings or {}
     )
-    
+
     db.add(new_org)
     db.flush()
-    
-    # Add creator as admin
-    org_member = OrganizationMember(
-        organization_id=new_org.id,
-        user_id=current_user.id,
-        role=OrganizationRole.ADMIN
-    )
-    
-    db.add(org_member)
 
-    # Set current organization if user doesn't have one
-    if not current_user.current_organization_id:
-        current_user.current_organization_id = new_org.id
+    # Add creator as admin via user_organizations table
+    db.execute(
+        user_organizations.insert().values(
+            user_id=current_user.id,
+            organization_id=new_org.id,
+            role=OrganizationRole.ADMIN.value,
+        )
+    )
 
     db.commit()
     db.refresh(new_org)
 
-    return OrganizationResponse(
-        id=new_org.id,
-        name=new_org.name,
-        slug=new_org.slug,
-        settings=new_org.settings,
-        created_at=new_org.created_at,
-        updated_at=new_org.updated_at,
-        member_count=1
-    )
+    return _build_org_response(new_org, 1)
 
 
 @router.patch("/current", response_model=OrganizationResponse)
@@ -177,41 +205,29 @@ async def update_organization(
 ):
     """Update organization details (admin only)."""
     org = context.organization
-    
+
     if org_data.name:
-        # Check if new name already exists
         existing_org = db.query(Organization).filter(
             Organization.name == org_data.name,
             Organization.id != org.id
         ).first()
-        
+
         if existing_org:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Organization name already exists"
             )
-        
+
         org.name = org_data.name
-    
-    if org_data.settings is not None:
+
+    if org_data.settings is not None and hasattr(org, 'settings'):
         org.settings = org_data.settings
-    
+
     db.commit()
     db.refresh(org)
-    
-    member_count = db.query(OrganizationMember).filter(
-        OrganizationMember.organization_id == org.id
-    ).count()
-    
-    return OrganizationResponse(
-        id=org.id,
-        name=org.name,
-        slug=org.slug,
-        settings=org.settings,
-        created_at=org.created_at,
-        updated_at=org.updated_at,
-        member_count=member_count
-    )
+
+    member_count = _count_members(db, org.id)
+    return _build_org_response(org, member_count)
 
 
 # Member management endpoints
@@ -221,30 +237,27 @@ async def list_organization_members(
     db: Session = Depends(get_db)
 ):
     """List all members of the current organization."""
-    members = db.query(OrganizationMember).filter(
-        OrganizationMember.organization_id == context.organization_id
+    memberships = db.execute(
+        select(user_organizations).where(
+            user_organizations.c.organization_id == context.organization_id
+        )
     ).all()
-    
+
     member_responses = []
-    for member in members:
-        user = db.query(User).filter(User.id == member.user_id).first()
+    for m in memberships:
+        user = db.query(User).filter(User.id == m.user_id).first()
         if user:
-            inviter_email = None
-            if member.invited_by:
-                inviter = db.query(User).filter(User.id == member.invited_by).first()
-                inviter_email = inviter.email if inviter else None
-            
-            role_val = member.role.value if hasattr(member.role, 'value') else member.role
+            role_val = _normalize_role(m.role)
             member_responses.append(OrganizationMemberResponse(
-                id=member.id,
-                user_id=member.user_id,
+                id=m.user_id,  # use user_id as the member id (no separate id column)
+                user_id=m.user_id,
                 user_email=user.email,
-                user_name=None,  # User model doesn't have a name field yet
-                role=role_val.lower() if isinstance(role_val, str) else role_val,
-                joined_at=member.joined_at,
-                invited_by=member.invited_by
+                user_name=None,
+                role=role_val,
+                joined_at=m.joined_at,
+                invited_by=None
             ))
-    
+
     return member_responses
 
 
@@ -256,45 +269,56 @@ async def update_member_role(
     db: Session = Depends(get_db)
 ):
     """Update a member's role (admin only)."""
-    member = db.query(OrganizationMember).filter(
-        OrganizationMember.id == member_id,
-        OrganizationMember.organization_id == context.organization_id
+    # member_id is user_id in the user_organizations table
+    membership = db.execute(
+        select(user_organizations).where(
+            user_organizations.c.user_id == member_id,
+            user_organizations.c.organization_id == context.organization_id
+        )
     ).first()
-    
-    if not member:
+
+    if not membership:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Member not found"
         )
-    
+
+    current_role = _normalize_role(membership.role)
+    new_role = _normalize_role(member_data.role)
+
     # Prevent removing the last admin
-    if member.role == OrganizationRole.ADMIN and member_data.role != OrganizationRole.ADMIN:
-        admin_count = db.query(OrganizationMember).filter(
-            OrganizationMember.organization_id == context.organization_id,
-            OrganizationMember.role == OrganizationRole.ADMIN
-        ).count()
-        
+    if current_role == "admin" and new_role != "admin":
+        admin_count = db.execute(
+            select(sa_func.count()).select_from(user_organizations).where(
+                user_organizations.c.organization_id == context.organization_id,
+                user_organizations.c.role == OrganizationRole.ADMIN.value
+            )
+        ).scalar() or 0
+
         if admin_count <= 1:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot remove the last admin"
             )
-    
-    member.role = member_data.role
+
+    db.execute(
+        user_organizations.update().where(
+            user_organizations.c.user_id == member_id,
+            user_organizations.c.organization_id == context.organization_id
+        ).values(role=new_role.upper())
+    )
     db.commit()
-    db.refresh(member)
-    
-    user = db.query(User).filter(User.id == member.user_id).first()
-    
-    role_val = member.role.value if hasattr(member.role, 'value') else member.role
+
+    user = db.query(User).filter(User.id == member_id).first()
+
     return OrganizationMemberResponse(
-        id=member.id,
-        user_id=member.user_id,
+        id=member_id,
+        user_id=member_id,
         user_email=user.email if user else "",
-        user_name=None,  # User model doesn't have a name field yet
-        role=role_val.lower() if isinstance(role_val, str) else role_val,
-        joined_at=member.joined_at,
-        invited_by=member.invited_by
+        user_name=None,
+        role=new_role,
+        joined_at=membership.joined_at,
+        invited_by=None
     )
 
 
@@ -305,33 +329,50 @@ async def remove_member(
     db: Session = Depends(get_db)
 ):
     """Remove a member from the organization (admin only)."""
-    member = db.query(OrganizationMember).filter(
-        OrganizationMember.id == member_id,
-        OrganizationMember.organization_id == context.organization_id
+    membership = db.execute(
+        select(user_organizations).where(
+            user_organizations.c.user_id == member_id,
+            user_organizations.c.organization_id == context.organization_id
+        )
     ).first()
-    
-    if not member:
+
+    if not membership:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Member not found"
         )
-    
+
+    current_role = _normalize_role(membership.role)
+
     # Prevent removing the last admin
-    if member.role == OrganizationRole.ADMIN:
-        admin_count = db.query(OrganizationMember).filter(
-            OrganizationMember.organization_id == context.organization_id,
-            OrganizationMember.role == OrganizationRole.ADMIN
-        ).count()
-        
+    if current_role == "admin":
+        admin_count = db.execute(
+            select(sa_func.count()).select_from(user_organizations).where(
+                user_organizations.c.organization_id == context.organization_id,
+                user_organizations.c.role == OrganizationRole.ADMIN.value
+            )
+        ).scalar() or 0
+
         if admin_count <= 1:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot remove the last admin"
             )
-    
-    db.delete(member)
+
+    db.execute(
+        user_organizations.delete().where(
+            user_organizations.c.user_id == member_id,
+            user_organizations.c.organization_id == context.organization_id
+        )
+    )
+
+    # Clear current_organization_id if it pointed to this org
+    user = db.query(User).filter(User.id == member_id).first()
+    if user and user.current_organization_id == context.organization_id:
+        user.current_organization_id = None
+
     db.commit()
-    
+
     return {"message": "Member removed successfully"}
 
 
@@ -343,57 +384,58 @@ async def create_invitation(
     db: Session = Depends(get_db)
 ):
     """Create an invitation to join the organization (admin only)."""
-    # Check if user already exists and is a member
     existing_user = db.query(User).filter(User.email == invitation_data.email).first()
-    
+
     if existing_user:
-        existing_member = db.query(OrganizationMember).filter(
-            OrganizationMember.user_id == existing_user.id,
-            OrganizationMember.organization_id == context.organization_id
+        existing_member = db.execute(
+            select(user_organizations).where(
+                user_organizations.c.user_id == existing_user.id,
+                user_organizations.c.organization_id == context.organization_id
+            )
         ).first()
-        
+
         if existing_member:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="User is already a member of this organization"
             )
-    
-    # Check for pending invitation
+
     existing_invitation = db.query(OrganizationInvitation).filter(
         OrganizationInvitation.email == invitation_data.email,
         OrganizationInvitation.organization_id == context.organization_id,
         OrganizationInvitation.accepted_at.is_(None)
     ).first()
-    
+
     if existing_invitation:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invitation already sent to this email"
         )
-    
-    # Create invitation
+
     token = secrets.token_urlsafe(32)
     expires_at = datetime.now(timezone.utc) + timedelta(days=7)
-    
+
+    role_val = _normalize_role(invitation_data.role).upper()  # DB enum expects uppercase (ADMIN, MEMBER)
     invitation = OrganizationInvitation(
         organization_id=context.organization_id,
         email=invitation_data.email,
-        role=invitation_data.role,
+        role=role_val,
         token=token,
         invited_by=context.user.id,
         expires_at=expires_at
     )
-    
+
     db.add(invitation)
     db.commit()
     db.refresh(invitation)
-    
+
+    inv_role = _normalize_role(invitation.role)
     return OrganizationInvitationResponse(
         id=invitation.id,
         organization_id=invitation.organization_id,
         organization_name=context.organization.name,
         email=invitation.email,
-        role=invitation.role,
+        role=inv_role,
         token=invitation.token,
         invited_by_email=context.user.email,
         expires_at=invitation.expires_at,
@@ -412,23 +454,24 @@ async def list_invitations(
         OrganizationInvitation.accepted_at.is_(None),
         OrganizationInvitation.expires_at > datetime.now(timezone.utc)
     ).all()
-    
+
     invitation_responses = []
     for invitation in invitations:
         inviter = db.query(User).filter(User.id == invitation.invited_by).first()
-        
+
+        inv_role = _normalize_role(invitation.role)
         invitation_responses.append(OrganizationInvitationResponse(
             id=invitation.id,
             organization_id=invitation.organization_id,
             organization_name=context.organization.name,
             email=invitation.email,
-            role=invitation.role,
+            role=inv_role,
             token=invitation.token,
             invited_by_email=inviter.email if inviter else "",
             expires_at=invitation.expires_at,
             created_at=invitation.created_at
         ))
-    
+
     return invitation_responses
 
 
@@ -443,16 +486,16 @@ async def cancel_invitation(
         OrganizationInvitation.id == invitation_id,
         OrganizationInvitation.organization_id == context.organization_id
     ).first()
-    
+
     if not invitation:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Invitation not found"
         )
-    
+
     db.delete(invitation)
     db.commit()
-    
+
     return {"message": "Invitation cancelled successfully"}
 
 
@@ -467,52 +510,49 @@ async def accept_invitation(
         OrganizationInvitation.token == token,
         OrganizationInvitation.accepted_at.is_(None)
     ).first()
-    
+
     if not invitation:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Invalid or expired invitation"
         )
-    
-    # Check if invitation has expired
+
     if invitation.expires_at < datetime.now(timezone.utc):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invitation has expired"
         )
-    
-    # Check if user email matches invitation email
+
     if current_user.email != invitation.email:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="This invitation is for a different email address"
         )
-    
+
     # Check if user is already a member
-    existing_member = db.query(OrganizationMember).filter(
-        OrganizationMember.user_id == current_user.id,
-        OrganizationMember.organization_id == invitation.organization_id
+    existing_member = db.execute(
+        select(user_organizations).where(
+            user_organizations.c.user_id == current_user.id,
+            user_organizations.c.organization_id == invitation.organization_id
+        )
     ).first()
-    
+
     if existing_member:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="You are already a member of this organization"
         )
-    
-    # Add user to organization
-    member = OrganizationMember(
-        organization_id=invitation.organization_id,
-        user_id=current_user.id,
-        role=invitation.role,
-        invited_by=invitation.invited_by
-    )
-    
-    db.add(member)
 
-    # Set current organization if user doesn't have one
-    if not current_user.current_organization_id:
-        current_user.current_organization_id = invitation.organization_id
+    # Add user to organization
+    # DB enum expects uppercase (ADMIN, MEMBER)
+    role_for_db = _normalize_role(invitation.role).upper()
+    db.execute(
+        user_organizations.insert().values(
+            user_id=current_user.id,
+            organization_id=invitation.organization_id,
+            role=role_for_db,
+        )
+    )
 
     # Mark invitation as accepted
     invitation.accepted_at = datetime.now(timezone.utc)

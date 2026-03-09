@@ -5,7 +5,7 @@ from typing import Optional
 
 from app.models.database import get_db, User, OrganizationMember
 from app.models.organization import Organization, OrganizationRole
-from app.api.dependencies import get_current_active_user, get_current_active_user_with_org
+from app.api.dependencies import get_current_active_user, get_current_active_user_with_org, get_current_user_context, CurrentUserContext
 from app.core.security import get_password_hash, verify_password
 
 router = APIRouter(prefix="/account")
@@ -27,10 +27,11 @@ class AccountResponse(BaseModel):
 
 @router.get("/me", response_model=AccountResponse)
 async def get_account_info(
-    current_user: User = Depends(get_current_active_user),
+    context: CurrentUserContext = Depends(get_current_user_context),
     db: Session = Depends(get_db)
 ):
     """Get current user account information including organization role."""
+    current_user = context.user
     response = AccountResponse(
         id=str(current_user.id),
         email=current_user.email,
@@ -38,22 +39,14 @@ async def get_account_info(
         is_superuser=current_user.is_superuser,
         created_at=current_user.created_at.isoformat()
     )
-    
-    # Get organization membership if exists
-    membership = db.query(OrganizationMember).filter(
-        OrganizationMember.user_id == current_user.id
-    ).first()
-    
-    if membership:
-        org = db.query(Organization).filter(
-            Organization.id == membership.organization_id
-        ).first()
-        
-        role_val = membership.role.value if hasattr(membership.role, 'value') else membership.role
+
+    # Use the org from the JWT token context (the user's current org)
+    if context.organization_id and context.organization:
+        role_val = context.organization_role.value if hasattr(context.organization_role, 'value') else context.organization_role
         response.organization_role = role_val.lower() if isinstance(role_val, str) else role_val
-        response.organization_id = str(membership.organization_id)
-        response.organization_name = org.name if org else None
-    
+        response.organization_id = str(context.organization_id)
+        response.organization_name = context.organization.name
+
     return response
 
 @router.put("/me")

@@ -4,7 +4,9 @@
 import httpx
 import asyncio
 import json
+import pytest
 
+@pytest.mark.asyncio
 async def test_openai_params():
     """Test different OpenAI parameter configurations."""
     

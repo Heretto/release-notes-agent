@@ -160,6 +160,10 @@ class TestRunner:
             # API Tests
             ("api/test_credentials.py", "Credentials CRUD Operations"),
             ("api/test_delete_artifacts.py", "Artifact Deletion"),
+            ("api/test_superadmin_access.py", "Superadmin Access Control"),
+            ("api/test_invitation_flow.py", "Invitation Flow"),
+            ("api/test_multi_org_login.py", "Multi-Org Login Regression"),
+            ("api/test_admin_visibility.py", "Admin Visibility Regression"),
 
             # Integration Tests
             ("integration/test_jira_v3.py", "JIRA API v3 Integration"),

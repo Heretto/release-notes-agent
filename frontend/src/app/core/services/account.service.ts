@@ -38,11 +38,15 @@ export class AccountService {
   private isAdminSubject = new BehaviorSubject<boolean>(false);
   public isAdmin$ = this.isAdminSubject.asObservable();
 
+  private isSuperuserSubject = new BehaviorSubject<boolean>(false);
+  public isSuperuser$ = this.isSuperuserSubject.asObservable();
+
   getAccountInfo(): Observable<AccountInfo> {
     return this.http.get<AccountInfo>(`${this.apiUrl}/me`).pipe(
       tap(info => {
         this.accountInfoSubject.next(info);
         this.isAdminSubject.next(info.organization_role === 'admin');
+        this.isSuperuserSubject.next(info.is_superuser === true);
         
         // Store email for other components
         if (info.email) {
@@ -65,6 +69,7 @@ export class AccountService {
   clearAccountInfo(): void {
     this.accountInfoSubject.next(null);
     this.isAdminSubject.next(false);
+    this.isSuperuserSubject.next(false);
     localStorage.removeItem('user_email');
   }
   

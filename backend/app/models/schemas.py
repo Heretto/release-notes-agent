@@ -49,10 +49,17 @@ class UserResponse(UserBase):
         from_attributes = True
 
 # Authentication schemas
+class UserOrganizationInfo(BaseModel):
+    id: UUID
+    name: str
+    slug: str
+    role: str
+
 class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
+    organizations: Optional[List[UserOrganizationInfo]] = None
 
 class LoginRequest(BaseModel):
     email: EmailStr
