@@ -457,9 +457,24 @@ export class AdminComponent implements OnInit {
   
   copyInvitationLink(invitation: OrganizationInvitation) {
     const link = `${window.location.origin}/invite/${invitation.token}`;
-    navigator.clipboard.writeText(link).then(() => {
+    this.copyToClipboard(link).then(() => {
       this.snackBar.open('Invitation link copied to clipboard', 'Close', { duration: 3000 });
     });
+  }
+
+  private copyToClipboard(text: string): Promise<void> {
+    if (navigator.clipboard?.writeText) {
+      return navigator.clipboard.writeText(text);
+    }
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textarea);
+    return Promise.resolve();
   }
   
   isCurrentUser(member: OrganizationMember): boolean {
