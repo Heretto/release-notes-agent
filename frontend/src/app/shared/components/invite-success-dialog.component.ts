@@ -106,15 +106,31 @@ This invitation will expire in 7 days.`;
   }
 
   copyMessage() {
-    navigator.clipboard.writeText(this.inviteMessage).then(() => {
+    this.copyToClipboard(this.inviteMessage).then(() => {
       this.copied = true;
     });
   }
 
   copyAndClose() {
-    navigator.clipboard.writeText(this.inviteMessage).then(() => {
+    this.copyToClipboard(this.inviteMessage).then(() => {
       this.snackBar.open('Invitation message copied!', 'OK', { duration: 2000 });
       this.dialogRef.close();
     });
+  }
+
+  private copyToClipboard(text: string): Promise<void> {
+    if (navigator.clipboard?.writeText) {
+      return navigator.clipboard.writeText(text);
+    }
+    // Fallback for non-HTTPS contexts
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textarea);
+    return Promise.resolve();
   }
 }
