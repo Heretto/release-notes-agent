@@ -43,6 +43,12 @@ def create_slug(name: str) -> str:
     return slug
 
 
+def _normalize_role(role) -> str:
+    """Normalize a role value to lowercase string for API responses."""
+    val = role.value if hasattr(role, 'value') else role
+    return val.lower() if isinstance(val, str) else val
+
+
 def _count_members(db: Session, org_id) -> int:
     """Count members in an organization using the user_organizations table."""
     return db.execute(
@@ -114,7 +120,7 @@ async def switch_organization(
     current_user.current_organization_id = org_id
     db.commit()
 
-    role_val = membership.role.value if hasattr(membership.role, 'value') else membership.role
+    role_val = _normalize_role(membership.role)
     token_data = {
         "sub": str(current_user.id),
         "email": current_user.email,
@@ -241,7 +247,7 @@ async def list_organization_members(
     for m in memberships:
         user = db.query(User).filter(User.id == m.user_id).first()
         if user:
-            role_val = m.role.value if hasattr(m.role, 'value') else m.role
+            role_val = _normalize_role(m.role)
             member_responses.append(OrganizationMemberResponse(
                 id=m.user_id,  # use user_id as the member id (no separate id column)
                 user_id=m.user_id,
@@ -277,11 +283,11 @@ async def update_member_role(
             detail="Member not found"
         )
 
-    current_role = membership.role.value if hasattr(membership.role, 'value') else membership.role
-    new_role = member_data.role.value if hasattr(member_data.role, 'value') else member_data.role
+    current_role = _normalize_role(membership.role)
+    new_role = _normalize_role(member_data.role)
 
     # Prevent removing the last admin
-    if current_role == OrganizationRole.ADMIN.value and new_role != OrganizationRole.ADMIN.value:
+    if current_role == "admin" and new_role != "admin":
         admin_count = db.execute(
             select(sa_func.count()).select_from(user_organizations).where(
                 user_organizations.c.organization_id == context.organization_id,
@@ -336,10 +342,10 @@ async def remove_member(
             detail="Member not found"
         )
 
-    current_role = membership.role.value if hasattr(membership.role, 'value') else membership.role
+    current_role = _normalize_role(membership.role)
 
     # Prevent removing the last admin
-    if current_role == OrganizationRole.ADMIN.value:
+    if current_role == "admin":
         admin_count = db.execute(
             select(sa_func.count()).select_from(user_organizations).where(
                 user_organizations.c.organization_id == context.organization_id,
@@ -409,10 +415,11 @@ async def create_invitation(
     token = secrets.token_urlsafe(32)
     expires_at = datetime.now(timezone.utc) + timedelta(days=7)
 
+    role_val = _normalize_role(invitation_data.role).upper()  # DB enum expects uppercase (ADMIN, MEMBER)
     invitation = OrganizationInvitation(
         organization_id=context.organization_id,
         email=invitation_data.email,
-        role=invitation_data.role,
+        role=role_val,
         token=token,
         invited_by=context.user.id,
         expires_at=expires_at
@@ -422,12 +429,13 @@ async def create_invitation(
     db.commit()
     db.refresh(invitation)
 
+    inv_role = _normalize_role(invitation.role)
     return OrganizationInvitationResponse(
         id=invitation.id,
         organization_id=invitation.organization_id,
         organization_name=context.organization.name,
         email=invitation.email,
-        role=invitation.role,
+        role=inv_role,
         token=invitation.token,
         invited_by_email=context.user.email,
         expires_at=invitation.expires_at,
@@ -451,12 +459,13 @@ async def list_invitations(
     for invitation in invitations:
         inviter = db.query(User).filter(User.id == invitation.invited_by).first()
 
+        inv_role = _normalize_role(invitation.role)
         invitation_responses.append(OrganizationInvitationResponse(
             id=invitation.id,
             organization_id=invitation.organization_id,
             organization_name=context.organization.name,
             email=invitation.email,
-            role=invitation.role,
+            role=inv_role,
             token=invitation.token,
             invited_by_email=inviter.email if inviter else "",
             expires_at=invitation.expires_at,
@@ -535,7 +544,7 @@ async def accept_invitation(
         )
 
     # Add user to organization
-    role_val = invitation.role.value if hasattr(invitation.role, 'value') else invitation.role
+    role_val = _normalize_role(invitation.role)
     db.execute(
         user_organizations.insert().values(
             user_id=current_user.id,
