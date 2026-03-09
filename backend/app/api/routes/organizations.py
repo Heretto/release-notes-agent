@@ -305,7 +305,7 @@ async def update_member_role(
         user_organizations.update().where(
             user_organizations.c.user_id == member_id,
             user_organizations.c.organization_id == context.organization_id
-        ).values(role=new_role)
+        ).values(role=new_role.upper())
     )
     db.commit()
 
@@ -544,12 +544,13 @@ async def accept_invitation(
         )
 
     # Add user to organization
-    role_val = _normalize_role(invitation.role)
+    # DB enum expects uppercase (ADMIN, MEMBER)
+    role_for_db = _normalize_role(invitation.role).upper()
     db.execute(
         user_organizations.insert().values(
             user_id=current_user.id,
             organization_id=invitation.organization_id,
-            role=role_val,
+            role=role_for_db,
         )
     )
 

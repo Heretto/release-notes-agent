@@ -18,6 +18,7 @@ import { MatMenuModule } from '@angular/material/menu';
 import { OrganizationService, Organization, OrganizationMember, OrganizationInvitation } from '../../core/services/organization.service';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.component';
 import { InviteDialogComponent } from './invite-dialog.component';
+import { InviteSuccessDialogComponent } from '../../shared/components/invite-success-dialog.component';
 
 @Component({
   selector: 'app-admin',
@@ -390,10 +391,18 @@ export class AdminComponent implements OnInit {
     this.organizationService.createInvitation(data).subscribe({
       next: (invitation) => {
         this.loadInvitations();
-        this.snackBar.open('Invitation sent successfully', 'Close', { duration: 3000 });
+        const inviteUrl = `${window.location.origin}/invite/${invitation.token}`;
+        this.dialog.open(InviteSuccessDialogComponent, {
+          data: {
+            email: invitation.email,
+            role: invitation.role,
+            orgName: invitation.organization_name,
+            inviteUrl,
+          }
+        });
       },
       error: (error) => {
-        this.snackBar.open(error.error.detail || 'Failed to send invitation', 'Close', { duration: 3000 });
+        this.snackBar.open(error.error?.detail || 'Failed to send invitation', 'Close', { duration: 3000 });
       }
     });
   }

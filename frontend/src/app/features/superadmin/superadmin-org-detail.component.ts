@@ -14,6 +14,7 @@ import { MatDividerModule } from '@angular/material/divider';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.component';
 import { SuperadminService, SuperadminOrgDetail } from '../../core/services/superadmin.service';
 import { SuperadminAddMemberDialogComponent, AddMemberDialogResult } from './superadmin-add-member-dialog.component';
+import { InviteSuccessDialogComponent } from '../../shared/components/invite-success-dialog.component';
 
 @Component({
   selector: 'app-superadmin-org-detail',
@@ -395,11 +396,14 @@ export class SuperadminOrgDetailComponent implements OnInit {
         this.superadminService.inviteUser(this.org.id, result.email, result.role).subscribe({
           next: (invitation) => {
             const inviteUrl = `${window.location.origin}/invite/${invitation.token}`;
-            this.snackBar.open('Invitation created. Copy the link to share.', 'Copy Link', { duration: 10000 })
-              .onAction().subscribe(() => {
-                navigator.clipboard.writeText(inviteUrl);
-                this.snackBar.open('Invitation link copied!', 'OK', { duration: 2000 });
-              });
+            this.dialog.open(InviteSuccessDialogComponent, {
+              data: {
+                email: invitation.email,
+                role: invitation.role,
+                orgName: this.org!.name,
+                inviteUrl,
+              }
+            });
           },
           error: (err) => {
             this.snackBar.open(

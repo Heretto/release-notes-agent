@@ -138,14 +138,17 @@ async def login(
     if user_orgs:
         # Add default organization to token
         default_org = user_orgs[0]
+        default_role = default_org.role.value if hasattr(default_org.role, 'value') else default_org.role
         token_data["org_id"] = str(default_org.organization_id)
-        token_data["org_role"] = default_org.role
+        token_data["org_role"] = default_role.lower() if isinstance(default_role, str) else default_role
 
         # Build full org list
         for uo in user_orgs:
             org = db.query(Organization).filter(Organization.id == uo.organization_id).first()
             if org:
                 role_val = uo.role.value if hasattr(uo.role, 'value') else uo.role
+                if isinstance(role_val, str):
+                    role_val = role_val.lower()
                 org_list.append(UserOrganizationInfo(
                     id=org.id,
                     name=org.name,
