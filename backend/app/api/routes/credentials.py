@@ -22,6 +22,13 @@ from app.services.heretto_service import HerettoService
 
 router = APIRouter(prefix="/credentials")
 
+
+def _mask_secret(value: str) -> str:
+    """Mask a secret string, showing only first 4 and last 4 characters."""
+    if not value or len(value) <= 8:
+        return "*" * len(value) if value else ""
+    return value[:4] + "*" * min(len(value) - 8, 20) + value[-4:]
+
 # Generic credentials endpoints
 @router.get("/", response_model=List[CredentialResponse])
 async def list_credentials(
@@ -97,16 +104,14 @@ async def list_jira_credentials(
                 name=cred.name,
                 server_url=decrypted.get("server_url", ""),
                 email=decrypted.get("email", ""),
-                api_token=decrypted.get("api_token", ""),
+                api_token=_mask_secret(decrypted.get("api_token", "")),
                 created_at=cred.created_at,
                 updated_at=cred.updated_at
             ))
         except Exception as e:
-            # Log the error but skip this credential
             print(f"[ERROR] Failed to decrypt credential {cred.id}: {e}")
-            # Optionally, return a placeholder or skip
             continue
-    
+
     return result
 
 @router.post("/jira", response_model=JiraCredentialResponse)
@@ -165,14 +170,13 @@ async def create_jira_credential(
     db.commit()
     db.refresh(new_credential)
     
-    # Return with decrypted data
     return JiraCredentialResponse(
         id=new_credential.id,
         type=new_credential.type,
         name=new_credential.name,
         server_url=jira_creds["server_url"],
         email=jira_creds["email"],
-        api_token=jira_creds["api_token"],
+        api_token=_mask_secret(jira_creds["api_token"]),
         created_at=new_credential.created_at,
         updated_at=new_credential.updated_at
     )
@@ -212,9 +216,10 @@ async def update_jira_credential(
         jira_creds["server_url"] = credential_data.get("server_url")
     if credential_data.get("email"):
         jira_creds["email"] = credential_data.get("email")
-    if credential_data.get("api_token"):
-        jira_creds["api_token"] = credential_data.get("api_token")
-    
+    api_token = credential_data.get("api_token")
+    if api_token and "*" not in api_token:
+        jira_creds["api_token"] = api_token
+
     if jira_creds:
         # Merge with existing credentials
         existing_creds.update(jira_creds)
@@ -224,14 +229,13 @@ async def update_jira_credential(
     db.commit()
     db.refresh(credential)
     
-    # Return with decrypted data
     return JiraCredentialResponse(
         id=credential.id,
         type=credential.type,
         name=credential.name,
         server_url=existing_creds.get("server_url", ""),
         email=existing_creds.get("email", ""),
-        api_token=existing_creds.get("api_token", ""),
+        api_token=_mask_secret(existing_creds.get("api_token", "")),
         created_at=credential.created_at,
         updated_at=credential.updated_at
     )
@@ -288,7 +292,7 @@ async def list_heretto_credentials(
                 name=cred.name,
                 server_url=decrypted.get("server_url", ""),
                 username=decrypted.get("username", ""),
-                token=decrypted.get("token", ""),
+                token=_mask_secret(decrypted.get("token", "")),
                 created_at=cred.created_at,
                 updated_at=cred.updated_at
             ))
@@ -399,7 +403,7 @@ async def create_heretto_credential(
         name=new_credential.name,
         server_url=heretto_creds["server_url"],
         username=heretto_creds["username"],
-        token=heretto_creds["token"],
+        token=_mask_secret(heretto_creds["token"]),
         created_at=new_credential.created_at,
         updated_at=new_credential.updated_at
     )
@@ -437,8 +441,9 @@ async def update_heretto_credential(
         heretto_creds["server_url"] = credential_data.get("server_url")
     if credential_data.get("username"):
         heretto_creds["username"] = credential_data.get("username")
-    if credential_data.get("token"):
-        heretto_creds["token"] = credential_data.get("token")
+    token = credential_data.get("token")
+    if token and "*" not in token:
+        heretto_creds["token"] = token
 
     if heretto_creds:
         existing_creds.update(heretto_creds)
@@ -454,7 +459,7 @@ async def update_heretto_credential(
         name=credential.name,
         server_url=existing_creds.get("server_url", ""),
         username=existing_creds.get("username", ""),
-        token=existing_creds.get("token", ""),
+        token=_mask_secret(existing_creds.get("token", "")),
         created_at=credential.created_at,
         updated_at=credential.updated_at
     )
@@ -639,7 +644,7 @@ async def get_ai_credential(
         "type": credential.type,
         "name": credential.name,
         "provider": provider_mapping.get(credential.type, "unknown"),
-        "api_key": api_key[:4] + "*" * (min(len(api_key) - 8, 20)) + api_key[-4:] if len(api_key) > 8 else "*" * len(api_key),
+        "api_key": _mask_secret(api_key),
         "model": decrypted.get("model", ""),
         "created_at": credential.created_at,
         "updated_at": credential.updated_at
