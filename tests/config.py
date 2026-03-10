@@ -1,8 +1,17 @@
 """
-Central configuration for all tests
+Central configuration for all tests.
+
+Credentials for integration tests are loaded from the project-root .env file.
 """
+import os
 import requests
 import psycopg2
+
+from dotenv import load_dotenv
+
+# Load .env from project root (one level above tests/)
+_project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+load_dotenv(os.path.join(_project_root, ".env"))
 
 # API Configuration
 API_BASE_URL = "http://localhost:8000/api/v1"
@@ -18,6 +27,31 @@ DATABASE_URL = "postgresql://user:password@localhost:5432/release_notes_db"
 # Test timeouts
 DEFAULT_TIMEOUT = 30
 LONG_TIMEOUT = 60
+
+# ---------------------------------------------------------------------------
+# Integration test credentials (from .env)
+# ---------------------------------------------------------------------------
+
+# Jira
+TEST_JIRA_URL = os.getenv("TEST_JIRA_URL")
+TEST_JIRA_USERNAME = os.getenv("TEST_JIRA_USERNAME")
+TEST_JIRA_API_TOKEN = os.getenv("TEST_JIRA_API_TOKEN")
+HAS_JIRA_CREDS = all([TEST_JIRA_URL, TEST_JIRA_USERNAME, TEST_JIRA_API_TOKEN])
+
+# AI providers
+TEST_CLAUDE_API_KEY = os.getenv("TEST_CLAUDE_API_KEY")
+TEST_CLAUDE_MODEL = os.getenv("TEST_CLAUDE_MODEL", "claude-sonnet-4-20250514")
+TEST_OPENAI_API_KEY = os.getenv("TEST_OPENAI_API_KEY")
+TEST_OPENAI_MODEL = os.getenv("TEST_OPENAI_MODEL", "gpt-4o")
+TEST_GOOGLE_API_KEY = os.getenv("GOOGLE_AI_API_KEY")
+TEST_GOOGLE_MODEL = os.getenv("GOOGLE_AI_MODEL", "gemini-2.0-flash")
+HAS_AI_CREDS = any([TEST_CLAUDE_API_KEY, TEST_OPENAI_API_KEY, TEST_GOOGLE_API_KEY])
+
+# Heretto
+TEST_HERETTO_SERVER = os.getenv("TEST_HERETTO_SERVER") or os.getenv("HERETTO_TESTING_SERVER")
+TEST_HERETTO_USER = os.getenv("TEST_HERETTO_LOGIN_USER") or os.getenv("HERETTO_TESTING_LOGIN_USER")
+TEST_HERETTO_TOKEN = os.getenv("TEST_HERETTO_LOGIN_TOKEN") or os.getenv("HERETTO_TESTING_LOGIN_TOKEN")
+HAS_HERETTO_CREDS = all([TEST_HERETTO_SERVER, TEST_HERETTO_USER, TEST_HERETTO_TOKEN])
 
 
 def ensure_test_account():

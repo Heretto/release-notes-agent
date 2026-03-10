@@ -160,9 +160,12 @@ async def accept_invitation_new_user(
         db.add(user)
         db.flush()
     else:
-        # For existing users, update password if they're accepting invitation
-        # This allows password reset via invitation
-        user.password_hash = get_password_hash(request.password)
+        # Existing users must use the /accept-existing/{token} endpoint
+        # which verifies their current password before joining the org.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An account with this email already exists. Please use the existing user flow to verify your identity."
+        )
     
     # Check if already a member
     existing_member = db.query(OrganizationMember).filter(

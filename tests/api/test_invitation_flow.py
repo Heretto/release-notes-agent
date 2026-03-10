@@ -294,6 +294,68 @@ def test_cancel_invitation(admin_headers):
     return True
 
 
+def test_invitation_cannot_overwrite_password(admin_headers):
+    """Security: accepting an invitation must NOT overwrite an existing user's password."""
+    print("\nTest: Invitation cannot overwrite existing user's password")
+    print("-" * 40)
+
+    # Create an invitation for the invitee who already has an account
+    victim_email = f"victim-{RUN_ID}@example.com"
+    victim_password = "original-password-123"
+    register_user(victim_email, victim_password)
+    print(f"  Registered {victim_email}")
+
+    # Admin creates invitation for the victim's email
+    resp = requests.post(
+        f"{BASE_URL}/organizations/invitations",
+        json={"email": victim_email, "role": "member"},
+        headers=admin_headers,
+    )
+    assert resp.status_code == 200, f"Create invitation failed: {resp.status_code}"
+    invite_token = resp.json()["token"]
+    invite_id = resp.json()["id"]
+
+    # Attacker tries to use the new-user endpoint to set a new password
+    attacker_password = "attacker-password-999"
+    resp = requests.post(
+        f"{BASE_URL}/invitations/accept/{invite_token}",
+        json={"password": attacker_password, "confirm_password": attacker_password},
+    )
+    assert resp.status_code == 409, (
+        f"Expected 409 (existing user), got {resp.status_code}: {resp.text}"
+    )
+    print(f"  New-user endpoint correctly rejected with 409")
+
+    # Verify original password still works
+    login_resp = requests.post(
+        f"{BASE_URL}/auth/login",
+        json={"email": victim_email, "password": victim_password},
+    )
+    assert login_resp.status_code == 200, (
+        "SECURITY FAILURE: original password no longer works — it was overwritten!"
+    )
+    print(f"  Original password still works")
+
+    # Verify attacker's password does NOT work
+    bad_login = requests.post(
+        f"{BASE_URL}/auth/login",
+        json={"email": victim_email, "password": attacker_password},
+    )
+    assert bad_login.status_code != 200, (
+        "SECURITY FAILURE: attacker's password works — password was overwritten!"
+    )
+    print(f"  Attacker's password correctly rejected")
+
+    # Clean up
+    requests.delete(
+        f"{BASE_URL}/organizations/invitations/{invite_id}",
+        headers=admin_headers,
+    )
+
+    print("  ✓ Password overwrite attack blocked")
+    return True
+
+
 def test_non_admin_cannot_invite():
     """A non-admin member cannot create invitations."""
     print("\nTest: Non-admin cannot create invitations")
@@ -382,7 +444,11 @@ def main():
     results.append(("Cancel invitation",
                      test_cancel_invitation(admin_headers)))
 
-    # Step 10: Non-admin cannot invite
+    # Step 10: Invitation cannot overwrite password (security)
+    results.append(("Password overwrite blocked",
+                     test_invitation_cannot_overwrite_password(admin_headers)))
+
+    # Step 11: Non-admin cannot invite
     results.append(("Non-admin cannot invite",
                      test_non_admin_cannot_invite()))
 

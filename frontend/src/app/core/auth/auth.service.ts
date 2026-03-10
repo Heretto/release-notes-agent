@@ -29,20 +29,19 @@ interface User {
 export class AuthService {
   private http = inject(HttpClient);
   private router = inject(Router);
-  
+
   private currentUserSubject = new BehaviorSubject<User | null>(null);
   public currentUser$ = this.currentUserSubject.asObservable();
-  
-  private readonly ACCESS_TOKEN_KEY = 'access_token';
-  private readonly REFRESH_TOKEN_KEY = 'refresh_token';
-  
+
+  private readonly LOGGED_IN_KEY = 'logged_in';
+
   login(email: string, password: string): Observable<LoginResponse> {
     return this.http.post<LoginResponse>(`${environment.apiUrl}/auth/login`, {
       email,
       password
     }).pipe(
-      tap(response => {
-        this.storeTokens(response);
+      tap(() => {
+        localStorage.setItem(this.LOGGED_IN_KEY, 'true');
         localStorage.setItem('user_email', email);
       })
     );
@@ -52,60 +51,45 @@ export class AuthService {
     this.router.navigate(['/dashboard']);
   }
 
-  updateTokens(response: { access_token: string; refresh_token: string }): void {
-    this.storeTokens(response as LoginResponse);
+  /** Called after org switch — cookies are set by the backend, just keep flag. */
+  updateTokens(_response: { access_token: string; refresh_token: string }): void {
+    localStorage.setItem(this.LOGGED_IN_KEY, 'true');
   }
-  
+
   register(email: string, password: string, organizationName?: string): Observable<any> {
     const payload: any = {
       email,
       password
     };
-    
+
     if (organizationName) {
       payload.organization_name = organizationName;
     }
-    
+
     return this.http.post(`${environment.apiUrl}/auth/register`, payload);
   }
-  
+
   logout(): void {
-    this.clearTokens();
+    // Tell the backend to clear cookies
+    this.http.post(`${environment.apiUrl}/auth/logout`, {}).subscribe({
+      error: () => {} // best-effort
+    });
+    localStorage.removeItem(this.LOGGED_IN_KEY);
     localStorage.removeItem('user_email');
     this.currentUserSubject.next(null);
     this.router.navigate(['/login']);
   }
-  
+
   refreshToken(): Observable<LoginResponse> {
-    const refreshToken = this.getRefreshToken();
-    return this.http.post<LoginResponse>(`${environment.apiUrl}/auth/refresh`, {
-      refresh_token: refreshToken
-    }).pipe(
-      tap(response => {
-        this.storeTokens(response);
+    // Refresh token is sent automatically via HttpOnly cookie
+    return this.http.post<LoginResponse>(`${environment.apiUrl}/auth/refresh`, {}).pipe(
+      tap(() => {
+        localStorage.setItem(this.LOGGED_IN_KEY, 'true');
       })
     );
   }
-  
+
   isAuthenticated(): boolean {
-    return !!this.getAccessToken();
-  }
-  
-  getAccessToken(): string | null {
-    return localStorage.getItem(this.ACCESS_TOKEN_KEY);
-  }
-  
-  getRefreshToken(): string | null {
-    return localStorage.getItem(this.REFRESH_TOKEN_KEY);
-  }
-  
-  private storeTokens(response: LoginResponse): void {
-    localStorage.setItem(this.ACCESS_TOKEN_KEY, response.access_token);
-    localStorage.setItem(this.REFRESH_TOKEN_KEY, response.refresh_token);
-  }
-  
-  private clearTokens(): void {
-    localStorage.removeItem(this.ACCESS_TOKEN_KEY);
-    localStorage.removeItem(this.REFRESH_TOKEN_KEY);
+    return localStorage.getItem(this.LOGGED_IN_KEY) === 'true';
   }
 }

@@ -539,8 +539,9 @@ export class AccountComponent implements OnInit {
           duration: 3000
         });
         // Clear auth and redirect to login
-        localStorage.removeItem('access_token');
-        this.router.navigate(['/auth/login']);
+        localStorage.removeItem('logged_in');
+        localStorage.removeItem('user_email');
+        this.router.navigate(['/login']);
       },
       error: (error) => {
         console.error('Failed to delete account:', error);

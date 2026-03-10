@@ -5,35 +5,18 @@ import { catchError, switchMap, throwError } from 'rxjs';
 
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const authService = inject(AuthService);
-  const token = authService.getAccessToken();
-  
-  // Skip auth for login/register endpoints
-  if (req.url.includes('/auth/login') || req.url.includes('/auth/register')) {
-    return next(req);
-  }
-  
-  // Add token to request if available
-  if (token) {
-    req = req.clone({
-      setHeaders: {
-        Authorization: `Bearer ${token}`
-      }
-    });
-  }
-  
+
+  // Attach cookies on every request to our API
+  req = req.clone({ withCredentials: true });
+
   return next(req).pipe(
     catchError((error: HttpErrorResponse) => {
-      if (error.status === 401 && !req.url.includes('/auth/refresh')) {
-        // Try to refresh token
+      if (error.status === 401 && !req.url.includes('/auth/refresh') && !req.url.includes('/auth/login')) {
+        // Try to refresh token (cookie is sent automatically)
         return authService.refreshToken().pipe(
-          switchMap(response => {
-            // Retry original request with new token
-            const newReq = req.clone({
-              setHeaders: {
-                Authorization: `Bearer ${authService.getAccessToken()}`
-              }
-            });
-            return next(newReq);
+          switchMap(() => {
+            // Retry original request — new cookie is already set
+            return next(req.clone({ withCredentials: true }));
           }),
           catchError(refreshError => {
             // Refresh failed, logout user

@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     # Heretto
     heretto_base_url: str = "https://api.heretto.com"
     
+    # Cookies
+    cookie_secure: bool = False  # Set True in production behind HTTPS
+    cookie_domain: Optional[str] = None  # None = current domain only
+
     # CORS
     cors_origins: str = "http://localhost:4200"
     

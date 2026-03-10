@@ -2,20 +2,31 @@
 """
 Test job execution end-to-end via the HTTP API.
 
+Credentials are read from the project-root .env file and created in the
+database via the API before each test run.  This avoids depending on
+credentials that were manually added through the UI.
+
 Verifies that:
 - Jobs can be created and executed successfully
 - The orchestrator finds credentials across the organization (not just by user_id)
 - Jobs produce meaningful error messages on failure (never empty)
-- Stale/corrupt credentials are skipped gracefully
 """
 
 import sys
 import os
 import time
+import uuid
 import requests
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import API_BASE_URL, TEST_EMAIL, TEST_PASSWORD
+from config import (
+    API_BASE_URL, TEST_EMAIL, TEST_PASSWORD,
+    TEST_JIRA_URL, TEST_JIRA_USERNAME, TEST_JIRA_API_TOKEN, HAS_JIRA_CREDS,
+    TEST_CLAUDE_API_KEY, TEST_CLAUDE_MODEL,
+    TEST_OPENAI_API_KEY, TEST_OPENAI_MODEL,
+    TEST_GOOGLE_API_KEY, TEST_GOOGLE_MODEL,
+    HAS_AI_CREDS,
+)
 
 BASE_URL = API_BASE_URL
 
@@ -68,97 +79,152 @@ def get_instruction_set(headers):
     return create_resp.json()["id"]
 
 
-def get_jira_credential(headers):
-    """Get the first available Jira credential, or None."""
-    resp = requests.get(f"{BASE_URL}/credentials/jira", headers=headers)
-    assert resp.status_code == 200
-    creds = resp.json()
-    if not creds:
-        return None
-    return creds[0]["id"]
+# ---------------------------------------------------------------------------
+# Credential helpers — create from .env, return ID, clean up after
+# ---------------------------------------------------------------------------
+
+def _ensure_jira_credential(headers):
+    """Create a Jira credential from .env vars.  Returns (cred_id, created)."""
+    name = "Test Jira (env)"
+    resp = requests.post(
+        f"{BASE_URL}/credentials/jira",
+        json={
+            "name": name,
+            "server_url": TEST_JIRA_URL,
+            "email": TEST_JIRA_USERNAME,
+            "api_token": TEST_JIRA_API_TOKEN,
+        },
+        headers=headers,
+    )
+    if resp.status_code == 200:
+        return resp.json()["id"], True
+    if resp.status_code == 400 and "already exists" in resp.json().get("detail", ""):
+        # Find existing
+        list_resp = requests.get(f"{BASE_URL}/credentials/jira", headers=headers)
+        for cred in list_resp.json():
+            if cred["name"] == name:
+                return cred["id"], False
+    return None, False
 
 
-def get_ai_credential(headers):
-    """Get the first available AI credential."""
-    resp = requests.get(f"{BASE_URL}/credentials/ai", headers=headers)
-    assert resp.status_code == 200
-    creds = resp.json()
-    if not creds:
-        return None
-    return creds[0]["id"]
+def _ensure_ai_credential(headers):
+    """Create an AI credential from .env vars.  Returns (cred_id, created)."""
+    # Pick the first available AI provider
+    if TEST_CLAUDE_API_KEY:
+        provider, key, model = "anthropic", TEST_CLAUDE_API_KEY, TEST_CLAUDE_MODEL
+    elif TEST_OPENAI_API_KEY:
+        provider, key, model = "openai", TEST_OPENAI_API_KEY, TEST_OPENAI_MODEL
+    elif TEST_GOOGLE_API_KEY:
+        provider, key, model = "gemini", TEST_GOOGLE_API_KEY, TEST_GOOGLE_MODEL
+    else:
+        return None, False
 
+    name = f"Test AI {provider} (env)"
+    resp = requests.post(
+        f"{BASE_URL}/credentials/ai",
+        json={
+            "provider": provider,
+            "name": name,
+            "api_key": key,
+            "model": model,
+        },
+        headers=headers,
+    )
+    if resp.status_code == 200:
+        return resp.json()["id"], True
+    if resp.status_code == 400 and "already exists" in resp.json().get("detail", ""):
+        list_resp = requests.get(f"{BASE_URL}/credentials/ai", headers=headers)
+        for cred in list_resp.json():
+            if cred["name"] == name:
+                return cred["id"], False
+    return None, False
+
+
+def _cleanup_credential(headers, cred_id, cred_type):
+    """Delete a credential.  Best-effort."""
+    if cred_type == "jira":
+        requests.delete(f"{BASE_URL}/credentials/jira/{cred_id}", headers=headers)
+    else:
+        requests.delete(f"{BASE_URL}/credentials/{cred_id}", headers=headers)
+
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
 
 def test_job_completes_successfully(headers, max_retries=3):
     """Test that a job with valid credentials runs to completion."""
     print("\nTest: Job completes successfully")
     print("-" * 40)
 
-    jira_credential_id = get_jira_credential(headers)
-    if not jira_credential_id:
-        print("  ⚠ Skipping: no Jira credentials configured")
+    if not HAS_JIRA_CREDS:
+        print("  ⚠ Skipping: no Jira credentials in .env")
         return True
 
+    jira_id, jira_created = _ensure_jira_credential(headers)
+    if not jira_id:
+        print("  ⚠ Skipping: could not create Jira credential")
+        return True
+
+    ai_id, ai_created = _ensure_ai_credential(headers)
     instruction_set_id = get_instruction_set(headers)
-    ai_credential_id = get_ai_credential(headers)
 
-    for attempt in range(1, max_retries + 1):
-        # Create a job with a simple JQL query and low ticket limit
-        job_data = {
-            "instruction_set_id": instruction_set_id,
-            "jql_query": "project = EZDNXTGEN ORDER BY created DESC",
-            "max_tickets": 2,
-            "output_filename": "test-job-execution.dita"
-        }
-        if ai_credential_id:
-            job_data["ai_credential_id"] = ai_credential_id
+    try:
+        for attempt in range(1, max_retries + 1):
+            job_data = {
+                "instruction_set_id": instruction_set_id,
+                "jql_query": "project = EZDNXTGEN ORDER BY created DESC",
+                "max_tickets": 2,
+                "output_filename": "test-job-execution.dita"
+            }
+            if ai_id:
+                job_data["ai_credential_id"] = ai_id
 
-        resp = requests.post(f"{BASE_URL}/jobs", json=job_data, headers=headers)
-        assert resp.status_code == 200, f"Job creation failed: {resp.status_code} {resp.text}"
-        job_id = resp.json()["id"]
-        print(f"  Created job: {job_id} (attempt {attempt}/{max_retries})")
+            resp = requests.post(f"{BASE_URL}/jobs", json=job_data, headers=headers)
+            assert resp.status_code == 200, f"Job creation failed: {resp.status_code} {resp.text}"
+            job_id = resp.json()["id"]
+            print(f"  Created job: {job_id} (attempt {attempt}/{max_retries})")
 
-        # Wait for completion
-        job = wait_for_job(headers, job_id)
-        print(f"  Status: {job['status']}")
-        print(f"  Tickets processed: {job['tickets_processed']}")
+            job = wait_for_job(headers, job_id)
+            print(f"  Status: {job['status']}")
+            print(f"  Tickets processed: {job['tickets_processed']}")
 
-        if job["status"] == "completed":
-            assert job["tickets_processed"] > 0, "No tickets were processed"
-            print(f"  ✓ Job completed successfully with {job['tickets_processed']} tickets")
+            if job["status"] == "completed":
+                assert job["tickets_processed"] > 0, "No tickets were processed"
+                print(f"  ✓ Job completed successfully with {job['tickets_processed']} tickets")
 
-            # Verify artifacts were created
-            artifacts_resp = requests.get(
-                f"{BASE_URL}/jobs/{job_id}/artifacts", headers=headers
-            )
-            assert artifacts_resp.status_code == 200
-            artifacts = artifacts_resp.json()
-            dita_artifacts = [a for a in artifacts if a["artifact_type"] == "dita"]
-            assert len(dita_artifacts) > 0, "No DITA artifact was created"
-            print(f"  ✓ DITA artifact created: {dita_artifacts[0]['filename']}")
+                artifacts_resp = requests.get(
+                    f"{BASE_URL}/jobs/{job_id}/artifacts", headers=headers
+                )
+                assert artifacts_resp.status_code == 200
+                artifacts = artifacts_resp.json()
+                dita_artifacts = [a for a in artifacts if a["artifact_type"] == "dita"]
+                assert len(dita_artifacts) > 0, "No DITA artifact was created"
+                print(f"  ✓ DITA artifact created: {dita_artifacts[0]['filename']}")
+                requests.delete(f"{BASE_URL}/jobs/{job_id}/artifacts", headers=headers)
+                return True
 
-            # Clean up artifacts
-            requests.delete(f"{BASE_URL}/jobs/{job_id}/artifacts", headers=headers)
-            return True
+            error_msg = job.get("error_message", "")
+            transient_keywords = ["overloaded", "529", "rate limit", "429", "timeout", "503"]
+            is_transient = any(kw.lower() in error_msg.lower() for kw in transient_keywords)
 
-        # Job failed — check if it's a transient AI error worth retrying
-        error_msg = job.get("error_message", "")
-        transient_keywords = ["overloaded", "529", "rate limit", "429", "timeout", "503"]
-        is_transient = any(kw.lower() in error_msg.lower() for kw in transient_keywords)
+            if is_transient and attempt < max_retries:
+                print(f"  ⚠ Transient AI error, retrying in 10s: {error_msg}")
+                time.sleep(10)
+                continue
 
-        if is_transient and attempt < max_retries:
-            print(f"  ⚠ Transient AI error, retrying in 10s: {error_msg}")
-            time.sleep(10)
-            continue
+            stale_keywords = ["stale encryption", "no ai credentials found", "failed to decrypt"]
+            is_stale = any(kw.lower() in error_msg.lower() for kw in stale_keywords)
+            if is_stale:
+                print(f"  ⚠ Credentials have stale encryption — re-create them with the current encryption key")
+                return True
 
-        # Stale encryption = credentials encrypted with a different key (config issue)
-        stale_keywords = ["stale encryption", "no ai credentials found", "failed to decrypt"]
-        is_stale = any(kw.lower() in error_msg.lower() for kw in stale_keywords)
-        if is_stale:
-            print(f"  ⚠ Credentials have stale encryption — re-create them with the current encryption key")
-            print(f"    (This is a configuration issue, not a code bug)")
-            return True
-
-        assert False, f"Job failed with error: {error_msg}"
+            assert False, f"Job failed with error: {error_msg}"
+    finally:
+        if jira_created and jira_id:
+            _cleanup_credential(headers, jira_id, "jira")
+        if ai_created and ai_id:
+            _cleanup_credential(headers, ai_id, "ai")
 
     return False
 
@@ -170,10 +236,7 @@ def test_job_error_message_not_empty(headers):
 
     instruction_set_id = get_instruction_set(headers)
 
-    # Create a job with a fake AI credential ID to force a failure
-    import uuid
     fake_ai_id = str(uuid.uuid4())
-
     job_data = {
         "instruction_set_id": instruction_set_id,
         "ai_credential_id": fake_ai_id,
@@ -184,12 +247,10 @@ def test_job_error_message_not_empty(headers):
 
     resp = requests.post(f"{BASE_URL}/jobs", json=job_data, headers=headers)
 
-    # The API should reject the fake credential at creation time
     if resp.status_code == 404:
         print(f"  ✓ API correctly rejected fake AI credential at creation (404)")
         return True
 
-    # If it somehow gets through, the job should fail with a message
     if resp.status_code == 200:
         job_id = resp.json()["id"]
         job = wait_for_job(headers, job_id)
@@ -208,71 +269,66 @@ def test_job_error_message_not_empty(headers):
 def test_org_shared_credentials_used(headers):
     """Test that the orchestrator can use organization-shared credentials.
 
-    This verifies the fix where the orchestrator previously only looked
-    up credentials by user_id, missing org-shared credentials from other users.
+    Creates Jira + AI credentials from .env, then runs a job WITHOUT
+    specifying ai_credential_id to verify the orchestrator discovers
+    org-shared credentials automatically.
     """
     print("\nTest: Organization-shared credentials are used")
     print("-" * 40)
 
-    # List all credentials to verify org-shared ones exist
-    jira_resp = requests.get(f"{BASE_URL}/credentials/jira", headers=headers)
-    ai_resp = requests.get(f"{BASE_URL}/credentials/ai", headers=headers)
-
-    jira_creds = jira_resp.json()
-    ai_creds = ai_resp.json()
-
-    if not jira_creds or not ai_creds:
-        print("  ⚠ Skipping: need both Jira and AI credentials in the org")
+    if not HAS_JIRA_CREDS or not HAS_AI_CREDS:
+        print("  ⚠ Skipping: need both Jira and AI credentials in .env")
         return True
 
-    print(f"  Found {len(jira_creds)} Jira and {len(ai_creds)} AI credentials in org")
+    jira_id, jira_created = _ensure_jira_credential(headers)
+    ai_id, ai_created = _ensure_ai_credential(headers)
 
-    # Create a job without specifying ai_credential_id — orchestrator must find one
-    instruction_set_id = get_instruction_set(headers)
-    job_data = {
-        "instruction_set_id": instruction_set_id,
-        "jql_query": "project = EZDNXTGEN ORDER BY created DESC",
-        "max_tickets": 1,
-        "output_filename": "test-org-credentials.dita"
-    }
+    if not jira_id or not ai_id:
+        print("  ⚠ Skipping: could not create required credentials")
+        return True
 
-    resp = requests.post(f"{BASE_URL}/jobs", json=job_data, headers=headers)
-    assert resp.status_code == 200, f"Job creation failed: {resp.status_code}"
-    job_id = resp.json()["id"]
-    assert resp.json()["ai_credential_id"] is None, "Expected no AI credential on job"
-    print(f"  Created job {job_id} (no AI credential specified)")
+    try:
+        instruction_set_id = get_instruction_set(headers)
+        job_data = {
+            "instruction_set_id": instruction_set_id,
+            "jql_query": "project = EZDNXTGEN ORDER BY created DESC",
+            "max_tickets": 1,
+            "output_filename": "test-org-credentials.dita"
+        }
 
-    # Wait for the job to finish
-    job = wait_for_job(headers, job_id)
+        resp = requests.post(f"{BASE_URL}/jobs", json=job_data, headers=headers)
+        assert resp.status_code == 200, f"Job creation failed: {resp.status_code}"
+        job_id = resp.json()["id"]
+        assert resp.json()["ai_credential_id"] is None, "Expected no AI credential on job"
+        print(f"  Created job {job_id} (no AI credential specified)")
 
-    # The test passes if the job completed, OR if it failed with an AI provider
-    # error (which proves the orchestrator found credentials and tried to use them).
-    # Transient errors like 529 Overloaded don't mean credentials weren't found.
-    # Stale encryption means credentials were found but can't be decrypted (config issue,
-    # not an orchestrator bug) — this also counts as a pass for this test.
-    error_msg = job.get("error_message", "")
-    ai_provider_keywords = ["Anthropic", "OpenAI", "Gemini", "generation error", "overloaded", "rate limit"]
-    failed_with_ai_error = job["status"] == "failed" and any(kw.lower() in error_msg.lower() for kw in ai_provider_keywords)
+        job = wait_for_job(headers, job_id)
 
-    # Stale encryption = credentials exist but were encrypted with a different key.
-    # The orchestrator found them (good) but couldn't decrypt them (config issue).
-    stale_encryption = job["status"] == "failed" and "no ai credentials found" in error_msg.lower()
+        error_msg = job.get("error_message", "")
+        ai_provider_keywords = ["Anthropic", "OpenAI", "Gemini", "generation error", "overloaded", "rate limit"]
+        failed_with_ai_error = job["status"] == "failed" and any(kw.lower() in error_msg.lower() for kw in ai_provider_keywords)
 
-    assert job["status"] == "completed" or failed_with_ai_error or stale_encryption, (
-        f"Job failed: {error_msg}. "
-        "This likely means the orchestrator couldn't find org-shared credentials."
-    )
+        stale_encryption = job["status"] == "failed" and "no ai credentials found" in error_msg.lower()
 
-    if job["status"] == "completed":
-        print(f"  ✓ Job completed using org-shared credentials ({job['tickets_processed']} tickets)")
-    elif stale_encryption:
-        print(f"  ⚠ Credentials found but have stale encryption — re-create them with the current encryption key")
-        print(f"    (This is a configuration issue, not an orchestrator bug)")
-    else:
-        print(f"  ✓ Org-shared credentials were found (job failed due to transient AI error: {error_msg})")
+        assert job["status"] == "completed" or failed_with_ai_error or stale_encryption, (
+            f"Job failed: {error_msg}. "
+            "This likely means the orchestrator couldn't find org-shared credentials."
+        )
 
-    # Clean up
-    requests.delete(f"{BASE_URL}/jobs/{job_id}/artifacts", headers=headers)
+        if job["status"] == "completed":
+            print(f"  ✓ Job completed using org-shared credentials ({job['tickets_processed']} tickets)")
+        elif stale_encryption:
+            print(f"  ⚠ Credentials found but have stale encryption — re-create them with the current encryption key")
+        else:
+            print(f"  ✓ Org-shared credentials were found (job failed due to transient AI error: {error_msg})")
+
+        requests.delete(f"{BASE_URL}/jobs/{job_id}/artifacts", headers=headers)
+
+    finally:
+        if jira_created and jira_id:
+            _cleanup_credential(headers, jira_id, "jira")
+        if ai_created and ai_id:
+            _cleanup_credential(headers, ai_id, "ai")
 
     return True
 

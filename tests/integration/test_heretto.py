@@ -13,8 +13,8 @@ import asyncio
 import base64
 import xml.etree.ElementTree as ET
 
-from dotenv import load_dotenv
-load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), '.env'))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config import TEST_HERETTO_SERVER, TEST_HERETTO_USER, TEST_HERETTO_TOKEN, HAS_HERETTO_CREDS
 
 import httpx
 
@@ -40,13 +40,10 @@ def _import_backend():
 
 
 def get_env_vars():
-    """Load and return Heretto test environment variables, or None if not set."""
-    server = os.getenv("HERETTO_TESTING_SERVER")
-    user = os.getenv("HERETTO_TESTING_LOGIN_USER")
-    token = os.getenv("HERETTO_TESTING_LOGIN_TOKEN")
-    if not all([server, user, token]):
+    """Return Heretto test credentials from central config, or None if not set."""
+    if not HAS_HERETTO_CREDS:
         return None
-    return server, user, token
+    return TEST_HERETTO_SERVER, TEST_HERETTO_USER, TEST_HERETTO_TOKEN
 
 
 def make_service(server, user, token):
@@ -224,11 +221,11 @@ def main():
 
     env = get_env_vars()
     if not env:
-        print("\nSkipping Heretto tests — environment variables not set.")
-        print("Set the following to run these tests:")
-        print("  HERETTO_TESTING_SERVER")
-        print("  HERETTO_TESTING_LOGIN_USER")
-        print("  HERETTO_TESTING_LOGIN_TOKEN")
+        print("\nSkipping Heretto tests — credentials not set in .env")
+        print("Set the following in the project-root .env file:")
+        print("  TEST_HERETTO_SERVER")
+        print("  TEST_HERETTO_LOGIN_USER")
+        print("  TEST_HERETTO_LOGIN_TOKEN")
         return True  # Not a failure — just nothing to test
 
     server, user, token = env

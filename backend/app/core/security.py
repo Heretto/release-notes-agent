@@ -65,6 +65,45 @@ def decode_token(token: str) -> Dict[str, Any]:
     except JWTError as e:
         raise AuthenticationError(f"Invalid token: {str(e)}")
 
+def set_auth_cookies(response, access_token: str, refresh_token: str) -> None:
+    """Set HttpOnly auth cookies on a response."""
+    from fastapi import Response
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="lax",
+        path="/api/v1",
+        max_age=settings.jwt_access_token_expire_minutes * 60,
+        domain=settings.cookie_domain,
+    )
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="lax",
+        path="/api/v1/auth",
+        max_age=settings.jwt_refresh_token_expire_days * 86400,
+        domain=settings.cookie_domain,
+    )
+
+
+def clear_auth_cookies(response) -> None:
+    """Clear auth cookies from a response."""
+    response.delete_cookie(
+        key="access_token",
+        path="/api/v1",
+        domain=settings.cookie_domain,
+    )
+    response.delete_cookie(
+        key="refresh_token",
+        path="/api/v1/auth",
+        domain=settings.cookie_domain,
+    )
+
+
 def encrypt_credentials(credentials: Dict[str, Any]) -> bytes:
     """Encrypt credentials for storage."""
     json_str = json.dumps(credentials)
