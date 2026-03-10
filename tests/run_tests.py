@@ -14,7 +14,7 @@ import requests
 # Add tests directory to Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from config import API_BASE_URL, TEST_EMAIL, TEST_PASSWORD
+from config import API_BASE_URL, TEST_EMAIL, TEST_PASSWORD, ensure_test_account
 
 class TestRunner:
     def __init__(self, no_cleanup: bool = False):
@@ -143,6 +143,14 @@ class TestRunner:
             print("\n⚠️  Services check failed. Please start the application first.")
             return
 
+        # Ensure the default test account exists and is a superuser
+        try:
+            ensure_test_account()
+            print("✓ Test account ready")
+        except Exception as e:
+            print(f"\n⚠️  Failed to set up test account: {e}")
+            return
+
         # Snapshot existing job IDs before tests
         try:
             pre_test_job_ids = self._get_job_ids()
@@ -207,8 +215,49 @@ class TestRunner:
             except Exception as e:
                 print(f"\nWarning: Could not clean up test jobs: {e}")
 
+        # Check for missing credentials and print setup guidance
+        self._print_credential_hints()
+
         print("\nTip: To keep test data after a run: python run_tests.py --no-cleanup")
     
+    def _print_credential_hints(self):
+        """Check for missing credentials and print setup instructions."""
+        try:
+            token = self._get_auth_token()
+            headers = {"Authorization": f"Bearer {token}"}
+            missing = []
+
+            for cred_type, label in [("jira", "Jira"), ("ai", "AI"), ("heretto", "Heretto")]:
+                resp = requests.get(
+                    f"{API_BASE_URL}/credentials/{cred_type}",
+                    headers=headers,
+                    timeout=10,
+                )
+                if resp.status_code == 200 and not resp.json():
+                    missing.append(label)
+
+            if missing:
+                print("\n" + "-" * 60)
+                print("CREDENTIAL SETUP")
+                print("-" * 60)
+                print(f"Missing credentials: {', '.join(missing)}")
+                print(f"Some integration tests were skipped because credentials")
+                print(f"are not configured. To enable full testing:")
+                print()
+                print(f"  1. Log in to the app at http://localhost:4200")
+                print(f"     (email: {TEST_EMAIL}, password: {TEST_PASSWORD})")
+                print(f"  2. Go to Credentials in the sidebar")
+                print(f"  3. Add the missing credentials:")
+                if "Jira" in missing:
+                    print(f"     - Jira: server URL, email, and API token")
+                if "AI" in missing:
+                    print(f"     - AI: an API key for Google Gemini, Anthropic, or OpenAI")
+                if "Heretto" in missing:
+                    print(f"     - Heretto: server URL, username, and login token")
+                print(f"  4. Re-run the tests: python run_tests.py")
+        except Exception:
+            pass  # Don't fail the test run over a hint
+
     def print_summary(self, passed: int, failed: int):
         """Print test results summary."""
         print("\n" + "="*60)

@@ -7,9 +7,10 @@ from app.models.database import get_db, User, OrganizationMember, user_organizat
 from app.models.organization import Organization, OrganizationRole
 from app.models.schemas import UserCreate, UserResponse, LoginRequest, TokenResponse, OrganizationCreate, UserOrganizationInfo
 from app.core.security import (
-    verify_password, 
-    get_password_hash, 
-    create_access_token, 
+    verify_password,
+    get_password_hash,
+    needs_rehash,
+    create_access_token,
     create_refresh_token,
     decode_token
 )
@@ -121,7 +122,12 @@ async def login(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Inactive user"
         )
-    
+
+    # Transparently upgrade legacy SHA256 hashes to bcrypt
+    if needs_rehash(user.password_hash):
+        user.password_hash = get_password_hash(credentials.password)
+        db.commit()
+
     # Get user's organizations
     from sqlalchemy import select
     stmt = select(user_organizations).where(user_organizations.c.user_id == user.id)

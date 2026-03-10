@@ -6,47 +6,67 @@ Verifies that:
 - Non-superuser accounts get 403 on all /superadmin/* endpoints
 - Unauthenticated requests get 401 on all /superadmin/* endpoints
 - Superuser accounts can access /superadmin/* endpoints (200)
+
+Self-contained: creates its own test accounts and promotes one to superuser
+via direct database access. Does not depend on pre-existing accounts.
 """
 
 import sys
 import os
 import uuid
 import requests
+import psycopg2
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import API_BASE_URL, TEST_EMAIL, TEST_PASSWORD
+from config import API_BASE_URL, DATABASE_URL
 
 BASE_URL = API_BASE_URL
+UNIQUE = uuid.uuid4().hex[:8]
 
-# A second non-superuser test account. Created on-the-fly if needed.
-NON_SUPER_EMAIL = f"nonsupertest-{uuid.uuid4().hex[:8]}@example.com"
-NON_SUPER_PASSWORD = "testpassword123"
+# Superuser account (created and promoted during test setup)
+SU_EMAIL = f"su-access-{UNIQUE}@example.com"
+SU_PASSWORD = "testpassword123"
+SU_ORG_NAME = f"SU Access Org {UNIQUE}"
+
+# Non-superuser account
+NON_SU_EMAIL = f"nonsu-access-{UNIQUE}@example.com"
+NON_SU_PASSWORD = "testpassword123"
+NON_SU_ORG_NAME = f"NonSU Access Org {UNIQUE}"
 
 
-def get_auth_headers(email=TEST_EMAIL, password=TEST_PASSWORD):
+def register(email, password, org_name):
+    resp = requests.post(
+        f"{BASE_URL}/auth/register",
+        json={"email": email, "password": password, "organization_name": org_name},
+    )
+    assert resp.status_code == 200, f"Register {email} failed: {resp.status_code} {resp.text}"
+    return resp.json()
+
+
+def set_superuser(email, is_superuser=True):
+    """Set the is_superuser flag directly in the database."""
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE users SET is_superuser = %s WHERE email = %s",
+                (is_superuser, email),
+            )
+            assert cur.rowcount == 1, f"User {email} not found in database"
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_auth_headers(email, password):
     """Login and return authorization headers."""
     resp = requests.post(
         f"{BASE_URL}/auth/login",
-        json={"email": email, "password": password}
+        json={"email": email, "password": password},
     )
     assert resp.status_code == 200, f"Login failed for {email}: {resp.status_code} {resp.text}"
     token = resp.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
-
-
-def ensure_non_superuser_account():
-    """Register a fresh non-superuser account for testing."""
-    resp = requests.post(
-        f"{BASE_URL}/auth/register",
-        json={
-            "email": NON_SUPER_EMAIL,
-            "password": NON_SUPER_PASSWORD,
-            "organization_name": f"Test Org {uuid.uuid4().hex[:6]}",
-        }
-    )
-    if resp.status_code == 400 and "already registered" in resp.text.lower():
-        return  # already exists
-    assert resp.status_code == 200, f"Registration failed: {resp.status_code} {resp.text}"
 
 
 # ---------------------------------------------------------------------------
@@ -135,10 +155,17 @@ def main():
     print("Superadmin Access Control Tests")
     print("=" * 60)
 
-    # Prepare accounts
-    ensure_non_superuser_account()
-    non_su_headers = get_auth_headers(NON_SUPER_EMAIL, NON_SUPER_PASSWORD)
-    su_headers = get_auth_headers(TEST_EMAIL, TEST_PASSWORD)
+    # Create accounts
+    print("Setting up test accounts...")
+    register(SU_EMAIL, SU_PASSWORD, SU_ORG_NAME)
+    register(NON_SU_EMAIL, NON_SU_PASSWORD, NON_SU_ORG_NAME)
+    set_superuser(SU_EMAIL)
+    print(f"  Registered {SU_EMAIL} (promoted to superuser)")
+    print(f"  Registered {NON_SU_EMAIL} (non-superuser)")
+
+    # Authenticate
+    non_su_headers = get_auth_headers(NON_SU_EMAIL, NON_SU_PASSWORD)
+    su_headers = get_auth_headers(SU_EMAIL, SU_PASSWORD)
     print("✓ Authenticated (superuser + non-superuser)")
 
     results = []

@@ -13,22 +13,29 @@ from app.core.exceptions import AuthenticationError
 
 settings = get_settings()
 
-# Password hashing - Using SHA256 for simplicity due to bcrypt issues
-# NOTE: In production, you should fix bcrypt or use another secure method
-import hashlib
+# Password hashing with bcrypt
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Encryption for credentials
 fernet = Fernet(base64.urlsafe_b64encode(settings.encryption_key.encode()[:32].ljust(32, b'0')))
 
+def _is_sha256_hash(hashed_password: str) -> bool:
+    """Check if a hash is a legacy SHA256 hex digest (64 hex chars)."""
+    return len(hashed_password) == 64 and all(c in '0123456789abcdef' for c in hashed_password)
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a password against its hash."""
-    # For now, use SHA256 for both hashing and verification
-    return hashlib.sha256(plain_password.encode()).hexdigest() == hashed_password
+    """Verify a password against its hash. Supports legacy SHA256 and bcrypt."""
+    if _is_sha256_hash(hashed_password):
+        return hashlib.sha256(plain_password.encode()).hexdigest() == hashed_password
+    return pwd_context.verify(plain_password, hashed_password)
 
 def get_password_hash(password: str) -> str:
-    """Hash a password."""
-    # Use SHA256 for consistent hashing
-    return hashlib.sha256(password.encode()).hexdigest()
+    """Hash a password using bcrypt."""
+    return pwd_context.hash(password)
+
+def needs_rehash(hashed_password: str) -> bool:
+    """Check if a password hash should be upgraded to bcrypt."""
+    return _is_sha256_hash(hashed_password)
 
 def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
     """Create a JWT access token."""
