@@ -540,6 +540,7 @@ export class AccountComponent implements OnInit {
         });
         // Clear auth and redirect to login
         localStorage.removeItem('logged_in');
+        localStorage.removeItem('token_expires_at');
         localStorage.removeItem('user_email');
         this.router.navigate(['/login']);
       },

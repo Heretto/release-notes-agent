@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPBearer
 from sqlalchemy.orm import Session
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from app.models.database import get_db, User, OrganizationMember, user_organizations
 from app.models.organization import Organization, OrganizationRole
@@ -168,6 +168,7 @@ async def login(
     # Create tokens
     access_token = create_access_token(data=token_data)
     refresh_token = create_refresh_token(data={"sub": str(user.id)})
+    expires_at = int((datetime.utcnow() + timedelta(minutes=settings.jwt_access_token_expire_minutes)).timestamp())
 
     # Set HttpOnly cookies
     set_auth_cookies(response, access_token, refresh_token)
@@ -177,6 +178,7 @@ async def login(
         "access_token": access_token,
         "refresh_token": refresh_token,
         "token_type": "bearer",
+        "expires_at": expires_at,
         "organizations": org_list,
     }
 
@@ -245,6 +247,7 @@ async def refresh_token_endpoint(
         # Create new tokens
         new_access_token = create_access_token(data=token_data)
         new_refresh_token = create_refresh_token(data={"sub": str(user.id)})
+        expires_at = int((datetime.utcnow() + timedelta(minutes=settings.jwt_access_token_expire_minutes)).timestamp())
 
         # Set HttpOnly cookies
         set_auth_cookies(response, new_access_token, new_refresh_token)
@@ -252,7 +255,8 @@ async def refresh_token_endpoint(
         return {
             "access_token": new_access_token,
             "refresh_token": new_refresh_token,
-            "token_type": "bearer"
+            "token_type": "bearer",
+            "expires_at": expires_at,
         }
 
     except HTTPException:

@@ -15,6 +15,7 @@ export interface LoginResponse {
   access_token: string;
   refresh_token: string;
   token_type: string;
+  expires_at?: number;
   organizations?: UserOrganizationInfo[];
 }
 
@@ -34,15 +35,19 @@ export class AuthService {
   public currentUser$ = this.currentUserSubject.asObservable();
 
   private readonly LOGGED_IN_KEY = 'logged_in';
+  private readonly EXPIRES_AT_KEY = 'token_expires_at';
 
   login(email: string, password: string): Observable<LoginResponse> {
     return this.http.post<LoginResponse>(`${environment.apiUrl}/auth/login`, {
       email,
       password
     }).pipe(
-      tap(() => {
+      tap((res) => {
         localStorage.setItem(this.LOGGED_IN_KEY, 'true');
         localStorage.setItem('user_email', email);
+        if (res.expires_at) {
+          localStorage.setItem(this.EXPIRES_AT_KEY, String(res.expires_at));
+        }
       })
     );
   }
@@ -51,9 +56,12 @@ export class AuthService {
     this.router.navigate(['/dashboard']);
   }
 
-  /** Called after org switch — cookies are set by the backend, just keep flag. */
-  updateTokens(_response: { access_token: string; refresh_token: string }): void {
+  /** Called after org switch — cookies are set by the backend, just keep flag + expiry. */
+  updateTokens(response: { access_token: string; refresh_token: string; expires_at?: number }): void {
     localStorage.setItem(this.LOGGED_IN_KEY, 'true');
+    if (response.expires_at) {
+      localStorage.setItem(this.EXPIRES_AT_KEY, String(response.expires_at));
+    }
   }
 
   register(email: string, password: string, organizationName?: string): Observable<any> {
@@ -75,6 +83,7 @@ export class AuthService {
       error: () => {} // best-effort
     });
     localStorage.removeItem(this.LOGGED_IN_KEY);
+    localStorage.removeItem(this.EXPIRES_AT_KEY);
     localStorage.removeItem('user_email');
     this.currentUserSubject.next(null);
     this.router.navigate(['/login']);
@@ -83,13 +92,28 @@ export class AuthService {
   refreshToken(): Observable<LoginResponse> {
     // Refresh token is sent automatically via HttpOnly cookie
     return this.http.post<LoginResponse>(`${environment.apiUrl}/auth/refresh`, {}).pipe(
-      tap(() => {
+      tap((res) => {
         localStorage.setItem(this.LOGGED_IN_KEY, 'true');
+        if (res.expires_at) {
+          localStorage.setItem(this.EXPIRES_AT_KEY, String(res.expires_at));
+        }
       })
     );
   }
 
   isAuthenticated(): boolean {
-    return localStorage.getItem(this.LOGGED_IN_KEY) === 'true';
+    if (localStorage.getItem(this.LOGGED_IN_KEY) !== 'true') {
+      return false;
+    }
+    const expiresAt = localStorage.getItem(this.EXPIRES_AT_KEY);
+    if (expiresAt) {
+      // Token expired — clear state and deny access
+      if (Date.now() / 1000 >= Number(expiresAt)) {
+        localStorage.removeItem(this.LOGGED_IN_KEY);
+        localStorage.removeItem(this.EXPIRES_AT_KEY);
+        return false;
+      }
+    }
+    return true;
   }
 }
