@@ -15,7 +15,7 @@ from app.models.schemas import (
     AICredentials
 )
 from app.api.dependencies import get_current_active_user
-from app.core.security import encrypt_credentials, decrypt_credentials
+from app.core.security import encrypt_credentials, decrypt_credentials, validate_server_url
 from app.services.jira_service_v3 import JiraServiceV3
 from app.services.heretto_service import HerettoService
 
@@ -156,11 +156,19 @@ async def create_jira_credential(
         "email": credential_data.get("email"),
         "api_token": credential_data.get("api_token")
     }
-    
+
     if not all(jira_creds.values()):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Missing required Jira credential fields"
+        )
+
+    try:
+        validate_server_url(jira_creds["server_url"])
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid server URL: {e}"
         )
     
     # Encrypt and store credential
@@ -219,6 +227,13 @@ async def update_jira_credential(
     # Update encrypted data if new credentials provided
     jira_creds = {}
     if credential_data.get("server_url"):
+        try:
+            validate_server_url(credential_data.get("server_url"))
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid server URL: {e}"
+            )
         jira_creds["server_url"] = credential_data.get("server_url")
     if credential_data.get("email"):
         jira_creds["email"] = credential_data.get("email")
@@ -385,6 +400,14 @@ async def create_heretto_credential(
             detail="Missing required Heretto credential fields"
         )
 
+    try:
+        validate_server_url(heretto_creds["server_url"])
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid server URL: {e}"
+        )
+
     encrypted_data = encrypt_credentials(heretto_creds)
 
     new_credential = Credential(
@@ -438,6 +461,13 @@ async def update_heretto_credential(
 
     heretto_creds = {}
     if credential_data.get("server_url"):
+        try:
+            validate_server_url(credential_data.get("server_url"))
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid server URL: {e}"
+            )
         heretto_creds["server_url"] = credential_data.get("server_url")
     if credential_data.get("username"):
         heretto_creds["username"] = credential_data.get("username")

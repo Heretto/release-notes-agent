@@ -148,6 +148,61 @@ def decrypt_credentials(encrypted_data: bytes) -> Dict[str, Any]:
         decrypted = _legacy_fernet.decrypt(encrypted_data)
         return json.loads(decrypted.decode())
 
+import ipaddress
+import socket
+from urllib.parse import urlparse
+
+# IP ranges that must never be targeted by user-supplied URLs
+_BLOCKED_NETWORKS = [
+    ipaddress.ip_network("127.0.0.0/8"),       # loopback
+    ipaddress.ip_network("10.0.0.0/8"),         # RFC 1918
+    ipaddress.ip_network("172.16.0.0/12"),      # RFC 1918
+    ipaddress.ip_network("192.168.0.0/16"),     # RFC 1918
+    ipaddress.ip_network("169.254.0.0/16"),     # link-local / cloud metadata
+    ipaddress.ip_network("::1/128"),            # IPv6 loopback
+    ipaddress.ip_network("fc00::/7"),           # IPv6 unique-local
+    ipaddress.ip_network("fe80::/10"),          # IPv6 link-local
+]
+
+
+def validate_server_url(url: str) -> str:
+    """Validate a user-supplied server URL to prevent SSRF.
+
+    Checks:
+      - Scheme is https (or http in development mode)
+      - Hostname resolves to a public IP (not loopback, private, or link-local)
+      - No bare IP addresses pointing at internal ranges
+
+    Returns the validated URL, or raises ValueError with a user-safe message.
+    """
+    parsed = urlparse(url)
+
+    # Scheme check
+    allowed_schemes = ("https",)
+    if settings.app_env == "development":
+        allowed_schemes = ("https", "http")
+    if parsed.scheme not in allowed_schemes:
+        raise ValueError(f"URL must use {' or '.join(allowed_schemes)}")
+
+    hostname = parsed.hostname
+    if not hostname:
+        raise ValueError("URL must include a hostname")
+
+    # Resolve hostname and check all resulting IPs
+    try:
+        addrinfos = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+    except socket.gaierror:
+        raise ValueError(f"Cannot resolve hostname: {hostname}")
+
+    for family, _, _, _, sockaddr in addrinfos:
+        ip = ipaddress.ip_address(sockaddr[0])
+        for network in _BLOCKED_NETWORKS:
+            if ip in network:
+                raise ValueError("URL must not point to a private or internal address")
+
+    return url
+
+
 def verify_jira_webhook_signature(body: bytes, signature: Optional[str]) -> bool:
     """Verify Jira webhook signature."""
     if not signature or not settings.jira_webhook_secret:
