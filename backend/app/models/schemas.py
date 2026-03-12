@@ -232,11 +232,14 @@ class WebhookConfigResponse(BaseModel):
     instruction_set_id: UUID
     auto_publish: bool
     is_active: bool
-    secret_token: str
     created_at: datetime
-    
+
     class Config:
         from_attributes = True
+
+class WebhookConfigCreateResponse(WebhookConfigResponse):
+    """Returned only on creation — includes the secret token (shown once)."""
+    secret_token: str
 
 # DITA template schemas
 class DitaTemplateCreate(BaseModel):

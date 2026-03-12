@@ -8,7 +8,8 @@ from app.models.database import get_db, User, WebhookConfig
 from app.models.schemas import (
     WebhookConfigCreate,
     WebhookConfigUpdate,
-    WebhookConfigResponse
+    WebhookConfigResponse,
+    WebhookConfigCreateResponse,
 )
 from app.api.dependencies import get_current_active_user
 from app.core.security import verify_jira_webhook_signature
@@ -27,7 +28,7 @@ async def list_webhook_configs(
     ).all()
     return configs
 
-@router.post("/", response_model=WebhookConfigResponse)
+@router.post("/", response_model=WebhookConfigCreateResponse)
 async def create_webhook_config(
     config_data: WebhookConfigCreate,
     current_user: User = Depends(get_current_active_user),
