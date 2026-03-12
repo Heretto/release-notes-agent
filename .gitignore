@@ -61,6 +61,8 @@ postgres_data/
 redis_data/
 
 # Application
+.env.production
+.env
 backend/.env
 frontend/.env
 *.sqlite
