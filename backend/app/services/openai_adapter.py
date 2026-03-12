@@ -1,42 +1,41 @@
 import openai
 from typing import AsyncIterator, Optional
 import asyncio
+import logging
 
 from app.services.ai_service import AIServiceInterface, GenerationRequest, GenerationResponse
 
+logger = logging.getLogger(__name__)
+
 class OpenAIAdapter(AIServiceInterface):
     """OpenAI GPT AI service implementation."""
-    
+
     def __init__(self, api_key: str, model_name: str = "gpt-4-turbo-preview"):
         """Initialize OpenAI adapter with API key and model."""
         if not api_key:
             raise ValueError("API key is empty")
-        
-        # Strip any whitespace and ensure it's a string
+
         api_key = str(api_key).strip()
-        
-        # OpenAI API keys should start with 'sk-'
+
         if not api_key.startswith("sk-"):
-            print(f"[OpenAIAdapter] Warning: API key doesn't start with 'sk-' (got '{api_key[:10] if len(api_key) >= 10 else api_key}...')")
-        
-        print(f"[OpenAIAdapter] Initializing with model: {model_name}")
-        
+            logger.warning("OpenAI API key has unexpected prefix")
+
+        logger.debug("Initializing OpenAIAdapter with model: %s", model_name)
+
         try:
-            # Initialize OpenAI client
             self.client = openai.AsyncOpenAI(api_key=api_key)
             self.sync_client = openai.OpenAI(api_key=api_key)
             self._model_name = model_name
-            print(f"[OpenAIAdapter] Client initialized successfully")
-            print(f"[OpenAIAdapter] Using model: {model_name}")
+            logger.debug("OpenAIAdapter initialized successfully")
         except Exception as e:
-            print(f"[OpenAIAdapter] Failed to initialize client: {e}")
+            logger.error("Failed to initialize OpenAIAdapter: %s", e)
             raise
     
     async def generate(self, request: GenerationRequest) -> GenerationResponse:
         """Generate content synchronously."""
         try:
-            print(f"[OpenAIAdapter] Generating with model: {self._model_name}")
-            
+            logger.debug("OpenAIAdapter generating with model: %s", self._model_name)
+
             # Create messages array with system and user prompts
             messages = []
             if request.system_prompt:
@@ -74,20 +73,20 @@ class OpenAIAdapter(AIServiceInterface):
                     # Swap the parameter and retry
                     if "max_completion_tokens" in completion_params:
                         completion_params["max_tokens"] = completion_params.pop("max_completion_tokens")
-                        print(f"[OpenAIAdapter] Switching from max_completion_tokens to max_tokens for {self._model_name}")
+                        logger.debug("Switching from max_completion_tokens to max_tokens for %s", self._model_name)
                     else:
                         completion_params["max_completion_tokens"] = completion_params.pop("max_tokens")
-                        print(f"[OpenAIAdapter] Switching from max_tokens to max_completion_tokens for {self._model_name}")
-                    
+                        logger.debug("Switching from max_tokens to max_completion_tokens for %s", self._model_name)
+
                     # Retry with the other parameter
                     response = await self.client.chat.completions.create(**completion_params)
                 else:
                     # Re-raise if it's not a parameter issue
                     raise
-            
+
             # Extract the generated content
             content = response.choices[0].message.content
-            
+
             # Build usage dict
             usage = {}
             if response.usage:
@@ -96,23 +95,23 @@ class OpenAIAdapter(AIServiceInterface):
                     "completion_tokens": response.usage.completion_tokens,
                     "total_tokens": response.usage.total_tokens
                 }
-            
+
             return GenerationResponse(
                 content=content,
                 model=response.model,
                 usage=usage,
                 finish_reason=response.choices[0].finish_reason or "stop"
             )
-            
+
         except Exception as e:
-            print(f"[OpenAIAdapter] Generation failed: {e}")
+            logger.error("OpenAI generation failed: %s", e)
             raise
     
     async def generate_stream(self, request: GenerationRequest) -> AsyncIterator[str]:
         """Generate content with streaming."""
         try:
-            print(f"[OpenAIAdapter] Starting stream generation with model: {self._model_name}")
-            
+            logger.debug("OpenAIAdapter starting stream generation with model: %s", self._model_name)
+
             # Create messages array with system and user prompts
             messages = []
             if request.system_prompt:
@@ -149,10 +148,10 @@ class OpenAIAdapter(AIServiceInterface):
                     # Swap the parameter and retry
                     if "max_completion_tokens" in completion_params:
                         completion_params["max_tokens"] = completion_params.pop("max_completion_tokens")
-                        print(f"[OpenAIAdapter] Switching to max_tokens for streaming with {self._model_name}")
+                        logger.debug("Switching to max_tokens for streaming with %s", self._model_name)
                     else:
                         completion_params["max_completion_tokens"] = completion_params.pop("max_tokens")
-                        print(f"[OpenAIAdapter] Switching to max_completion_tokens for streaming with {self._model_name}")
+                        logger.debug("Switching to max_completion_tokens for streaming with %s", self._model_name)
                     
                     # Retry with the other parameter
                     stream = await self.client.chat.completions.create(**completion_params)
@@ -166,9 +165,9 @@ class OpenAIAdapter(AIServiceInterface):
                     yield chunk.choices[0].delta.content
                     
         except Exception as e:
-            print(f"[OpenAIAdapter] Stream generation failed: {e}")
+            logger.error("OpenAI stream generation failed: %s", e)
             raise
-    
+
     def get_model_name(self) -> str:
         """Return the model identifier."""
         return self._model_name
@@ -217,5 +216,5 @@ class OpenAIAdapter(AIServiceInterface):
             
             return bool(response.choices[0].message.content)
         except Exception as e:
-            print(f"[OpenAIAdapter] Connection test failed: {e}")
+            logger.error("OpenAI connection test failed: %s", e)
             return False
