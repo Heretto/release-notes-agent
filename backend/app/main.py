@@ -36,8 +36,12 @@ app.add_middleware(
     allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_headers=["Content-Type", "Authorization", "X-CSRF-Token"],
 )
+
+# CSRF protection (double-submit cookie pattern)
+from app.core.csrf import CSRFMiddleware
+app.add_middleware(CSRFMiddleware)
 
 # Include routers
 app.include_router(health.router, prefix=settings.api_prefix, tags=["health"])

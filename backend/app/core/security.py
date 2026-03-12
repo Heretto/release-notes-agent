@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 import hashlib
 import hmac
+import secrets
 import jwt
 from passlib.context import CryptContext
 from cryptography.fernet import Fernet, InvalidToken
@@ -90,9 +91,13 @@ def decode_token(token: str) -> Dict[str, Any]:
     except jwt.PyJWTError as e:
         raise AuthenticationError(f"Invalid token: {str(e)}")
 
+def generate_csrf_token() -> str:
+    """Generate a cryptographically random CSRF token."""
+    return secrets.token_urlsafe(32)
+
+
 def set_auth_cookies(response, access_token: str, refresh_token: str) -> None:
-    """Set HttpOnly auth cookies on a response."""
-    from fastapi import Response
+    """Set HttpOnly auth cookies and a readable CSRF cookie on a response."""
     response.set_cookie(
         key="access_token",
         value=access_token,
@@ -113,6 +118,18 @@ def set_auth_cookies(response, access_token: str, refresh_token: str) -> None:
         max_age=settings.jwt_refresh_token_expire_days * 86400,
         domain=settings.cookie_domain,
     )
+    # CSRF token — readable by JavaScript so the frontend can send it as a header.
+    # The double-submit pattern validates that the cookie value matches the header.
+    response.set_cookie(
+        key="csrf_token",
+        value=generate_csrf_token(),
+        httponly=False,
+        secure=settings.cookie_secure,
+        samesite="lax",
+        path="/api/v1",
+        max_age=settings.jwt_access_token_expire_minutes * 60,
+        domain=settings.cookie_domain,
+    )
 
 
 def clear_auth_cookies(response) -> None:
@@ -125,6 +142,11 @@ def clear_auth_cookies(response) -> None:
     response.delete_cookie(
         key="refresh_token",
         path="/api/v1/auth",
+        domain=settings.cookie_domain,
+    )
+    response.delete_cookie(
+        key="csrf_token",
+        path="/api/v1",
         domain=settings.cookie_domain,
     )
 
