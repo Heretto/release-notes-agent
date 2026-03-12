@@ -52,8 +52,12 @@ export class AuthService {
     );
   }
 
-  navigateToDashboard(): void {
-    this.router.navigate(['/dashboard']);
+  navigateToDashboard(returnUrl?: string): void {
+    if (returnUrl && returnUrl.startsWith('/') && !returnUrl.startsWith('//') && !returnUrl.includes('://')) {
+      this.router.navigateByUrl(returnUrl);
+    } else {
+      this.router.navigate(['/dashboard']);
+    }
   }
 
   /** Called after org switch — cookies are set by the backend, just keep flag + expiry. */
