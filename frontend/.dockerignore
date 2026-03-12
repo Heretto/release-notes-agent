@@ -1,0 +1,11 @@
+.env
+.env.*
+.git/
+.gitignore
+.angular/
+node_modules/
+dist/
+*.log
+*.md
+Dockerfile
+.dockerignore
