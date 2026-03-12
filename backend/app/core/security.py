@@ -2,9 +2,11 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 import hashlib
 import hmac
-from jose import JWTError, jwt
+import jwt
 from passlib.context import CryptContext
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.primitives import hashes
 import base64
 import json
 
@@ -16,8 +18,31 @@ settings = get_settings()
 # Password hashing with bcrypt
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# Encryption for credentials
-fernet = Fernet(base64.urlsafe_b64encode(settings.encryption_key.encode()[:32].ljust(32, b'0')))
+# Encryption for credentials — derive a proper 256-bit key via PBKDF2
+_ENCRYPTION_SALT = b"release-notes-agent-credential-encryption"
+
+def _derive_fernet_key(passphrase: str) -> bytes:
+    """Derive a Fernet key from a passphrase using PBKDF2-HMAC-SHA256."""
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=_ENCRYPTION_SALT,
+        iterations=480_000,
+    )
+    return base64.urlsafe_b64encode(kdf.derive(passphrase.encode()))
+
+def _derive_legacy_fernet_key(passphrase: str) -> bytes:
+    """Legacy key derivation (truncate/pad to 32 bytes). Used for migration only."""
+    return base64.urlsafe_b64encode(passphrase.encode()[:32].ljust(32, b'0'))
+
+if len(settings.encryption_key) < 16:
+    raise ValueError(
+        "ENCRYPTION_KEY must be at least 16 characters. "
+        "Generate a strong key, e.g.: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
+    )
+
+fernet = Fernet(_derive_fernet_key(settings.encryption_key))
+_legacy_fernet = Fernet(_derive_legacy_fernet_key(settings.encryption_key))
 
 def _is_sha256_hash(hashed_password: str) -> bool:
     """Check if a hash is a legacy SHA256 hex digest (64 hex chars)."""
@@ -62,7 +87,7 @@ def decode_token(token: str) -> Dict[str, Any]:
     try:
         payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
         return payload
-    except JWTError as e:
+    except jwt.PyJWTError as e:
         raise AuthenticationError(f"Invalid token: {str(e)}")
 
 def set_auth_cookies(response, access_token: str, refresh_token: str) -> None:
@@ -105,14 +130,23 @@ def clear_auth_cookies(response) -> None:
 
 
 def encrypt_credentials(credentials: Dict[str, Any]) -> bytes:
-    """Encrypt credentials for storage."""
+    """Encrypt credentials for storage (always uses current PBKDF2-derived key)."""
     json_str = json.dumps(credentials)
     return fernet.encrypt(json_str.encode())
 
 def decrypt_credentials(encrypted_data: bytes) -> Dict[str, Any]:
-    """Decrypt stored credentials."""
-    decrypted = fernet.decrypt(encrypted_data)
-    return json.loads(decrypted.decode())
+    """Decrypt stored credentials.
+
+    Tries the current PBKDF2-derived key first. If that fails, falls back to
+    the legacy truncate-and-pad key so existing data can still be read.
+    """
+    try:
+        decrypted = fernet.decrypt(encrypted_data)
+        return json.loads(decrypted.decode())
+    except InvalidToken:
+        # Try legacy key derivation for data encrypted before the migration
+        decrypted = _legacy_fernet.decrypt(encrypted_data)
+        return json.loads(decrypted.decode())
 
 def verify_jira_webhook_signature(body: bytes, signature: Optional[str]) -> bool:
     """Verify Jira webhook signature."""
