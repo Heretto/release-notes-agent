@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
 from typing import List
 from uuid import UUID
 
@@ -35,9 +34,11 @@ async def list_credentials(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """List all credentials for current user."""
+    """List all credentials for current user's organization."""
+    if not current_user.current_organization_id:
+        return []
     credentials = db.query(Credential).filter(
-        Credential.user_id == current_user.id
+        Credential.organization_id == current_user.current_organization_id
     ).all()
     return credentials
 
@@ -48,33 +49,41 @@ async def create_credential(
     db: Session = Depends(get_db)
 ):
     """Create new credential."""
-    # Check if credential with same name exists
+    if not current_user.current_organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User must be part of an organization to create credentials"
+        )
+
+    # Check if credential with same name exists in the organization
     existing = db.query(Credential).filter(
-        Credential.user_id == current_user.id,
+        Credential.organization_id == current_user.current_organization_id,
         Credential.type == credential_data.type,
         Credential.name == credential_data.name
     ).first()
-    
+
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Credential with this name already exists"
         )
-    
+
     # Encrypt and store credential
     encrypted_data = encrypt_credentials(credential_data.credentials)
-    
+
     new_credential = Credential(
         user_id=current_user.id,
+        organization_id=current_user.current_organization_id,
         type=credential_data.type,
         name=credential_data.name,
-        encrypted_data=encrypted_data
+        encrypted_data=encrypted_data,
+        created_by=current_user.email,
     )
-    
+
     db.add(new_credential)
     db.commit()
     db.refresh(new_credential)
-    
+
     return new_credential
 
 # Jira-specific endpoints
@@ -191,10 +200,7 @@ async def update_jira_credential(
     """Update existing Jira credential."""
     credential = db.query(Credential).filter(
         Credential.id == credential_id,
-        or_(
-            Credential.user_id == current_user.id,
-            Credential.organization_id == current_user.current_organization_id
-        ),
+        Credential.organization_id == current_user.current_organization_id,
         Credential.type == CredentialType.JIRA
     ).first()
     
@@ -249,10 +255,7 @@ async def delete_jira_credential(
     """Delete Jira credential."""
     credential = db.query(Credential).filter(
         Credential.id == credential_id,
-        or_(
-            Credential.user_id == current_user.id,
-            Credential.organization_id == current_user.current_organization_id
-        ),
+        Credential.organization_id == current_user.current_organization_id,
         Credential.type == CredentialType.JIRA
     ).first()
     
@@ -418,10 +421,7 @@ async def update_heretto_credential(
     """Update existing Heretto credential."""
     credential = db.query(Credential).filter(
         Credential.id == credential_id,
-        or_(
-            Credential.user_id == current_user.id,
-            Credential.organization_id == current_user.current_organization_id
-        ),
+        Credential.organization_id == current_user.current_organization_id,
         Credential.type == CredentialType.HERETTO
     ).first()
 
@@ -473,10 +473,7 @@ async def delete_heretto_credential(
     """Delete Heretto credential."""
     credential = db.query(Credential).filter(
         Credential.id == credential_id,
-        or_(
-            Credential.user_id == current_user.id,
-            Credential.organization_id == current_user.current_organization_id
-        ),
+        Credential.organization_id == current_user.current_organization_id,
         Credential.type == CredentialType.HERETTO
     ).first()
 
@@ -616,9 +613,12 @@ async def get_ai_credential(
     db: Session = Depends(get_db)
 ):
     """Get single AI credential with details (API key masked)."""
+    if not current_user.current_organization_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="AI credential not found")
+
     credential = db.query(Credential).filter(
         Credential.id == credential_id,
-        Credential.user_id == current_user.id,
+        Credential.organization_id == current_user.current_organization_id,
         Credential.type.in_([CredentialType.GEMINI, CredentialType.OPENAI, CredentialType.ANTHROPIC])
     ).first()
     
@@ -660,10 +660,7 @@ async def update_credential(
     """Update existing credential."""
     credential = db.query(Credential).filter(
         Credential.id == credential_id,
-        or_(
-            Credential.user_id == current_user.id,
-            Credential.organization_id == current_user.current_organization_id
-        )
+        Credential.organization_id == current_user.current_organization_id
     ).first()
 
     if not credential:
@@ -704,10 +701,7 @@ async def delete_credential(
     """Delete credential."""
     credential = db.query(Credential).filter(
         Credential.id == credential_id,
-        or_(
-            Credential.user_id == current_user.id,
-            Credential.organization_id == current_user.current_organization_id
-        )
+        Credential.organization_id == current_user.current_organization_id
     ).first()
 
     if not credential:
@@ -734,10 +728,7 @@ async def test_credential(
     
     credential = db.query(Credential).filter(
         Credential.id == credential_id,
-        or_(
-            Credential.user_id == current_user.id,
-            Credential.organization_id == current_user.current_organization_id
-        )
+        Credential.organization_id == current_user.current_organization_id
     ).first()
 
     if not credential:
@@ -1179,10 +1170,7 @@ async def test_heretto_upload(
 
     credential = db.query(Credential).filter(
         Credential.id == credential_id,
-        or_(
-            Credential.user_id == current_user.id,
-            Credential.organization_id == current_user.current_organization_id
-        ),
+        Credential.organization_id == current_user.current_organization_id,
         Credential.type == CredentialType.HERETTO
     ).first()
 
