@@ -3,6 +3,8 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from uuid import UUID
 from datetime import datetime
+import re
+from urllib.parse import quote
 
 from app.models.database import get_db, User, Job, JobArtifact, JobRequest, InstructionSet, Credential, CredentialType, JobStatus, JobTrigger
 from app.models.schemas import (
@@ -289,12 +291,16 @@ async def download_artifact(
     else:
         content_type = "text/plain"
     
+    # Sanitize filename: strip path components and control/quote characters
+    safe_name = artifact.filename.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    safe_name = re.sub(r'[\x00-\x1f\x7f"\\]', "", safe_name).strip() or "download"
+
     # Return the file as a downloadable response
     return Response(
         content=artifact.content,
         media_type=content_type,
         headers={
-            "Content-Disposition": f'attachment; filename="{artifact.filename}"'
+            "Content-Disposition": f"attachment; filename=\"{safe_name}\"; filename*=UTF-8''{quote(safe_name)}"
         }
     )
 
