@@ -84,7 +84,7 @@ ENCRYPTION_KEY=your-encryption-key
 
 # Database
 DATABASE_URL=postgresql://user:password@localhost:5432/release_notes_db
-REDIS_URL=redis://localhost:6379/0
+REDIS_URL=redis://:devpassword@localhost:6379/0
 ```
 
 ### First-Time Setup

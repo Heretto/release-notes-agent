@@ -9,7 +9,7 @@ services:
       POSTGRES_PASSWORD: password
       POSTGRES_DB: release_notes_db
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -22,12 +22,12 @@ services:
     image: redis:7-alpine
     container_name: release-notes-redis
     ports:
-      - "6379:6379"
-    command: redis-server --appendonly yes
+      - "127.0.0.1:6379:6379"
+    command: redis-server --appendonly yes --requirepass devpassword
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "devpassword", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -44,7 +44,7 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://user:password@postgres:5432/release_notes_db
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: redis://:devpassword@redis:6379/0
       APP_ENV: development
       APP_SECRET_KEY: ${APP_SECRET_KEY:-development-secret-key}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-development-jwt-key}
@@ -71,7 +71,7 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://user:password@postgres:5432/release_notes_db
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: redis://:devpassword@redis:6379/0
       APP_ENV: development
       APP_SECRET_KEY: ${APP_SECRET_KEY:-development-secret-key}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-development-encryption-key}
