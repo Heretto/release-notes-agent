@@ -2,6 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
 from uuid import UUID
+import logging
+
+logger = logging.getLogger(__name__)
 
 from app.models.database import get_db, User, Credential, CredentialType
 from app.models.schemas import (
@@ -118,7 +121,7 @@ async def list_jira_credentials(
                 updated_at=cred.updated_at
             ))
         except Exception as e:
-            print(f"[ERROR] Failed to decrypt credential {cred.id}: {e}")
+            logger.error("Failed to decrypt credential %s: %s", cred.id, e)
             continue
 
     return result
@@ -315,7 +318,7 @@ async def list_heretto_credentials(
                 updated_at=cred.updated_at
             ))
         except Exception as e:
-            print(f"[ERROR] Failed to decrypt credential {cred.id}: {e}")
+            logger.error("Failed to decrypt credential %s: %s", cred.id, e)
             continue
 
     return result
@@ -1109,27 +1112,32 @@ async def test_credential(
                     }
             except Exception as e:
                 error_msg = str(e)
-                # Extract more specific error info if available
+                logger.error("AI credential test failed for %s: %s", credential.id, error_msg)
+                # Map error to user-safe status code without leaking internals
                 status_code = 500
+                user_message = "Connection failed"
                 if "401" in error_msg or "unauthorized" in error_msg.lower():
                     status_code = 401
+                    user_message = "Authentication failed — check your API key"
                 elif "403" in error_msg or "forbidden" in error_msg.lower():
                     status_code = 403
+                    user_message = "Access denied — check your API key permissions"
                 elif "404" in error_msg or "not found" in error_msg.lower():
                     status_code = 404
+                    user_message = "API endpoint not found — check provider and model"
                 elif "400" in error_msg or "invalid" in error_msg.lower():
                     status_code = 400
-                    
+                    user_message = "Invalid request — check your credential configuration"
+
                 return {
                     "success": False,
                     "status_code": status_code,
-                    "message": f"{credential.type.value.capitalize()} connection failed",
+                    "message": f"{credential.type.value.capitalize()} {user_message}",
                     "timestamp": datetime.utcnow().isoformat(),
                     "request": {
                         "provider": credential.type.value.lower(),
                         "model": decrypted.get("model", "default")
                     },
-                    "error": error_msg
                 }
             
         else:
@@ -1141,44 +1149,34 @@ async def test_credential(
             }
             
     except httpx.ConnectError as e:
-        # Connection-specific errors
-        error_msg = str(e)
-        if "All connection attempts failed" in error_msg:
-            return {
-                "success": False,
-                "status_code": 503,
-                "message": "Unable to connect to the server. Please check the server URL and your network connection.",
-                "timestamp": datetime.utcnow().isoformat(),
-                "error_details": f"Connection failed: {error_msg}",
-                "troubleshooting": [
-                    "Verify the server URL is correct",
-                    "Check if the server is accessible from your network",
-                    "Ensure there are no firewall or proxy issues",
-                    "Try accessing the URL directly in a browser"
-                ]
-            }
+        logger.error("Credential test connection error for %s: %s", credential_id, e)
         return {
             "success": False,
             "status_code": 503,
-            "message": f"Connection error: {error_msg}",
+            "message": "Unable to connect to the server. Please check the server URL and your network connection.",
             "timestamp": datetime.utcnow().isoformat(),
-            "error_details": str(e)
+            "troubleshooting": [
+                "Verify the server URL is correct",
+                "Check if the server is accessible from your network",
+                "Ensure there are no firewall or proxy issues",
+                "Try accessing the URL directly in a browser"
+            ]
         }
     except httpx.TimeoutException as e:
+        logger.error("Credential test timeout for %s: %s", credential_id, e)
         return {
             "success": False,
             "status_code": 504,
             "message": "Connection timed out. The server took too long to respond.",
             "timestamp": datetime.utcnow().isoformat(),
-            "error_details": str(e)
         }
     except Exception as e:
+        logger.error("Credential test failed for %s: %s", credential_id, e)
         return {
             "success": False,
             "status_code": 500,
-            "message": f"Test failed: {str(e)}",
+            "message": "An unexpected error occurred while testing the credential.",
             "timestamp": datetime.utcnow().isoformat(),
-            "error_details": str(e)
         }
 
 @router.post("/{credential_id}/test-upload")
