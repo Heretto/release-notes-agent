@@ -97,9 +97,15 @@ async def update_instruction_set(
             InstructionSet.is_default == True
         ).update({"is_default": False})
     
-    # Update fields
+    # Update fields — whitelist to prevent overwriting sensitive attributes
+    _INSTRUCTION_UPDATABLE_FIELDS = {
+        "name", "description", "jql_query", "system_prompt",
+        "user_instructions", "dita_template_id", "heretto_folder_id",
+        "publish_to_heretto", "is_default",
+    }
     for field, value in instruction_data.model_dump(exclude_unset=True).items():
-        setattr(instruction_set, field, value)
+        if field in _INSTRUCTION_UPDATABLE_FIELDS:
+            setattr(instruction_set, field, value)
     
     db.commit()
     db.refresh(instruction_set)

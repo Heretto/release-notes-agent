@@ -69,8 +69,13 @@ async def update_webhook_config(
             detail="Webhook configuration not found"
         )
     
+    _WEBHOOK_UPDATABLE_FIELDS = {
+        "name", "trigger_events", "jql_filter",
+        "instruction_set_id", "auto_publish", "is_active",
+    }
     for field, value in config_data.model_dump(exclude_unset=True).items():
-        setattr(config, field, value)
+        if field in _WEBHOOK_UPDATABLE_FIELDS:
+            setattr(config, field, value)
     
     db.commit()
     db.refresh(config)
