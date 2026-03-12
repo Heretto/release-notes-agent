@@ -20,9 +20,6 @@ class AnthropicAdapter(AIServiceInterface):
             print(f"[AnthropicAdapter] Warning: API key doesn't start with 'sk-' (got '{api_key[:10] if len(api_key) >= 10 else api_key}...')")
         
         print(f"[AnthropicAdapter] Initializing with model: {model_name}")
-        # remove this statement after getting claude working
-        print(f"[AnthropicAdapter] API key : {api_key}")
-        print(f"[AnthropicAdapter] API key format check: starts={api_key[:10] if len(api_key) >= 10 else 'short'}, ends={api_key[-5:] if len(api_key) >= 5 else 'short'}")
         
         try:
             # Try with explicit base URL if needed
