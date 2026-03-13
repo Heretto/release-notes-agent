@@ -4,7 +4,7 @@ import hashlib
 import hmac
 import secrets
 import jwt
-from passlib.context import CryptContext
+import bcrypt
 from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
@@ -15,9 +15,6 @@ from app.config import get_settings
 from app.core.exceptions import AuthenticationError
 
 settings = get_settings()
-
-# Password hashing with bcrypt
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Encryption for credentials — derive a proper 256-bit key via PBKDF2
 _ENCRYPTION_SALT = b"release-notes-agent-credential-encryption"
@@ -53,11 +50,11 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against its hash. Supports legacy SHA256 and bcrypt."""
     if _is_sha256_hash(hashed_password):
         return hashlib.sha256(plain_password.encode()).hexdigest() == hashed_password
-    return pwd_context.verify(plain_password, hashed_password)
+    return bcrypt.checkpw(plain_password.encode(), hashed_password.encode())
 
 def get_password_hash(password: str) -> str:
     """Hash a password using bcrypt."""
-    return pwd_context.hash(password)
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
 def needs_rehash(hashed_password: str) -> bool:
     """Check if a password hash should be upgraded to bcrypt."""
