@@ -62,7 +62,7 @@ export class AccountService {
 
   deleteAccount(confirm: boolean = false): Observable<{ message: string }> {
     return this.http.delete<{ message: string }>(`${this.apiUrl}/me`, {
-      params: { confirm: confirm.toString() }
+      body: { confirm }
     });
   }
   
