@@ -77,19 +77,17 @@ async def get_invitation_info(
     inviter = db.query(User).filter(
         User.id == invitation.invited_by
     ).first()
-    
-    # Check if user already exists
-    existing_user = db.query(User).filter(
-        User.email == invitation.email
-    ).first()
-    
+
+    # Note: we intentionally do NOT reveal whether the email is already
+    # registered (user enumeration risk).  The frontend's 409 handler
+    # will switch to the existing-user flow when needed.
     return InvitationInfoResponse(
         email=invitation.email,
         organization_name=organization.name,
         role=str(invitation.role.value if hasattr(invitation.role, 'value') else invitation.role).lower(),
         invited_by_email=inviter.email if inviter else "Unknown",
         expires_at=invitation.expires_at,
-        is_existing_user=existing_user is not None
+        is_existing_user=False
     )
 
 

@@ -53,11 +53,18 @@ export class AuthService {
   }
 
   navigateToDashboard(returnUrl?: string): void {
-    if (returnUrl && returnUrl.startsWith('/') && !returnUrl.startsWith('//') && !returnUrl.includes('://')) {
-      this.router.navigateByUrl(returnUrl);
-    } else {
-      this.router.navigate(['/dashboard']);
+    if (returnUrl) {
+      try {
+        const decoded = decodeURIComponent(returnUrl);
+        if (decoded.startsWith('/') && !decoded.startsWith('//') && !decoded.includes('://')) {
+          this.router.navigateByUrl(returnUrl);
+          return;
+        }
+      } catch {
+        // Malformed URL — fall through to default
+      }
     }
+    this.router.navigate(['/dashboard']);
   }
 
   /** Called after org switch — cookies are set by the backend, just keep flag + expiry. */

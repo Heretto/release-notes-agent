@@ -88,8 +88,8 @@ def decode_token(token: str) -> Dict[str, Any]:
     try:
         payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
         return payload
-    except jwt.PyJWTError as e:
-        raise AuthenticationError(f"Invalid token: {str(e)}")
+    except jwt.PyJWTError:
+        raise AuthenticationError("Invalid token")
 
 def generate_csrf_token() -> str:
     """Generate a cryptographically random CSRF token."""

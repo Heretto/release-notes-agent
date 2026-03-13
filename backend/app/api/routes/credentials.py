@@ -807,96 +807,46 @@ async def test_credential(
                 response = await client.get(test_url, headers=headers)
                 
                 if response.status_code == 200:
-                    # Success! Now try to get some issues using POST /search/jql endpoint
                     user_data = response.json()
                     search_url = f"{server_url}/rest/api/3/search/jql"
                     search_body = {
-                        "jql": "created >= -30d order by created desc",  # Search for issues created in last 30 days
+                        "jql": "created >= -30d order by created desc",
                         "maxResults": 5,
                         "fields": ["summary", "status", "created", "key"]
                     }
                     search_response = await client.post(search_url, headers=headers, json=search_body, timeout=10.0)
-                    
+
                     if search_response.status_code == 200:
                         search_data = search_response.json()
-                        result = {
+                        return {
                             "success": True,
                             "status_code": 200,
                             "timestamp": datetime.utcnow().isoformat(),
-                            "test_url": search_url,
-                            "message": f"Successfully connected as {user_data.get('displayName', user_data.get('emailAddress', 'Unknown'))}. Found {search_data.get('total', 0)} accessible issues.",
-                            "response_body": {
-                                "user": {
-                                    "displayName": user_data.get("displayName"),
-                                    "emailAddress": user_data.get("emailAddress"),
-                                    "accountType": user_data.get("accountType")
-                                },
-                                "total": search_data.get("total", 0),
-                                "maxResults": search_data.get("maxResults", 0),
-                                "issues": [
-                                    {
-                                        "key": issue.get("key"),
-                                        "summary": issue.get("fields", {}).get("summary"),
-                                        "status": issue.get("fields", {}).get("status", {}).get("name"),
-                                        "created": issue.get("fields", {}).get("created")
-                                    }
-                                    for issue in search_data.get("issues", [])[:5]
-                                ]
-                            }
+                            "message": f"Successfully connected as {user_data.get('displayName', 'Unknown')}. Found {search_data.get('total', 0)} accessible issues.",
                         }
-                        return result
                     else:
-                        # User auth works but can't search issues
-                        result = {
+                        return {
                             "success": True,
                             "status_code": 200,
                             "timestamp": datetime.utcnow().isoformat(),
-                            "test_url": test_url,
                             "message": f"Connected as {user_data.get('displayName', 'Unknown')} but unable to search issues. Check project permissions.",
-                            "response_body": {
-                                "user": {
-                                    "displayName": user_data.get("displayName"),
-                                    "emailAddress": user_data.get("emailAddress")
-                                }
-                            }
                         }
-                        return result
-                
-                # If /myself fails, continue with original response handling
-                
-                # Prepare detailed response
-                result = {
-                    "success": response.status_code == 200,
-                    "status_code": response.status_code,
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "test_url": test_url,
-                    "response_headers": dict(response.headers),
-                }
-                
-                if response.status_code == 200:
-                    response_data = response.json()
-                    result["message"] = f"Successfully connected to Jira. Found {response_data.get('total', 0)} total issues."
-                    result["response_body"] = {
-                        "total": response_data.get("total", 0),
-                        "maxResults": response_data.get("maxResults", 0),
-                        "issues": [
-                            {
-                                "key": issue.get("key"),
-                                "summary": issue.get("fields", {}).get("summary"),
-                                "status": issue.get("fields", {}).get("status", {}).get("name"),
-                                "created": issue.get("fields", {}).get("created")
-                            }
-                            for issue in response_data.get("issues", [])[:5]
-                        ]
-                    }
+
+                # /myself failed
+                status_code = response.status_code
+                if status_code == 401:
+                    message = "Authentication failed — check your email and API token"
+                elif status_code == 403:
+                    message = "Access denied — check your API token permissions"
                 else:
-                    result["message"] = f"Connection failed: HTTP {response.status_code}"
-                    try:
-                        result["response_body"] = response.json()
-                    except:
-                        result["response_body"] = response.text
-                
-                return result
+                    message = f"Connection failed with status {status_code}"
+
+                return {
+                    "success": False,
+                    "status_code": status_code,
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "message": message,
+                }
             
         elif credential.type.value == "heretto":
             heretto_service = HerettoService(
@@ -1024,92 +974,59 @@ async def test_credential(
                             # This shouldn't happen since we use max_completion_tokens by default
                             pass
                     
-                    # Prepare response headers (sanitize sensitive data)
-                    response_headers = dict(response.headers)
-                    if "x-api-key" in response_headers:
-                        response_headers["x-api-key"] = "***"
-                    if "authorization" in response_headers:
-                        response_headers["authorization"] = "***"
-                    
-                    # Parse response
-                    try:
-                        response_data = response.json()
-                    except:
-                        response_data = {"text": response.text[:500] if response.text else "No response body"}
-                    
                     # Special handling for Gemini 404 errors - list available models
                     if provider == "gemini" and response.status_code == 404:
                         try:
                             import google.generativeai as genai
                             genai.configure(api_key=api_key)
-                            
-                            # Get list of available models
+
                             available_models = []
                             for m in genai.list_models():
                                 if 'generateContent' in m.supported_generation_methods:
                                     model_name = m.name
                                     if model_name.startswith("models/"):
-                                        model_name = model_name[7:]  # Remove "models/" prefix
+                                        model_name = model_name[7:]
                                     available_models.append(model_name)
-                            
-                            # Create helpful error message
-                            error_message = f"Model '{model or 'gemini-2.5-pro'}' not found. Available Gemini models: {', '.join(available_models)}"
-                            
+
                             return {
                                 "success": False,
                                 "status_code": 404,
-                                "message": error_message,
+                                "message": f"Model '{model or 'gemini-2.5-pro'}' not found. Available models: {', '.join(available_models)}",
                                 "timestamp": datetime.utcnow().isoformat(),
-                                "request": {
-                                    "url": api_url,
-                                    "method": "POST",
-                                    "headers": headers,  # Sanitized headers
-                                    "body": request_body
-                                },
-                                "response": {
-                                    "status_code": response.status_code,
-                                    "headers": response_headers,
-                                    "body": response_data,
-                                    "available_models": available_models
-                                }
                             }
-                        except Exception as list_error:
-                            # If we can't list models, return original error with suggestion
+                        except Exception:
                             return {
                                 "success": False,
                                 "status_code": 404,
                                 "message": f"Model '{model or 'gemini-2.5-pro'}' not found. Try models like: gemini-1.5-pro, gemini-1.5-flash, gemini-pro",
                                 "timestamp": datetime.utcnow().isoformat(),
-                                "request": {
-                                    "url": api_url,
-                                    "method": "POST",
-                                    "headers": headers,  # Sanitized headers
-                                    "body": request_body
-                                },
-                                "response": {
-                                    "status_code": response.status_code,
-                                    "headers": response_headers,
-                                    "body": response_data
-                                }
                             }
-                    
-                    return {
-                        "success": response.status_code == 200,
-                        "status_code": response.status_code,
-                        "message": f"{provider.capitalize()} connection {'successful' if response.status_code == 200 else 'failed'}",
-                        "timestamp": datetime.utcnow().isoformat(),
-                        "request": {
-                            "url": api_url,
-                            "method": "POST",
-                            "headers": headers,  # Sanitized headers
-                            "body": request_body
-                        },
-                        "response": {
-                            "status_code": response.status_code,
-                            "headers": response_headers,
-                            "body": response_data if isinstance(response_data, dict) else {"text": str(response_data)[:500]}
+
+                    # Return sanitized result — no raw response bodies or headers
+                    if response.status_code == 200:
+                        return {
+                            "success": True,
+                            "status_code": 200,
+                            "message": f"{provider.capitalize()} connection successful",
+                            "timestamp": datetime.utcnow().isoformat(),
                         }
-                    }
+                    else:
+                        status_code = response.status_code
+                        if status_code == 401:
+                            user_message = "Authentication failed — check your API key"
+                        elif status_code == 403:
+                            user_message = "Access denied — check your API key permissions"
+                        elif status_code == 429:
+                            user_message = "Rate limited — try again later"
+                        else:
+                            user_message = "Connection failed"
+
+                        return {
+                            "success": False,
+                            "status_code": status_code,
+                            "message": f"{provider.capitalize()} {user_message}",
+                            "timestamp": datetime.utcnow().isoformat(),
+                        }
             except Exception as e:
                 error_msg = str(e)
                 logger.error("AI credential test failed for %s: %s", credential.id, error_msg)

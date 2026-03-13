@@ -4,7 +4,12 @@ import { AuthService } from './auth.service';
 
 /** Only allow relative paths starting with '/' — reject anything that looks external. */
 function isSafeReturnUrl(url: string): boolean {
-  return url.startsWith('/') && !url.startsWith('//') && !url.includes('://');
+  try {
+    const decoded = decodeURIComponent(url);
+    return decoded.startsWith('/') && !decoded.startsWith('//') && !decoded.includes('://');
+  } catch {
+    return false;
+  }
 }
 
 export const AuthGuard: CanActivateFn = (route, state) => {
