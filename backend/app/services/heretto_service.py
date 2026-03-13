@@ -89,20 +89,22 @@ class HerettoService:
                 )
 
                 if create_resp.status_code not in (200, 201):
+                    logger.error("Heretto create placeholder failed: HTTP %s — %s", create_resp.status_code, create_resp.text)
                     return HerettoUploadResult(
                         success=False,
                         document_id=None,
-                        message=f"Failed to create document placeholder: HTTP {create_resp.status_code} — {create_resp.text}",
+                        message=f"Failed to create document placeholder: HTTP {create_resp.status_code}",
                         url=None
                     )
 
                 # Parse the document UUID from the response XML
                 doc_id = _parse_resource_id(create_resp.text)
                 if not doc_id:
+                    logger.error("Could not parse resource ID from Heretto response: %s", create_resp.text[:500])
                     return HerettoUploadResult(
                         success=False,
                         document_id=None,
-                        message=f"Created document but could not parse resource ID from response: {create_resp.text[:500]}",
+                        message="Created document but could not parse resource ID from response",
                         url=None
                     )
 
@@ -119,10 +121,11 @@ class HerettoService:
                 )
 
                 if put_resp.status_code not in (200, 201):
+                    logger.error("Heretto content upload failed: HTTP %s — %s", put_resp.status_code, put_resp.text)
                     return HerettoUploadResult(
                         success=False,
                         document_id=doc_id,
-                        message=f"Document created but content upload failed: HTTP {put_resp.status_code} — {put_resp.text}",
+                        message=f"Document created but content upload failed: HTTP {put_resp.status_code}",
                         url=None
                     )
 
@@ -143,11 +146,11 @@ class HerettoService:
                     url=None
                 )
             except Exception as e:
-                logger.error(f"Heretto upload error: {e}", exc_info=True)
+                logger.error("Heretto upload error: %s", e, exc_info=True)
                 return HerettoUploadResult(
                     success=False,
                     document_id=None,
-                    message=f"Upload error: {str(e)}",
+                    message="Upload failed — check your Heretto credentials and folder configuration",
                     url=None
                 )
 

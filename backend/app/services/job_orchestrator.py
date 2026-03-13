@@ -412,10 +412,9 @@ Content is now valid DITA 1.3.
             logger.info(f"Job {job_id} completed successfully")
             
         except Exception as e:
-            error_msg = str(e) or f"Unexpected error: {type(e).__name__}"
-            logger.error(f"Job {job_id} failed: {error_msg}", exc_info=True)
+            logger.error("Job %s failed: %s", job_id, e, exc_info=True)
             job.status = "failed"
-            job.error_message = error_msg
+            job.error_message = _sanitize_job_error(str(e))
             job.completed_at = datetime.utcnow()
             self.db.commit()
     
@@ -458,7 +457,7 @@ Content is now valid DITA 1.3.
             await self.process_job(job.id)
             
         except Exception as e:
-            logger.error(f"Webhook processing failed: {str(e)}")
+            logger.error("Webhook processing failed: %s", e, exc_info=True)
     
     def _get_decryptable_credential(self, user_id: UUID, organization_id: Optional[UUID], cred_type) -> tuple:
         """Get a credential that can be successfully decrypted.
@@ -571,5 +570,29 @@ Consider:
 2. Checking if the instruction set properly specifies DITA output format
 3. Manually correcting the DITA file if needed
 """
-        
+
         return content
+
+
+# Messages that are safe to show to users (raised intentionally in process_job)
+_SAFE_ERROR_PREFIXES = (
+    "No Jira credentials found",
+    "No tickets found",
+    "No AI credentials found",
+    "Specified AI credential",
+    "Failed to decrypt AI credential",
+    "Jira query failed",
+    "Failed to get projects",
+    "Failed to get versions",
+    "Failed to get issue",
+)
+
+
+def _sanitize_job_error(error_msg: str) -> str:
+    """Return a user-safe error message, stripping internal details."""
+    if not error_msg:
+        return "An unexpected error occurred while processing the job"
+    for prefix in _SAFE_ERROR_PREFIXES:
+        if error_msg.startswith(prefix):
+            return error_msg
+    return "An unexpected error occurred while processing the job — check the server logs for details"
