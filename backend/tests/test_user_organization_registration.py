@@ -315,6 +315,7 @@ class TestRegisterIntegration:
         uppercase, the admin panel is hidden even for admin users.
         """
         from app.api.routes.account import get_account_info
+        from app.api.dependencies import CurrentUserContext
 
         user_data = UserCreate(
             email=self.TEST_EMAIL,
@@ -323,7 +324,22 @@ class TestRegisterIntegration:
         )
         user = await register(user_data, self.db)
 
-        response = await get_account_info(user, self.db)
+        # Build the CurrentUserContext the endpoint now expects
+        org = self.db.query(Organization).filter(
+            Organization.id == user.current_organization_id
+        ).first()
+        membership = self.db.query(OrganizationMember).filter(
+            OrganizationMember.user_id == user.id,
+            OrganizationMember.organization_id == org.id
+        ).first()
+        context = CurrentUserContext(
+            user=user,
+            organization_id=org.id,
+            organization=org,
+            organization_role=membership.role,
+        )
+
+        response = await get_account_info(context, self.db)
 
         assert response.organization_role == "admin", (
             f"Account endpoint must return lowercase 'admin' for the frontend "
@@ -336,6 +352,7 @@ class TestRegisterIntegration:
         from app.api.routes.auth import login
         from app.models.schemas import LoginRequest
         from app.core.security import decode_token
+        from fastapi import Response
 
         user_data = UserCreate(
             email=self.TEST_EMAIL,
@@ -345,7 +362,8 @@ class TestRegisterIntegration:
         await register(user_data, self.db)
 
         creds = LoginRequest(email=self.TEST_EMAIL, password="securepassword123")
-        token_resp = await login(creds, self.db)
+        response = Response()
+        token_resp = await login(creds, response, self.db)
 
         payload = decode_token(token_resp["access_token"])
         assert payload.get("org_role") == "admin", (

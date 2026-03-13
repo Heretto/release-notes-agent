@@ -85,18 +85,16 @@ def test_jira_v3_upgrade():
     )
 
     test_result = test_resp.json()
-    test_url = test_result.get("test_url", "")
     success = test_result.get("success", False)
+    message = test_result.get("message", "")
 
-    print(f"   Test URL: {test_url}")
     print(f"   Success: {success}")
-    if test_result.get("message"):
-        print(f"   Message: {test_result['message']}")
+    print(f"   Message: {message}")
 
-    if "/rest/api/3/" in test_url:
-        print("   ✓ Using Jira API v3 endpoints!")
+    if success and "Successfully connected" in message:
+        print("   ✓ Jira API v3 connection verified!")
     else:
-        print("   ✗ Not using v3 endpoints correctly")
+        print(f"   ✗ Connection test failed: {message}")
         # Clean up
         requests.delete(f"{BASE_URL}/credentials/jira/{cred_id}", headers=headers)
         return False

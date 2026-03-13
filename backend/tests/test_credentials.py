@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.models.database import User, Credential, CredentialType
 from app.core.security import encrypt_credentials, decrypt_credentials
 from app.api.routes.credentials import list_jira_credentials, create_jira_credential
-from app.models.schemas import JiraCredentialResponse
+from app.models.schemas import JiraCredentialResponse, JiraCredentialCreate
 
 
 @pytest.fixture
@@ -140,33 +140,33 @@ class TestJiraCredentialsCreate:
     async def test_create_jira_credential_success(self, mock_user, mock_db):
         """Test successful creation of Jira credential."""
         # Setup
-        credential_data = {
-            "name": "My Jira",
-            "server_url": "https://test.atlassian.net",
-            "email": "test@example.com",
-            "api_token": "test_token"
-        }
-        
+        credential_data = JiraCredentialCreate(
+            name="My Jira",
+            server_url="https://test.atlassian.net",
+            email="test@example.com",
+            api_token="test_token"
+        )
+
         # Mock that no existing credential exists
         mock_db.query.return_value.filter.return_value.first.return_value = None
-        
+
         # Mock the new credential after creation
         new_cred_id = uuid4()
-        
+
         def set_id(cred):
             cred.id = new_cred_id
             cred.created_at = datetime.now()
             cred.updated_at = datetime.now()
-        
+
         mock_db.refresh.side_effect = set_id
-        
+
         # Call the function
         result = await create_jira_credential(credential_data, mock_user, mock_db)
-        
+
         # Assertions
-        assert result.name == credential_data["name"]
-        assert result.server_url == credential_data["server_url"]
-        assert result.email == credential_data["email"]
+        assert result.name == credential_data.name
+        assert result.server_url == credential_data.server_url
+        assert result.email == credential_data.email
         mock_db.add.assert_called_once()
         mock_db.commit.assert_called_once()
     
@@ -174,22 +174,22 @@ class TestJiraCredentialsCreate:
     async def test_create_jira_credential_duplicate_name(self, mock_user, mock_db):
         """Test that duplicate names are rejected."""
         from fastapi import HTTPException
-        
-        credential_data = {
-            "name": "Existing Jira",
-            "server_url": "https://test.atlassian.net",
-            "email": "test@example.com",
-            "api_token": "test_token"
-        }
-        
+
+        credential_data = JiraCredentialCreate(
+            name="Existing Jira",
+            server_url="https://test.atlassian.net",
+            email="test@example.com",
+            api_token="test_token"
+        )
+
         # Mock that an existing credential exists
         existing_cred = Mock()
         mock_db.query.return_value.filter.return_value.first.return_value = existing_cred
-        
+
         # Should raise HTTPException
         with pytest.raises(HTTPException) as exc_info:
             await create_jira_credential(credential_data, mock_user, mock_db)
-        
+
         assert exc_info.value.status_code == 400
         assert "already exists" in exc_info.value.detail
 
