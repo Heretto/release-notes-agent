@@ -4,7 +4,10 @@ from typing import List, Optional
 from uuid import UUID
 from datetime import datetime
 import re
+import logging
 from urllib.parse import quote
+
+logger = logging.getLogger(__name__)
 
 from app.models.database import get_db, User, Job, JobArtifact, JobRequest, InstructionSet, Credential, CredentialType, JobStatus, JobTrigger
 from app.models.schemas import (
@@ -489,9 +492,10 @@ async def preview_jira_query(
             tickets=tickets
         )
     except Exception as e:
+        logger.error("JQL query preview failed: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"JQL query failed: {str(e)}"
+            detail="JQL query failed — check your query syntax and Jira credentials"
         )
 
 @router.post("/{job_id}/rerun", response_model=JobResponse)

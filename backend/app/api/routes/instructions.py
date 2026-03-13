@@ -3,6 +3,9 @@ from sqlalchemy.orm import Session
 from typing import List
 from uuid import UUID
 from pydantic import BaseModel
+import logging
+
+logger = logging.getLogger(__name__)
 
 from app.models.database import get_db, User, InstructionSet
 from app.models.schemas import (
@@ -224,12 +227,12 @@ async def test_instruction_query(
             "message": f"Successfully retrieved {len(issues)} issues (limited to 10 for testing)"
         }
     except Exception as e:
+        logger.error("JQL query test failed for instruction set %s: %s", instruction_set.id, e, exc_info=True)
         return {
             "success": False,
             "instruction_set": {
                 "name": instruction_set.name,
                 "jql_query": instruction_set.jql_query
             },
-            "error": str(e),
-            "message": f"Failed to execute JQL query: {str(e)}"
+            "message": "Failed to execute JQL query — check your query syntax and Jira credentials"
         }
