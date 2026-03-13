@@ -80,6 +80,37 @@ class AICredentials(BaseModel):
     api_key: str
     model: Optional[str] = None
 
+# Typed request models for credential create/update endpoints
+class JiraCredentialCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    server_url: str = Field(..., min_length=1, max_length=2048)
+    email: EmailStr
+    api_token: str = Field(..., min_length=1, max_length=1024)
+
+class JiraCredentialUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    server_url: Optional[str] = Field(None, min_length=1, max_length=2048)
+    email: Optional[EmailStr] = None
+    api_token: Optional[str] = Field(None, max_length=1024)
+
+class HerettoCredentialCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    server_url: str = Field(..., min_length=1, max_length=2048)
+    username: str = Field(..., min_length=1, max_length=255)
+    token: str = Field(..., min_length=1, max_length=1024)
+
+class HerettoCredentialUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    server_url: Optional[str] = Field(None, min_length=1, max_length=2048)
+    username: Optional[str] = Field(None, min_length=1, max_length=255)
+    token: Optional[str] = Field(None, max_length=1024)
+
+class AICredentialCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    provider: str = Field(..., pattern=r'^(gemini|openai|anthropic)$')
+    api_key: str = Field(..., min_length=1, max_length=1024)
+    model: Optional[str] = Field(None, max_length=255)
+
 class CredentialCreate(BaseModel):
     type: CredentialTypeEnum
     name: str

@@ -15,7 +15,12 @@ from app.models.schemas import (
     HerettoCredentialResponse,
     JiraCredentials,
     HerettoCredentials,
-    AICredentials
+    AICredentials,
+    JiraCredentialCreate,
+    JiraCredentialUpdate,
+    HerettoCredentialCreate,
+    HerettoCredentialUpdate,
+    AICredentialCreate,
 )
 from app.api.dependencies import get_current_active_user
 from app.core.security import encrypt_credentials, decrypt_credentials, validate_server_url
@@ -128,62 +133,52 @@ async def list_jira_credentials(
 
 @router.post("/jira", response_model=JiraCredentialResponse)
 async def create_jira_credential(
-    credential_data: dict,
+    credential_data: JiraCredentialCreate,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """Create new Jira credential for the organization."""
-    # Check user has an organization
     if not current_user.current_organization_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="User must be part of an organization to create credentials"
         )
-    
-    # Check if credential with same name exists in the organization
+
     existing = db.query(Credential).filter(
         Credential.organization_id == current_user.current_organization_id,
         Credential.type == CredentialType.JIRA,
-        Credential.name == credential_data.get("name")
+        Credential.name == credential_data.name
     ).first()
-    
+
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Jira credential with this name already exists"
         )
-    
-    # Extract and validate Jira-specific fields
-    jira_creds = {
-        "server_url": credential_data.get("server_url"),
-        "email": credential_data.get("email"),
-        "api_token": credential_data.get("api_token")
-    }
-
-    if not all(jira_creds.values()):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Missing required Jira credential fields"
-        )
 
     try:
-        validate_server_url(jira_creds["server_url"])
+        validate_server_url(credential_data.server_url)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid server URL: {e}"
         )
-    
-    # Encrypt and store credential
+
+    jira_creds = {
+        "server_url": credential_data.server_url,
+        "email": credential_data.email,
+        "api_token": credential_data.api_token
+    }
+
     encrypted_data = encrypt_credentials(jira_creds)
-    
+
     new_credential = Credential(
-        user_id=current_user.id,  # Track who created it
-        organization_id=current_user.current_organization_id,  # Owned by organization
+        user_id=current_user.id,
+        organization_id=current_user.current_organization_id,
         type=CredentialType.JIRA,
-        name=credential_data.get("name"),
+        name=credential_data.name,
         encrypted_data=encrypted_data,
-        created_by=current_user.email  # For display purposes
+        created_by=current_user.email
     )
     
     db.add(new_credential)
@@ -204,7 +199,7 @@ async def create_jira_credential(
 @router.put("/jira/{credential_id}", response_model=JiraCredentialResponse)
 async def update_jira_credential(
     credential_id: UUID,
-    credential_data: dict,
+    credential_data: JiraCredentialUpdate,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -214,38 +209,34 @@ async def update_jira_credential(
         Credential.organization_id == current_user.current_organization_id,
         Credential.type == CredentialType.JIRA
     ).first()
-    
+
     if not credential:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Jira credential not found"
         )
-    
-    if credential_data.get("name"):
-        credential.name = credential_data.get("name")
-    
-    # Get existing credentials
+
+    if credential_data.name:
+        credential.name = credential_data.name
+
     existing_creds = decrypt_credentials(credential.encrypted_data)
-    
-    # Update encrypted data if new credentials provided
+
     jira_creds = {}
-    if credential_data.get("server_url"):
+    if credential_data.server_url:
         try:
-            validate_server_url(credential_data.get("server_url"))
+            validate_server_url(credential_data.server_url)
         except ValueError as e:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Invalid server URL: {e}"
             )
-        jira_creds["server_url"] = credential_data.get("server_url")
-    if credential_data.get("email"):
-        jira_creds["email"] = credential_data.get("email")
-    api_token = credential_data.get("api_token")
-    if api_token and "*" not in api_token:
-        jira_creds["api_token"] = api_token
+        jira_creds["server_url"] = credential_data.server_url
+    if credential_data.email:
+        jira_creds["email"] = credential_data.email
+    if credential_data.api_token and "*" not in credential_data.api_token:
+        jira_creds["api_token"] = credential_data.api_token
 
     if jira_creds:
-        # Merge with existing credentials
         existing_creds.update(jira_creds)
         encrypted_data = encrypt_credentials(existing_creds)
         credential.encrypted_data = encrypted_data
@@ -368,7 +359,7 @@ async def get_heretto_folder_info(
 
 @router.post("/heretto", response_model=HerettoCredentialResponse)
 async def create_heretto_credential(
-    credential_data: dict,
+    credential_data: HerettoCredentialCreate,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -382,7 +373,7 @@ async def create_heretto_credential(
     existing = db.query(Credential).filter(
         Credential.organization_id == current_user.current_organization_id,
         Credential.type == CredentialType.HERETTO,
-        Credential.name == credential_data.get("name")
+        Credential.name == credential_data.name
     ).first()
 
     if existing:
@@ -391,25 +382,19 @@ async def create_heretto_credential(
             detail="Heretto credential with this name already exists"
         )
 
-    heretto_creds = {
-        "server_url": credential_data.get("server_url"),
-        "username": credential_data.get("username"),
-        "token": credential_data.get("token")
-    }
-
-    if not all(heretto_creds.values()):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Missing required Heretto credential fields"
-        )
-
     try:
-        validate_server_url(heretto_creds["server_url"])
+        validate_server_url(credential_data.server_url)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid server URL: {e}"
         )
+
+    heretto_creds = {
+        "server_url": credential_data.server_url,
+        "username": credential_data.username,
+        "token": credential_data.token
+    }
 
     encrypted_data = encrypt_credentials(heretto_creds)
 
@@ -417,7 +402,7 @@ async def create_heretto_credential(
         user_id=current_user.id,
         organization_id=current_user.current_organization_id,
         type=CredentialType.HERETTO,
-        name=credential_data.get("name"),
+        name=credential_data.name,
         encrypted_data=encrypted_data,
         created_by=current_user.email
     )
@@ -440,7 +425,7 @@ async def create_heretto_credential(
 @router.put("/heretto/{credential_id}", response_model=HerettoCredentialResponse)
 async def update_heretto_credential(
     credential_id: UUID,
-    credential_data: dict,
+    credential_data: HerettoCredentialUpdate,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -457,26 +442,25 @@ async def update_heretto_credential(
             detail="Heretto credential not found"
         )
 
-    if credential_data.get("name"):
-        credential.name = credential_data.get("name")
+    if credential_data.name:
+        credential.name = credential_data.name
 
     existing_creds = decrypt_credentials(credential.encrypted_data)
 
     heretto_creds = {}
-    if credential_data.get("server_url"):
+    if credential_data.server_url:
         try:
-            validate_server_url(credential_data.get("server_url"))
+            validate_server_url(credential_data.server_url)
         except ValueError as e:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Invalid server URL: {e}"
             )
-        heretto_creds["server_url"] = credential_data.get("server_url")
-    if credential_data.get("username"):
-        heretto_creds["username"] = credential_data.get("username")
-    token = credential_data.get("token")
-    if token and "*" not in token:
-        heretto_creds["token"] = token
+        heretto_creds["server_url"] = credential_data.server_url
+    if credential_data.username:
+        heretto_creds["username"] = credential_data.username
+    if credential_data.token and "*" not in credential_data.token:
+        heretto_creds["token"] = credential_data.token
 
     if heretto_creds:
         existing_creds.update(heretto_creds)
@@ -567,70 +551,51 @@ async def list_ai_credentials(
 
 @router.post("/ai", response_model=CredentialResponse)
 async def create_ai_credential(
-    credential_data: dict,
+    credential_data: AICredentialCreate,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """Create new AI provider credential."""
-    provider = credential_data.get("provider", "").lower()
-    
-    # Map provider to credential type
     type_mapping = {
         "gemini": CredentialType.GEMINI,
         "openai": CredentialType.OPENAI,
         "anthropic": CredentialType.ANTHROPIC
     }
-    
-    if provider not in type_mapping:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid AI provider: {provider}"
-        )
-    
-    credential_type = type_mapping[provider]
-    
-    # Check user has an organization
+
+    credential_type = type_mapping[credential_data.provider]
+
     if not current_user.current_organization_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="User must be part of an organization to create credentials"
         )
-    
-    # Check if credential with same name exists in the organization
+
     existing = db.query(Credential).filter(
         Credential.organization_id == current_user.current_organization_id,
         Credential.type == credential_type,
-        Credential.name == credential_data.get("name")
+        Credential.name == credential_data.name
     ).first()
-    
+
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"{provider.capitalize()} credential with this name already exists"
+            detail=f"{credential_data.provider.capitalize()} credential with this name already exists"
         )
-    
-    # Extract and validate AI-specific fields
+
     ai_creds = {
-        "api_key": credential_data.get("api_key"),
-        "model": credential_data.get("model", "")
+        "api_key": credential_data.api_key,
+        "model": credential_data.model or ""
     }
-    
-    if not ai_creds.get("api_key"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="API key is required"
-        )
-    
-    # Encrypt and store credential
+
     encrypted_data = encrypt_credentials(ai_creds)
-    
+
     new_credential = Credential(
-        user_id=current_user.id,  # Track who created it
-        organization_id=current_user.current_organization_id,  # Owned by organization
+        user_id=current_user.id,
+        organization_id=current_user.current_organization_id,
         type=credential_type,
-        name=credential_data.get("name"),
+        name=credential_data.name,
         encrypted_data=encrypted_data,
-        created_by=current_user.email  # For display purposes
+        created_by=current_user.email
     )
     
     db.add(new_credential)
