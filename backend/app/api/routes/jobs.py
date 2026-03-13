@@ -21,6 +21,7 @@ from app.models.schemas import (
 from app.api.dependencies import get_current_active_user, get_current_active_user_with_org, CurrentUserContext
 from app.services.job_orchestrator import JobOrchestrator
 from app.core.security import decrypt_credentials
+from app.config import get_settings
 
 router = APIRouter(prefix="/jobs")
 
@@ -33,11 +34,14 @@ async def list_jobs(
     db: Session = Depends(get_db)
 ):
     """List jobs with optional filtering."""
+    settings = get_settings()
+    limit = min(limit, settings.max_query_limit)
+
     query = db.query(Job).filter(Job.organization_id == context.organization_id)
-    
+
     if status:
         query = query.filter(Job.status == status)
-    
+
     jobs = query.order_by(Job.created_at.desc()).offset(offset).limit(limit).all()
     return jobs
 

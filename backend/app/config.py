@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     # CORS
     cors_origins: str = "http://localhost:4200"
     
+    # Query limits
+    max_query_limit: int = 500
+
     # Server
     api_prefix: str = "/api/v1"
     
