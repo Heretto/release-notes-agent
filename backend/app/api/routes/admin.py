@@ -58,7 +58,6 @@ async def reset_user_password(
     return {
         "message": f"Password reset successful for {email}",
         "email": email,
-        "new_password": new_password
     }
 
 @router.delete("/users/{email}")
@@ -106,7 +105,6 @@ async def create_test_user(db: Session = Depends(get_db)):
         return {
             "message": "Test user already exists, password reset",
             "email": test_email,
-            "password": test_password
         }
     
     # Create new user
@@ -123,5 +121,4 @@ async def create_test_user(db: Session = Depends(get_db)):
     return {
         "message": "Test user created successfully",
         "email": test_email,
-        "password": test_password
     }
