@@ -1,12 +1,22 @@
 import httpx
 import base64
 import logging
+import re
 import xml.etree.ElementTree as ET
 from typing import Optional, List
 
 from app.models.schemas import HerettoUploadResult, HerettoFolder
 
 logger = logging.getLogger(__name__)
+
+_HERETTO_ID_RE = re.compile(r'^[a-zA-Z0-9_\-]+$')
+
+
+def _validate_heretto_id(value: str, label: str = "ID") -> str:
+    """Validate a Heretto resource ID to prevent path traversal."""
+    if not value or len(value) > 256 or not _HERETTO_ID_RE.match(value):
+        raise ValueError(f"Invalid Heretto {label}: must be alphanumeric, hyphens, or underscores")
+    return value
 
 
 class HerettoService:
@@ -47,6 +57,16 @@ class HerettoService:
                 success=False,
                 document_id=None,
                 message="No folder ID provided — cannot upload to Heretto",
+                url=None
+            )
+
+        try:
+            _validate_heretto_id(folder_id, "folder ID")
+        except ValueError as e:
+            return HerettoUploadResult(
+                success=False,
+                document_id=None,
+                message=str(e),
                 url=None
             )
 
@@ -146,6 +166,11 @@ class HerettoService:
 
     async def get_folder_info(self, folder_id: str) -> Optional[HerettoFolder]:
         """Get information about a specific folder by its ID."""
+        try:
+            _validate_heretto_id(folder_id, "folder ID")
+        except ValueError:
+            return None
+
         async with httpx.AsyncClient(timeout=10.0) as client:
             try:
                 endpoint = f"{self.base_url}/rest/all-files/{folder_id}"
@@ -174,6 +199,11 @@ class HerettoService:
     async def list_folders(self, parent_id: Optional[str] = None) -> List[HerettoFolder]:
         """List child folders inside a parent folder."""
         if not parent_id:
+            return []
+
+        try:
+            _validate_heretto_id(parent_id, "parent folder ID")
+        except ValueError:
             return []
 
         async with httpx.AsyncClient(timeout=10.0) as client:
