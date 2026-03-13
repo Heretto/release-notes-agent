@@ -7,12 +7,16 @@ from app.models.database import get_db, User
 from app.models.schemas import UserResponse
 from app.core.security import get_password_hash
 from app.config import get_settings
+from app.api.dependencies import get_current_superuser
 
 router = APIRouter(prefix="/admin")
 settings = get_settings()
 
 @router.get("/users", response_model=List[dict])
-async def list_users(db: Session = Depends(get_db)):
+async def list_users(
+    current_user: User = Depends(get_current_superuser),
+    db: Session = Depends(get_db),
+):
     """List all users (development only)."""
     if settings.app_env != "development":
         raise HTTPException(
@@ -36,7 +40,8 @@ async def list_users(db: Session = Depends(get_db)):
 async def reset_user_password(
     email: str,
     new_password: str,
-    db: Session = Depends(get_db)
+    current_user: User = Depends(get_current_superuser),
+    db: Session = Depends(get_db),
 ):
     """Reset user password (development only)."""
     if settings.app_env != "development":
@@ -63,7 +68,8 @@ async def reset_user_password(
 @router.delete("/users/{email}")
 async def delete_user(
     email: str,
-    db: Session = Depends(get_db)
+    current_user: User = Depends(get_current_superuser),
+    db: Session = Depends(get_db),
 ):
     """Delete a user (development only)."""
     if settings.app_env != "development":
@@ -85,7 +91,10 @@ async def delete_user(
     return {"message": f"User {email} deleted successfully"}
 
 @router.post("/create-test-user")
-async def create_test_user(db: Session = Depends(get_db)):
+async def create_test_user(
+    current_user: User = Depends(get_current_superuser),
+    db: Session = Depends(get_db),
+):
     """Create a test user with known credentials (development only)."""
     if settings.app_env != "development":
         raise HTTPException(
