@@ -201,8 +201,14 @@ async def get_job_requests(
     formatted_requests = []
     for req in requests:
         import json
-        request_data = json.loads(req.request_data) if req.request_data else {}
-        response_data = json.loads(req.response_data) if req.response_data else {}
+        try:
+            request_data = json.loads(req.request_data) if req.request_data else {}
+        except (json.JSONDecodeError, ValueError):
+            request_data = {}
+        try:
+            response_data = json.loads(req.response_data) if req.response_data else {}
+        except (json.JSONDecodeError, ValueError):
+            response_data = {}
         
         formatted_requests.append({
             "id": str(req.id),
