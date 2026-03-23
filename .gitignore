@@ -70,3 +70,7 @@ frontend/.env
 celerybeat-schedule
 .cache/
 _reference/
+
+
+# Claude
+.claude/
