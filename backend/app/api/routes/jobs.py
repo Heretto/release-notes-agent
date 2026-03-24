@@ -304,9 +304,11 @@ async def download_artifact(
     else:
         content_type = "text/plain"
     
-    # Sanitize filename: strip path components and control/quote characters
-    safe_name = artifact.filename.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
-    safe_name = re.sub(r'[\x00-\x1f\x7f"\\]', "", safe_name).strip() or "download"
+    # Sanitize filename: extract basename and allow only safe characters
+    from pathlib import PurePosixPath
+    safe_name = PurePosixPath(artifact.filename).name
+    safe_name = safe_name.replace("\\", "")  # strip any remaining backslashes
+    safe_name = re.sub(r'[^\w.\-]', '_', safe_name).strip('_.') or "download"
 
     # Return the file as a downloadable response
     return Response(
