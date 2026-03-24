@@ -3,37 +3,30 @@ import { inject } from '@angular/core';
 import { AuthService } from './auth.service';
 import { catchError, switchMap, throwError } from 'rxjs';
 
+function getCookie(name: string): string | null {
+  const match = document.cookie.match(new RegExp('(?:^|;\\s*)' + name + '=([^;]*)'));
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const authService = inject(AuthService);
-  const token = authService.getAccessToken();
-  
-  // Skip auth for login/register endpoints
-  if (req.url.includes('/auth/login') || req.url.includes('/auth/register')) {
-    return next(req);
+
+  // Attach cookies on every request to our API
+  const csrfToken = getCookie('csrf_token');
+  const headers: Record<string, string> = {};
+  if (csrfToken && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    headers['X-CSRF-Token'] = csrfToken;
   }
-  
-  // Add token to request if available
-  if (token) {
-    req = req.clone({
-      setHeaders: {
-        Authorization: `Bearer ${token}`
-      }
-    });
-  }
-  
+  req = req.clone({ withCredentials: true, setHeaders: headers });
+
   return next(req).pipe(
     catchError((error: HttpErrorResponse) => {
-      if (error.status === 401 && !req.url.includes('/auth/refresh')) {
-        // Try to refresh token
+      if (error.status === 401 && !req.url.includes('/auth/refresh') && !req.url.includes('/auth/login')) {
+        // Try to refresh token (cookie is sent automatically)
         return authService.refreshToken().pipe(
-          switchMap(response => {
-            // Retry original request with new token
-            const newReq = req.clone({
-              setHeaders: {
-                Authorization: `Bearer ${authService.getAccessToken()}`
-              }
-            });
-            return next(newReq);
+          switchMap(() => {
+            // Retry original request — new cookie is already set
+            return next(req.clone({ withCredentials: true }));
           }),
           catchError(refreshError => {
             // Refresh failed, logout user

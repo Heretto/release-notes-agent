@@ -1,6 +1,6 @@
 """Organization management API endpoints."""
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 from sqlalchemy import select, func as sa_func
 from typing import List, Optional
@@ -100,6 +100,7 @@ async def list_user_organizations(
 @router.post("/switch/{org_id}")
 async def switch_organization(
     org_id: UUID,
+    response: Response,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -131,10 +132,20 @@ async def switch_organization(
     access_token = create_access_token(data=token_data)
     refresh_token = create_refresh_token(data={"sub": str(current_user.id)})
 
+    from datetime import datetime, timedelta
+    from app.config import get_settings
+    _settings = get_settings()
+    expires_at = int((datetime.utcnow() + timedelta(minutes=_settings.jwt_access_token_expire_minutes)).timestamp())
+
+    # Set HttpOnly cookies
+    from app.core.security import set_auth_cookies
+    set_auth_cookies(response, access_token, refresh_token)
+
     return {
         "access_token": access_token,
         "refresh_token": refresh_token,
-        "token_type": "bearer"
+        "token_type": "bearer",
+        "expires_at": expires_at,
     }
 
 

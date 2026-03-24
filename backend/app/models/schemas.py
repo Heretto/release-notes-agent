@@ -80,6 +80,37 @@ class AICredentials(BaseModel):
     api_key: str
     model: Optional[str] = None
 
+# Typed request models for credential create/update endpoints
+class JiraCredentialCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    server_url: str = Field(..., min_length=1, max_length=2048)
+    email: EmailStr
+    api_token: str = Field(..., min_length=1, max_length=1024)
+
+class JiraCredentialUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    server_url: Optional[str] = Field(None, min_length=1, max_length=2048)
+    email: Optional[EmailStr] = None
+    api_token: Optional[str] = Field(None, max_length=1024)
+
+class HerettoCredentialCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    server_url: str = Field(..., min_length=1, max_length=2048)
+    username: str = Field(..., min_length=1, max_length=255)
+    token: str = Field(..., min_length=1, max_length=1024)
+
+class HerettoCredentialUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    server_url: Optional[str] = Field(None, min_length=1, max_length=2048)
+    username: Optional[str] = Field(None, min_length=1, max_length=255)
+    token: Optional[str] = Field(None, max_length=1024)
+
+class AICredentialCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    provider: str = Field(..., pattern=r'^(gemini|openai|anthropic)$')
+    api_key: str = Field(..., min_length=1, max_length=1024)
+    model: Optional[str] = Field(None, max_length=255)
+
 class CredentialCreate(BaseModel):
     type: CredentialTypeEnum
     name: str
@@ -129,7 +160,7 @@ class HerettoCredentialResponse(BaseModel):
 class InstructionSetBase(BaseModel):
     name: str
     description: Optional[str] = None
-    jql_query: str  # Jira query to execute
+    jql_query: str = Field(..., min_length=1, max_length=4096)
     system_prompt: str
     user_instructions: Optional[str] = None
     dita_template_id: Optional[UUID] = None
@@ -143,7 +174,7 @@ class InstructionSetCreate(InstructionSetBase):
 class InstructionSetUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
-    jql_query: Optional[str] = None
+    jql_query: Optional[str] = Field(None, min_length=1, max_length=4096)
     system_prompt: Optional[str] = None
     user_instructions: Optional[str] = None
     dita_template_id: Optional[UUID] = None
@@ -162,14 +193,14 @@ class InstructionSetResponse(InstructionSetBase):
 
 # Job schemas
 class JobCreate(BaseModel):
-    jql_query: str
+    jql_query: str = Field(..., min_length=1, max_length=4096)
     instruction_set_id: UUID
     ai_credential_id: Optional[UUID] = None
     additional_instructions: Optional[str] = None
     output_filename: str
     publish_to_heretto: bool = False
     heretto_folder_id: Optional[str] = None
-    max_tickets: Optional[int] = None  # Maximum number of tickets to process
+    max_tickets: Optional[int] = Field(None, ge=1, le=500)  # Capped by MAX_TICKETS_PER_JOB at runtime
 
 class JobProgress(BaseModel):
     stage: str
@@ -232,11 +263,14 @@ class WebhookConfigResponse(BaseModel):
     instruction_set_id: UUID
     auto_publish: bool
     is_active: bool
-    secret_token: str
     created_at: datetime
-    
+
     class Config:
         from_attributes = True
+
+class WebhookConfigCreateResponse(WebhookConfigResponse):
+    """Returned only on creation — includes the secret token (shown once)."""
+    secret_token: str
 
 # DITA template schemas
 class DitaTemplateCreate(BaseModel):
@@ -269,7 +303,7 @@ class JiraTicket(BaseModel):
     custom_fields: Dict[str, str]
 
 class JiraPreviewRequest(BaseModel):
-    jql_query: str
+    jql_query: str = Field(..., min_length=1, max_length=4096)
     credential_id: UUID
 
 class JiraPreviewResponse(BaseModel):

@@ -13,10 +13,10 @@ redis==5.0.1
 celery==5.3.4
 
 # Authentication and Security
-python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
-python-multipart==0.0.6
-cryptography==41.0.7
+PyJWT==2.11.0
+bcrypt>=4.0
+python-multipart==0.0.22
+cryptography==46.0.5
 
 # AI and API integrations
 google-generativeai==0.3.2
@@ -25,13 +25,17 @@ httpx==0.25.1
 jira==3.5.2
 
 # DITA and XML processing
-lxml==4.9.3
+lxml==6.0.2
+defusedxml==0.7.1
 
 # Environment and config
 python-dotenv==1.0.0
 pydantic==2.5.2
 pydantic-settings==2.1.0
 email-validator==2.1.0
+
+# Rate limiting
+slowapi==0.1.9
 
 # Utilities
 python-dateutil==2.8.2

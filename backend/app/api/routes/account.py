@@ -105,14 +105,17 @@ async def update_account(
         "email": current_user.email
     }
 
+class DeleteAccountRequest(BaseModel):
+    confirm: bool = False
+
 @router.delete("/me")
 async def delete_account(
-    confirm: bool = False,
+    body: DeleteAccountRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """Delete current user account."""
-    if not confirm:
+    if not body.confirm:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Please confirm account deletion by setting confirm=true"

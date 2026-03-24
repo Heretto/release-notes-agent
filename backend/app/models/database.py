@@ -143,7 +143,7 @@ class InstructionSet(Base):
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(255), nullable=False)
     description = Column(Text)
     jql_query = Column(Text, nullable=False)  # Jira query to execute
@@ -227,6 +227,7 @@ class WebhookConfig(Base):
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(255), nullable=False)
     trigger_events = Column(ARRAY(Text), nullable=False)
     jql_filter = Column(Text)
@@ -235,9 +236,10 @@ class WebhookConfig(Base):
     is_active = Column(Boolean, default=True)
     secret_token = Column(String(255), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
+
     # Relationships
     user = relationship("User", back_populates="webhook_configs")
+    organization = relationship("Organization", foreign_keys=[organization_id])
     instruction_set = relationship("InstructionSet")
 
 class DitaTemplate(Base):

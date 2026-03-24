@@ -15,6 +15,7 @@ export interface LoginResponse {
   access_token: string;
   refresh_token: string;
   token_type: string;
+  expires_at?: number;
   organizations?: UserOrganizationInfo[];
 }
 
@@ -29,83 +30,111 @@ interface User {
 export class AuthService {
   private http = inject(HttpClient);
   private router = inject(Router);
-  
+
   private currentUserSubject = new BehaviorSubject<User | null>(null);
   public currentUser$ = this.currentUserSubject.asObservable();
-  
-  private readonly ACCESS_TOKEN_KEY = 'access_token';
-  private readonly REFRESH_TOKEN_KEY = 'refresh_token';
-  
+
+  /** In-memory auth state — not accessible to XSS via storage APIs. */
+  private loggedIn = false;
+  private expiresAt: number | null = null;
+
+  constructor() {
+    // Restore session flag on page reload (sessionStorage is tab-scoped
+    // and cleared when the tab closes, unlike localStorage).
+    if (sessionStorage.getItem('auth_active') === '1') {
+      this.loggedIn = true;
+      const exp = sessionStorage.getItem('auth_exp');
+      this.expiresAt = exp ? Number(exp) : null;
+    }
+  }
+
+  private setAuthState(expiresAt?: number): void {
+    this.loggedIn = true;
+    this.expiresAt = expiresAt ?? null;
+    sessionStorage.setItem('auth_active', '1');
+    if (expiresAt) {
+      sessionStorage.setItem('auth_exp', String(expiresAt));
+    }
+  }
+
+  private clearAuthState(): void {
+    this.loggedIn = false;
+    this.expiresAt = null;
+    sessionStorage.removeItem('auth_active');
+    sessionStorage.removeItem('auth_exp');
+  }
+
   login(email: string, password: string): Observable<LoginResponse> {
     return this.http.post<LoginResponse>(`${environment.apiUrl}/auth/login`, {
       email,
       password
     }).pipe(
-      tap(response => {
-        this.storeTokens(response);
-        localStorage.setItem('user_email', email);
+      tap((res) => {
+        this.setAuthState(res.expires_at);
       })
     );
   }
 
-  navigateToDashboard(): void {
+  navigateToDashboard(returnUrl?: string): void {
+    if (returnUrl) {
+      try {
+        const decoded = decodeURIComponent(returnUrl);
+        if (decoded.startsWith('/') && !decoded.startsWith('//') && !decoded.includes('://')) {
+          this.router.navigateByUrl(returnUrl);
+          return;
+        }
+      } catch {
+        // Malformed URL — fall through to default
+      }
+    }
     this.router.navigate(['/dashboard']);
   }
 
-  updateTokens(response: { access_token: string; refresh_token: string }): void {
-    this.storeTokens(response as LoginResponse);
+  /** Called after org switch — cookies are set by the backend, just keep flag + expiry. */
+  updateTokens(response: { access_token: string; refresh_token: string; expires_at?: number }): void {
+    this.setAuthState(response.expires_at);
   }
-  
+
   register(email: string, password: string, organizationName?: string): Observable<any> {
     const payload: any = {
       email,
       password
     };
-    
+
     if (organizationName) {
       payload.organization_name = organizationName;
     }
-    
+
     return this.http.post(`${environment.apiUrl}/auth/register`, payload);
   }
-  
+
   logout(): void {
-    this.clearTokens();
-    localStorage.removeItem('user_email');
+    // Tell the backend to clear cookies
+    this.http.post(`${environment.apiUrl}/auth/logout`, {}).subscribe({
+      error: () => {} // best-effort
+    });
+    this.clearAuthState();
     this.currentUserSubject.next(null);
     this.router.navigate(['/login']);
   }
-  
+
   refreshToken(): Observable<LoginResponse> {
-    const refreshToken = this.getRefreshToken();
-    return this.http.post<LoginResponse>(`${environment.apiUrl}/auth/refresh`, {
-      refresh_token: refreshToken
-    }).pipe(
-      tap(response => {
-        this.storeTokens(response);
+    // Refresh token is sent automatically via HttpOnly cookie
+    return this.http.post<LoginResponse>(`${environment.apiUrl}/auth/refresh`, {}).pipe(
+      tap((res) => {
+        this.setAuthState(res.expires_at);
       })
     );
   }
-  
+
   isAuthenticated(): boolean {
-    return !!this.getAccessToken();
-  }
-  
-  getAccessToken(): string | null {
-    return localStorage.getItem(this.ACCESS_TOKEN_KEY);
-  }
-  
-  getRefreshToken(): string | null {
-    return localStorage.getItem(this.REFRESH_TOKEN_KEY);
-  }
-  
-  private storeTokens(response: LoginResponse): void {
-    localStorage.setItem(this.ACCESS_TOKEN_KEY, response.access_token);
-    localStorage.setItem(this.REFRESH_TOKEN_KEY, response.refresh_token);
-  }
-  
-  private clearTokens(): void {
-    localStorage.removeItem(this.ACCESS_TOKEN_KEY);
-    localStorage.removeItem(this.REFRESH_TOKEN_KEY);
+    if (!this.loggedIn) {
+      return false;
+    }
+    if (this.expiresAt !== null && Date.now() / 1000 >= this.expiresAt) {
+      this.clearAuthState();
+      return false;
+    }
+    return true;
   }
 }

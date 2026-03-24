@@ -232,9 +232,9 @@ def test_missing_fields_error(headers):
         headers=headers
     )
 
-    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
-    assert "Missing required" in resp.json()["detail"]
-    print(f"  ✓ Missing fields correctly rejected with 400")
+    # Pydantic validation returns 422 for missing required fields
+    assert resp.status_code == 422, f"Expected 422, got {resp.status_code}"
+    print(f"  ✓ Missing fields correctly rejected with 422")
 
     return True
 
@@ -248,6 +248,61 @@ def test_unauthorized_access():
     assert resp.status_code in [401, 403], f"Expected 401/403, got {resp.status_code}"
     print(f"  ✓ Unauthorized request rejected with {resp.status_code}")
 
+    return True
+
+
+def test_tokens_masked_in_responses(headers):
+    """Security: API must never return full tokens/keys in responses."""
+    print("\nTest: Tokens masked in API responses")
+    print("-" * 40)
+
+    unique = uuid.uuid4().hex[:8]
+    jira_token = "jira-secret-token-1234567890"
+
+    # Create credential
+    cred = {
+        "name": f"Mask Test {unique}",
+        "server_url": "https://mask-test.atlassian.net",
+        "email": "mask@example.com",
+        "api_token": jira_token,
+    }
+
+    create_resp = requests.post(
+        f"{BASE_URL}/credentials/jira", json=cred, headers=headers
+    )
+    assert create_resp.status_code == 200
+    created = create_resp.json()
+    cred_id = created["id"]
+
+    # POST response must mask api_token
+    assert created["api_token"] != jira_token, "POST returned full api_token"
+    assert "*" in created["api_token"], "POST api_token not masked"
+    print(f"  ✓ POST response masked: {created['api_token']}")
+
+    # GET list response must mask api_token
+    list_resp = requests.get(f"{BASE_URL}/credentials/jira", headers=headers)
+    assert list_resp.status_code == 200
+    for c in list_resp.json():
+        if c["id"] == cred_id:
+            assert c["api_token"] != jira_token, "GET list returned full api_token"
+            assert "*" in c["api_token"], "GET list api_token not masked"
+            print(f"  ✓ GET list response masked: {c['api_token']}")
+            break
+
+    # PUT response must mask api_token
+    update_resp = requests.put(
+        f"{BASE_URL}/credentials/jira/{cred_id}",
+        json={"name": f"Mask Updated {unique}"},
+        headers=headers,
+    )
+    assert update_resp.status_code == 200
+    updated = update_resp.json()
+    assert updated["api_token"] != jira_token, "PUT returned full api_token"
+    assert "*" in updated["api_token"], "PUT api_token not masked"
+    print(f"  ✓ PUT response masked: {updated['api_token']}")
+
+    # Cleanup
+    cleanup_credential(headers, cred_id)
     return True
 
 
@@ -349,6 +404,7 @@ if __name__ == "__main__":
     results.append(("Duplicate", test_duplicate_name_error(headers)))
     results.append(("Missing Fields", test_missing_fields_error(headers)))
     results.append(("Unauthorized", test_unauthorized_access()))
+    results.append(("Tokens Masked", test_tokens_masked_in_responses(headers)))
     results.append(("AI Test Endpoint", test_ai_credential_test_endpoint(headers)))
     results.append(("AI Corrupt Decrypt", test_ai_credential_test_corrupt_decrypt(headers)))
 

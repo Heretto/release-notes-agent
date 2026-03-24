@@ -14,7 +14,10 @@ import requests
 # Add tests directory to Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from config import API_BASE_URL, TEST_EMAIL, TEST_PASSWORD
+from config import (
+    API_BASE_URL, TEST_EMAIL, TEST_PASSWORD, ensure_test_account,
+    HAS_JIRA_CREDS, HAS_AI_CREDS, HAS_HERETTO_CREDS,
+)
 
 class TestRunner:
     def __init__(self, no_cleanup: bool = False):
@@ -143,6 +146,14 @@ class TestRunner:
             print("\n⚠️  Services check failed. Please start the application first.")
             return
 
+        # Ensure the default test account exists and is a superuser
+        try:
+            ensure_test_account()
+            print("✓ Test account ready")
+        except Exception as e:
+            print(f"\n⚠️  Failed to set up test account: {e}")
+            return
+
         # Snapshot existing job IDs before tests
         try:
             pre_test_job_ids = self._get_job_ids()
@@ -207,8 +218,56 @@ class TestRunner:
             except Exception as e:
                 print(f"\nWarning: Could not clean up test jobs: {e}")
 
+        # Check for missing credentials and print setup guidance
+        self._print_credential_hints()
+
         print("\nTip: To keep test data after a run: python run_tests.py --no-cleanup")
     
+    def _print_credential_hints(self):
+        """Check for missing .env credentials and print setup instructions."""
+        missing_required = []
+        missing_optional = []
+
+        if not HAS_JIRA_CREDS:
+            missing_required.append("Jira")
+        if not HAS_AI_CREDS:
+            missing_required.append("AI")
+        if not HAS_HERETTO_CREDS:
+            missing_optional.append("Heretto")
+
+        if not missing_required and not missing_optional:
+            return
+
+        print("\n" + "-" * 60)
+        print("CREDENTIAL SETUP (.env)")
+        print("-" * 60)
+
+        if missing_required:
+            print(f"Missing required credentials: {', '.join(missing_required)}")
+            print(f"Some integration tests were skipped. Add the following to your .env file:")
+            print()
+            if "Jira" in missing_required:
+                print(f"  TEST_JIRA_URL=https://your-instance.atlassian.net")
+                print(f"  TEST_JIRA_USERNAME=your-email@example.com")
+                print(f"  TEST_JIRA_API_TOKEN=your-jira-api-token")
+                print()
+            if "AI" in missing_required:
+                print(f"  # At least one of:")
+                print(f"  TEST_CLAUDE_API_KEY=sk-ant-...")
+                print(f"  TEST_OPENAI_API_KEY=sk-...")
+                print(f"  GOOGLE_AI_API_KEY=...")
+                print()
+
+        if missing_optional:
+            if missing_required:
+                print()
+            print(f"Optional credentials not configured: {', '.join(missing_optional)}")
+            print(f"  Heretto CCMS integration tests will be skipped.")
+            print(f"  To enable them, add to .env:")
+            print(f"    TEST_HERETTO_SERVER=https://your-heretto-instance.com")
+            print(f"    TEST_HERETTO_LOGIN_USER=your-username")
+            print(f"    TEST_HERETTO_LOGIN_TOKEN=your-token")
+
     def print_summary(self, passed: int, failed: int):
         """Print test results summary."""
         print("\n" + "="*60)

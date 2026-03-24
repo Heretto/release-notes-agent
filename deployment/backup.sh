@@ -10,6 +10,16 @@ DB_NAME="${POSTGRES_DB:-release_notes_production}"
 DB_USER="${POSTGRES_USER:-produser}"
 MAX_BACKUPS=30  # Keep last 30 backups
 
+# Validate DB_NAME and DB_USER to prevent injection in shell commands
+if [[ ! "$DB_NAME" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+    echo "Error: Invalid DB_NAME '${DB_NAME}' — must be alphanumeric/underscores only" >&2
+    exit 1
+fi
+if [[ ! "$DB_USER" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+    echo "Error: Invalid DB_USER '${DB_USER}' — must be alphanumeric/underscores only" >&2
+    exit 1
+fi
+
 # Colors for output
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'

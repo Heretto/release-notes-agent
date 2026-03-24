@@ -21,16 +21,13 @@ import sys
 import os
 import uuid
 import requests
+import psycopg2
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import API_BASE_URL
+from config import API_BASE_URL, DATABASE_URL
 
 BASE_URL = API_BASE_URL
 UNIQUE = uuid.uuid4().hex[:8]
-
-# admin@ex.com is both a superuser and an org admin in the "Ex" organization
-SUPERUSER_ADMIN_EMAIL = "admin@ex.com"
-SUPERUSER_ADMIN_PASSWORD = "admin123"
 
 
 def login(email, password):
@@ -60,6 +57,21 @@ def register(email, password, org_name):
     return resp.json()
 
 
+def set_superuser(email, is_superuser=True):
+    """Set the is_superuser flag directly in the database."""
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE users SET is_superuser = %s WHERE email = %s",
+                (is_superuser, email),
+            )
+            assert cur.rowcount == 1, f"User {email} not found in database"
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def main():
     print("Admin Visibility Regression Test")
     print("=" * 60)
@@ -69,15 +81,19 @@ def main():
     # ---------------------------------------------------------------
     print("\n1. Superuser org admin gets both is_superuser and organization_role='admin'...")
 
-    # Use admin@ex.com which is both a superuser and an org admin
-    login_resp = login(SUPERUSER_ADMIN_EMAIL, SUPERUSER_ADMIN_PASSWORD)
+    su_email = f"adminvis-super-{UNIQUE}@example.com"
+    su_password = "testpassword123"
+    register(su_email, su_password, f"AdminVis Super Org {UNIQUE}")
+    set_superuser(su_email)
+
+    login_resp = login(su_email, su_password)
     account = get_account_me(login_resp["access_token"])
 
     assert account["is_superuser"] is True, (
-        f"Expected is_superuser=true for {SUPERUSER_ADMIN_EMAIL}, got {account['is_superuser']}"
+        f"Expected is_superuser=true for {su_email}, got {account['is_superuser']}"
     )
     assert account.get("organization_role") is not None, (
-        f"organization_role is missing from /account/me for {SUPERUSER_ADMIN_EMAIL}"
+        f"organization_role is missing from /account/me for {su_email}"
     )
     assert account["organization_role"] == "admin", (
         f"REGRESSION: organization_role should be lowercase 'admin', "
@@ -110,7 +126,7 @@ def main():
     admin_account = get_account_me(admin_login["access_token"])
 
     assert admin_account["is_superuser"] is False, (
-        f"Fresh registered user should not be superuser"
+        "Fresh registered user should not be superuser"
     )
     assert admin_account["organization_role"] == "admin", (
         f"Registered user should be org admin, got '{admin_account.get('organization_role')}'"

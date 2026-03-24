@@ -2,7 +2,7 @@
 """
 Test AI provider credentials via the HTTP API.
 
-Uses CLAUDE_DEFAULT_API_KEY and OPENAI_DEFAULT_API_KEY from the .env file
+Uses TEST_CLAUDE_API_KEY and TEST_OPENAI_API_KEY from the .env file
 to create credentials, test the connection, and verify end-to-end functionality.
 """
 
@@ -11,11 +11,12 @@ import os
 import requests
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from config import API_BASE_URL, TEST_EMAIL, TEST_PASSWORD
-
-# Load .env from project root for API keys
-from dotenv import load_dotenv
-load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), '.env'))
+from config import (
+    API_BASE_URL, TEST_EMAIL, TEST_PASSWORD,
+    TEST_CLAUDE_API_KEY, TEST_CLAUDE_MODEL,
+    TEST_OPENAI_API_KEY, TEST_OPENAI_MODEL,
+    TEST_GOOGLE_API_KEY, TEST_GOOGLE_MODEL,
+)
 
 BASE_URL = API_BASE_URL
 
@@ -142,28 +143,25 @@ def main():
     # Optional providers (informational only)
     optional_providers = []
 
-    claude_key = os.getenv("CLAUDE_DEFAULT_API_KEY")
-    if claude_key:
-        required_providers.append(("anthropic", "Claude Test", claude_key, "claude-sonnet-4-20250514"))
+    if TEST_CLAUDE_API_KEY:
+        required_providers.append(("anthropic", "Claude Test", TEST_CLAUDE_API_KEY, TEST_CLAUDE_MODEL))
     else:
-        print("\n  Skipping Anthropic: CLAUDE_DEFAULT_API_KEY not set")
+        print("\n  Skipping Anthropic: TEST_CLAUDE_API_KEY not set in .env")
 
-    openai_key = os.getenv("OPENAI_DEFAULT_API_KEY")
-    if openai_key:
-        required_providers.append(("openai", "OpenAI Test", openai_key, "gpt-4o"))
+    if TEST_OPENAI_API_KEY:
+        required_providers.append(("openai", "OpenAI Test", TEST_OPENAI_API_KEY, TEST_OPENAI_MODEL))
     else:
-        print("\n  Skipping OpenAI: OPENAI_DEFAULT_API_KEY not set")
+        print("\n  Skipping OpenAI: TEST_OPENAI_API_KEY not set in .env")
 
-    google_key = os.getenv("GOOGLE_AI_API_KEY")
-    if google_key:
-        optional_providers.append(("gemini", "Gemini Test", google_key, "gemini-2.0-flash"))
+    if TEST_GOOGLE_API_KEY:
+        optional_providers.append(("gemini", "Gemini Test", TEST_GOOGLE_API_KEY, TEST_GOOGLE_MODEL))
 
     all_providers = required_providers + optional_providers
 
     if not all_providers:
         print("\nNo AI API keys found. Set at least one of:")
-        print("  CLAUDE_DEFAULT_API_KEY")
-        print("  OPENAI_DEFAULT_API_KEY")
+        print("  TEST_CLAUDE_API_KEY")
+        print("  TEST_OPENAI_API_KEY")
         print("  GOOGLE_AI_API_KEY")
         print("\nSkipping AI provider tests (no keys available)")
         return True  # Not a failure — just nothing to test
