@@ -1,3 +1,5 @@
+import secrets
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
@@ -103,8 +105,8 @@ async def create_test_user(
         )
     
     test_email = "admin@example.com"
-    test_password = "admin123"
-    
+    test_password = secrets.token_urlsafe(16)
+
     # Check if user exists
     existing_user = db.query(User).filter(User.email == test_email).first()
     if existing_user:
@@ -114,8 +116,9 @@ async def create_test_user(
         return {
             "message": "Test user already exists, password reset",
             "email": test_email,
+            "password": test_password,
         }
-    
+
     # Create new user
     new_user = User(
         email=test_email,
@@ -123,11 +126,12 @@ async def create_test_user(
         is_active=True,
         is_superuser=True
     )
-    
+
     db.add(new_user)
     db.commit()
-    
+
     return {
         "message": "Test user created successfully",
         "email": test_email,
+        "password": test_password,
     }
