@@ -7,8 +7,10 @@ import logging
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
+from starlette.middleware.sessions import SessionMiddleware
+
 from app.config import get_settings
-from app.api.routes import auth, credentials, instructions, jobs, webhooks, health, admin, account, organizations, invitations, superadmin
+from app.api.routes import auth, credentials, instructions, jobs, webhooks, health, admin, account, organizations, invitations, superadmin, sso
 from app.core.logging import setup_logging
 from app.core.rate_limit import limiter
 from app.models.database import init_db
@@ -63,6 +65,9 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization", "X-CSRF-Token"],
 )
 
+# Session middleware (short-lived, used only for OAuth state during SSO redirects)
+app.add_middleware(SessionMiddleware, secret_key=settings.app_secret_key, max_age=300)
+
 # CSRF protection (double-submit cookie pattern)
 from app.core.csrf import CSRFMiddleware
 app.add_middleware(CSRFMiddleware)
@@ -78,6 +83,7 @@ app.include_router(webhooks.router, prefix=settings.api_prefix, tags=["webhooks"
 app.include_router(account.router, prefix=settings.api_prefix, tags=["account"])
 app.include_router(organizations.router, prefix=settings.api_prefix, tags=["organizations"])
 app.include_router(superadmin.router, prefix=settings.api_prefix, tags=["superadmin"])
+app.include_router(sso.router, prefix=settings.api_prefix, tags=["sso"])
 
 # Admin routes (development only)
 if settings.app_env == "development":

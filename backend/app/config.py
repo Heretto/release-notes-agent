@@ -35,6 +35,14 @@ class Settings(BaseSettings):
     # Heretto
     heretto_base_url: str = "https://api.heretto.com"
     
+    # SSO / OAuth
+    google_oauth_client_id: Optional[str] = None
+    google_oauth_client_secret: Optional[str] = None
+    microsoft_oauth_client_id: Optional[str] = None
+    microsoft_oauth_client_secret: Optional[str] = None
+    microsoft_oauth_tenant_id: str = "common"
+    oauth_redirect_base_url: Optional[str] = None  # e.g. "https://app.example.com"
+
     # Cookies
     cookie_secure: bool = False  # Set True in production behind HTTPS
     cookie_domain: Optional[str] = None  # None = current domain only

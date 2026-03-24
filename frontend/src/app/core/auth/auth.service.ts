@@ -137,4 +137,8 @@ export class AuthService {
     }
     return true;
   }
+
+  getSSOProviders(): Observable<{google: boolean, microsoft: boolean}> {
+    return this.http.get<{google: boolean, microsoft: boolean}>(`${environment.apiUrl}/auth/sso/providers`);
+  }
 }

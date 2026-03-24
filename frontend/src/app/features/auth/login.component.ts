@@ -12,6 +12,7 @@ import { MatDividerModule } from '@angular/material/divider';
 import { ActivatedRoute } from '@angular/router';
 import { AuthService, UserOrganizationInfo } from '../../core/auth/auth.service';
 import { OrganizationService } from '../../core/services/organization.service';
+import { environment } from '../../../environments/environment';
 
 @Component({
   selector: 'app-login',
@@ -63,6 +64,25 @@ import { OrganizationService } from '../../core/services/organization.service';
         </mat-card-header>
 
         <mat-card-content>
+          <!-- SSO Buttons -->
+          <div class="sso-buttons" *ngIf="googleEnabled || microsoftEnabled">
+            <button mat-stroked-button class="sso-btn" type="button"
+                    *ngIf="googleEnabled" (click)="loginWithGoogle()">
+              <mat-icon>login</mat-icon>
+              Continue with Google
+            </button>
+            <button mat-stroked-button class="sso-btn" type="button"
+                    *ngIf="microsoftEnabled" (click)="loginWithMicrosoft()">
+              <mat-icon>login</mat-icon>
+              Continue with Microsoft
+            </button>
+            <div class="sso-divider">
+              <mat-divider></mat-divider>
+              <span class="sso-divider-text">or sign in with email</span>
+              <mat-divider></mat-divider>
+            </div>
+          </div>
+
           <form [formGroup]="loginForm" (ngSubmit)="onSubmit()">
             <mat-form-field appearance="outline" class="full-width" *ngIf="isRegisterMode">
               <mat-label>Organization Name</mat-label>
@@ -177,6 +197,33 @@ import { OrganizationService } from '../../core/services/organization.service';
       gap: 8px;
       padding: 16px;
     }
+
+    .sso-buttons {
+      margin-bottom: 16px;
+    }
+
+    .sso-btn {
+      width: 100%;
+      margin-bottom: 8px;
+      height: 42px;
+    }
+
+    .sso-divider {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 16px 0;
+    }
+
+    .sso-divider mat-divider {
+      flex: 1;
+    }
+
+    .sso-divider-text {
+      color: rgba(0, 0, 0, 0.38);
+      font-size: 13px;
+      white-space: nowrap;
+    }
   `]
 })
 export class LoginComponent implements OnInit {
@@ -194,8 +241,40 @@ export class LoginComponent implements OnInit {
   showOrgSelection = false;
   userOrganizations: UserOrganizationInfo[] = [];
 
+  googleEnabled = false;
+  microsoftEnabled = false;
+
   ngOnInit(): void {
     this.returnUrl = this.route.snapshot.queryParams['returnUrl'];
+
+    // Check for SSO error from redirect
+    const ssoError = this.route.snapshot.queryParams['sso_error'];
+    if (ssoError) {
+      const messages: Record<string, string> = {
+        token_exchange_failed: 'SSO sign-in failed. Please try again.',
+        no_user_info: 'Could not retrieve your account information from the provider.',
+        email_not_verified: 'Your email is not verified with the SSO provider.',
+        session_failed: 'SSO session could not be established. Please try again.',
+      };
+      this.errorMessage = messages[ssoError] || 'SSO sign-in failed. Please try again.';
+    }
+
+    // Discover available SSO providers
+    this.authService.getSSOProviders().subscribe({
+      next: (providers) => {
+        this.googleEnabled = providers.google;
+        this.microsoftEnabled = providers.microsoft;
+      },
+      error: () => {} // SSO buttons just won't show
+    });
+  }
+
+  loginWithGoogle(): void {
+    window.location.href = `${environment.apiUrl}/auth/sso/google?return_url=${encodeURIComponent(this.returnUrl || '/dashboard')}`;
+  }
+
+  loginWithMicrosoft(): void {
+    window.location.href = `${environment.apiUrl}/auth/sso/microsoft?return_url=${encodeURIComponent(this.returnUrl || '/dashboard')}`;
   }
 
   loginForm: FormGroup = this.fb.group({

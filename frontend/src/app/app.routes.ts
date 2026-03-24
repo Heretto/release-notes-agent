@@ -13,6 +13,10 @@ export const routes: Routes = [
     path: 'invite/:token',
     loadComponent: () => import('./features/invitations/accept-invitation.component').then(m => m.AcceptInvitationComponent)
   },
+  {
+    path: 'auth/sso/complete',
+    loadComponent: () => import('./features/auth/sso-callback.component').then(m => m.SSOCallbackComponent)
+  },
   
   // Protected routes (with layout)
   {
