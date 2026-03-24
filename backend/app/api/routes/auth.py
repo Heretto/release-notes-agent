@@ -33,7 +33,7 @@ def create_slug(name: str) -> str:
     return slug
 
 @router.post("/register", response_model=UserResponse)
-@limiter.limit("5/minute")
+@limiter.limit("20/minute")
 async def register(
     request: Request,
     user_data: UserCreate,
@@ -107,7 +107,7 @@ async def register(
     return new_user
 
 @router.post("/login")
-@limiter.limit("10/minute")
+@limiter.limit("30/minute")
 async def login(
     request: Request,
     credentials: LoginRequest,
@@ -188,7 +188,7 @@ async def login(
     }
 
 @router.post("/refresh")
-@limiter.limit("20/minute")
+@limiter.limit("60/minute")
 async def refresh_token_endpoint(
     request: Request,
     response: Response,
