@@ -74,8 +74,10 @@ class JobOrchestrator:
             
             start_time = time.time()
             try:
-                # Use max_tickets if specified, otherwise default to 100
-                max_results = job.max_tickets if job.max_tickets else 100
+                # Use max_tickets if specified, clamped to the configured upper limit
+                from app.config import get_settings
+                settings = get_settings()
+                max_results = min(job.max_tickets or 100, settings.max_tickets_per_job)
                 tickets = await jira_service.execute_query(job.jql_query, max_results=max_results)
                 job.tickets_processed = len(tickets)
                 

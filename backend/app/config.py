@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     
     # Query limits
     max_query_limit: int = 500
+    max_tickets_per_job: int = 500
 
     # Server
     api_prefix: str = "/api/v1"

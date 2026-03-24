@@ -200,7 +200,7 @@ class JobCreate(BaseModel):
     output_filename: str
     publish_to_heretto: bool = False
     heretto_folder_id: Optional[str] = None
-    max_tickets: Optional[int] = None  # Maximum number of tickets to process
+    max_tickets: Optional[int] = Field(None, ge=1, le=500)  # Capped by MAX_TICKETS_PER_JOB at runtime
 
 class JobProgress(BaseModel):
     stage: str
