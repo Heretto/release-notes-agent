@@ -160,7 +160,7 @@ class HerettoCredentialResponse(BaseModel):
 class InstructionSetBase(BaseModel):
     name: str
     description: Optional[str] = None
-    jql_query: str  # Jira query to execute
+    jql_query: str = Field(..., min_length=1, max_length=4096)
     system_prompt: str
     user_instructions: Optional[str] = None
     dita_template_id: Optional[UUID] = None
@@ -174,7 +174,7 @@ class InstructionSetCreate(InstructionSetBase):
 class InstructionSetUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
-    jql_query: Optional[str] = None
+    jql_query: Optional[str] = Field(None, min_length=1, max_length=4096)
     system_prompt: Optional[str] = None
     user_instructions: Optional[str] = None
     dita_template_id: Optional[UUID] = None
@@ -193,7 +193,7 @@ class InstructionSetResponse(InstructionSetBase):
 
 # Job schemas
 class JobCreate(BaseModel):
-    jql_query: str
+    jql_query: str = Field(..., min_length=1, max_length=4096)
     instruction_set_id: UUID
     ai_credential_id: Optional[UUID] = None
     additional_instructions: Optional[str] = None
@@ -303,7 +303,7 @@ class JiraTicket(BaseModel):
     custom_fields: Dict[str, str]
 
 class JiraPreviewRequest(BaseModel):
-    jql_query: str
+    jql_query: str = Field(..., min_length=1, max_length=4096)
     credential_id: UUID
 
 class JiraPreviewResponse(BaseModel):
