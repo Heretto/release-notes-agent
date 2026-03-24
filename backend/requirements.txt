@@ -26,6 +26,7 @@ jira==3.5.2
 
 # DITA and XML processing
 lxml==6.0.2
+defusedxml==0.7.1
 
 # Environment and config
 python-dotenv==1.0.0

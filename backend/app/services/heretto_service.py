@@ -2,7 +2,7 @@ import httpx
 import base64
 import logging
 import re
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET
 from typing import Optional, List
 
 from app.models.schemas import HerettoUploadResult, HerettoFolder
