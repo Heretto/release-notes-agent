@@ -34,5 +34,8 @@ pydantic==2.5.2
 pydantic-settings==2.1.0
 email-validator==2.1.0
 
+# Rate limiting
+slowapi==0.1.9
+
 # Utilities
 python-dateutil==2.8.2

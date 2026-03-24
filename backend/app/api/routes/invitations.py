@@ -1,6 +1,6 @@
 """Invitation acceptance routes for unauthenticated users."""
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
 from typing import Optional
@@ -11,6 +11,7 @@ from app.models.database import get_db, User
 from app.models.organization import Organization, OrganizationMember, OrganizationInvitation
 from app.core.security import get_password_hash
 from app.models.schemas import OrganizationInvitationResponse
+from app.core.rate_limit import limiter
 
 router = APIRouter(prefix="/invitations")
 
@@ -39,7 +40,9 @@ class AcceptInvitationResponse(BaseModel):
 
 
 @router.get("/info/{token}", response_model=InvitationInfoResponse)
+@limiter.limit("10/minute")
 async def get_invitation_info(
+    request: Request,
     token: str,
     db: Session = Depends(get_db)
 ):
@@ -92,7 +95,9 @@ async def get_invitation_info(
 
 
 @router.post("/accept/{token}", response_model=AcceptInvitationResponse)
+@limiter.limit("5/minute")
 async def accept_invitation_new_user(
+    http_request: Request,
     token: str,
     request: AcceptInvitationRequest,
     db: Session = Depends(get_db)
@@ -210,7 +215,9 @@ class ExistingUserAcceptRequest(BaseModel):
 
 
 @router.post("/accept-existing/{token}")
+@limiter.limit("5/minute")
 async def accept_invitation_existing_user(
+    http_request: Request,
     token: str,
     request: ExistingUserAcceptRequest,
     db: Session = Depends(get_db)

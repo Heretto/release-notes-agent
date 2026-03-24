@@ -17,6 +17,7 @@ from app.core.security import (
     clear_auth_cookies,
 )
 from app.config import get_settings
+from app.core.rate_limit import limiter
 import uuid
 import re
 
@@ -32,7 +33,9 @@ def create_slug(name: str) -> str:
     return slug
 
 @router.post("/register", response_model=UserResponse)
+@limiter.limit("5/minute")
 async def register(
+    request: Request,
     user_data: UserCreate,
     db: Session = Depends(get_db)
 ):
@@ -104,7 +107,9 @@ async def register(
     return new_user
 
 @router.post("/login")
+@limiter.limit("10/minute")
 async def login(
+    request: Request,
     credentials: LoginRequest,
     response: Response,
     db: Session = Depends(get_db)
@@ -183,6 +188,7 @@ async def login(
     }
 
 @router.post("/refresh")
+@limiter.limit("20/minute")
 async def refresh_token_endpoint(
     request: Request,
     response: Response,
