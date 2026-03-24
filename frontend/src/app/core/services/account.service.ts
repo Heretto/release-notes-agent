@@ -47,11 +47,6 @@ export class AccountService {
         this.accountInfoSubject.next(info);
         this.isAdminSubject.next(info.organization_role === 'admin');
         this.isSuperuserSubject.next(info.is_superuser === true);
-        
-        // Store email for other components
-        if (info.email) {
-          localStorage.setItem('user_email', info.email);
-        }
       })
     );
   }
@@ -70,11 +65,14 @@ export class AccountService {
     this.accountInfoSubject.next(null);
     this.isAdminSubject.next(false);
     this.isSuperuserSubject.next(false);
-    localStorage.removeItem('user_email');
   }
   
   isAdmin(): boolean {
     const currentInfo = this.accountInfoSubject.value;
     return currentInfo?.organization_role === 'admin' || false;
+  }
+
+  getCurrentEmail(): string | null {
+    return this.accountInfoSubject.value?.email ?? null;
   }
 }

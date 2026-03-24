@@ -11,6 +11,7 @@ import { MatDividerModule } from '@angular/material/divider';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatDialogModule, MatDialog } from '@angular/material/dialog';
 import { AccountService, AccountInfo } from '../../core/services/account.service';
+import { AuthService } from '../../core/auth/auth.service';
 import { Router } from '@angular/router';
 
 @Component({
@@ -395,6 +396,7 @@ import { Router } from '@angular/router';
 export class AccountComponent implements OnInit {
   private fb = inject(FormBuilder);
   private accountService = inject(AccountService);
+  private authService = inject(AuthService);
   private snackBar = inject(MatSnackBar);
   private router = inject(Router);
   private dialog = inject(MatDialog);
@@ -538,11 +540,8 @@ export class AccountComponent implements OnInit {
         this.snackBar.open('Account deleted successfully', 'Close', {
           duration: 3000
         });
-        // Clear auth and redirect to login
-        localStorage.removeItem('logged_in');
-        localStorage.removeItem('token_expires_at');
-        localStorage.removeItem('user_email');
-        this.router.navigate(['/login']);
+        // Clear auth state and redirect to login
+        this.authService.logout();
       },
       error: (error) => {
         console.error('Failed to delete account:', error);

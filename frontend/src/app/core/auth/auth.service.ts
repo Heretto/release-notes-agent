@@ -34,8 +34,35 @@ export class AuthService {
   private currentUserSubject = new BehaviorSubject<User | null>(null);
   public currentUser$ = this.currentUserSubject.asObservable();
 
-  private readonly LOGGED_IN_KEY = 'logged_in';
-  private readonly EXPIRES_AT_KEY = 'token_expires_at';
+  /** In-memory auth state — not accessible to XSS via storage APIs. */
+  private loggedIn = false;
+  private expiresAt: number | null = null;
+
+  constructor() {
+    // Restore session flag on page reload (sessionStorage is tab-scoped
+    // and cleared when the tab closes, unlike localStorage).
+    if (sessionStorage.getItem('auth_active') === '1') {
+      this.loggedIn = true;
+      const exp = sessionStorage.getItem('auth_exp');
+      this.expiresAt = exp ? Number(exp) : null;
+    }
+  }
+
+  private setAuthState(expiresAt?: number): void {
+    this.loggedIn = true;
+    this.expiresAt = expiresAt ?? null;
+    sessionStorage.setItem('auth_active', '1');
+    if (expiresAt) {
+      sessionStorage.setItem('auth_exp', String(expiresAt));
+    }
+  }
+
+  private clearAuthState(): void {
+    this.loggedIn = false;
+    this.expiresAt = null;
+    sessionStorage.removeItem('auth_active');
+    sessionStorage.removeItem('auth_exp');
+  }
 
   login(email: string, password: string): Observable<LoginResponse> {
     return this.http.post<LoginResponse>(`${environment.apiUrl}/auth/login`, {
@@ -43,11 +70,7 @@ export class AuthService {
       password
     }).pipe(
       tap((res) => {
-        localStorage.setItem(this.LOGGED_IN_KEY, 'true');
-        localStorage.setItem('user_email', email);
-        if (res.expires_at) {
-          localStorage.setItem(this.EXPIRES_AT_KEY, String(res.expires_at));
-        }
+        this.setAuthState(res.expires_at);
       })
     );
   }
@@ -69,10 +92,7 @@ export class AuthService {
 
   /** Called after org switch — cookies are set by the backend, just keep flag + expiry. */
   updateTokens(response: { access_token: string; refresh_token: string; expires_at?: number }): void {
-    localStorage.setItem(this.LOGGED_IN_KEY, 'true');
-    if (response.expires_at) {
-      localStorage.setItem(this.EXPIRES_AT_KEY, String(response.expires_at));
-    }
+    this.setAuthState(response.expires_at);
   }
 
   register(email: string, password: string, organizationName?: string): Observable<any> {
@@ -93,9 +113,7 @@ export class AuthService {
     this.http.post(`${environment.apiUrl}/auth/logout`, {}).subscribe({
       error: () => {} // best-effort
     });
-    localStorage.removeItem(this.LOGGED_IN_KEY);
-    localStorage.removeItem(this.EXPIRES_AT_KEY);
-    localStorage.removeItem('user_email');
+    this.clearAuthState();
     this.currentUserSubject.next(null);
     this.router.navigate(['/login']);
   }
@@ -104,26 +122,18 @@ export class AuthService {
     // Refresh token is sent automatically via HttpOnly cookie
     return this.http.post<LoginResponse>(`${environment.apiUrl}/auth/refresh`, {}).pipe(
       tap((res) => {
-        localStorage.setItem(this.LOGGED_IN_KEY, 'true');
-        if (res.expires_at) {
-          localStorage.setItem(this.EXPIRES_AT_KEY, String(res.expires_at));
-        }
+        this.setAuthState(res.expires_at);
       })
     );
   }
 
   isAuthenticated(): boolean {
-    if (localStorage.getItem(this.LOGGED_IN_KEY) !== 'true') {
+    if (!this.loggedIn) {
       return false;
     }
-    const expiresAt = localStorage.getItem(this.EXPIRES_AT_KEY);
-    if (expiresAt) {
-      // Token expired — clear state and deny access
-      if (Date.now() / 1000 >= Number(expiresAt)) {
-        localStorage.removeItem(this.LOGGED_IN_KEY);
-        localStorage.removeItem(this.EXPIRES_AT_KEY);
-        return false;
-      }
+    if (this.expiresAt !== null && Date.now() / 1000 >= this.expiresAt) {
+      this.clearAuthState();
+      return false;
     }
     return true;
   }
