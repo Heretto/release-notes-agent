@@ -36,8 +36,7 @@ class Settings(BaseSettings):
     heretto_base_url: str = "https://api.heretto.com"
     
     # SSO / OAuth
-    google_oauth_client_id: Optional[str] = None
-    google_oauth_client_secret: Optional[str] = None
+    google_oauth_client_id: Optional[str] = None  # Google Sign-In: client ID only, no secret needed
     microsoft_oauth_client_id: Optional[str] = None
     microsoft_oauth_client_secret: Optional[str] = None
     microsoft_oauth_tenant_id: str = "common"

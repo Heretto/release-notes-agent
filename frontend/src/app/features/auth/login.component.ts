@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, AfterViewInit, inject, NgZone, ElementRef, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, Validators, ReactiveFormsModule } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
@@ -66,11 +66,7 @@ import { environment } from '../../../environments/environment';
         <mat-card-content>
           <!-- SSO Buttons -->
           <div class="sso-buttons" *ngIf="googleEnabled || microsoftEnabled">
-            <button mat-stroked-button class="sso-btn" type="button"
-                    *ngIf="googleEnabled" (click)="loginWithGoogle()">
-              <mat-icon>login</mat-icon>
-              Continue with Google
-            </button>
+            <div #googleBtnContainer *ngIf="googleEnabled" class="google-btn-wrapper"></div>
             <button mat-stroked-button class="sso-btn" type="button"
                     *ngIf="microsoftEnabled" (click)="loginWithMicrosoft()">
               <mat-icon>login</mat-icon>
@@ -202,6 +198,12 @@ import { environment } from '../../../environments/environment';
       margin-bottom: 16px;
     }
 
+    .google-btn-wrapper {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 8px;
+    }
+
     .sso-btn {
       width: 100%;
       margin-bottom: 8px;
@@ -226,13 +228,18 @@ import { environment } from '../../../environments/environment';
     }
   `]
 })
-export class LoginComponent implements OnInit {
+export class LoginComponent implements OnInit, AfterViewInit {
   private fb = inject(FormBuilder);
   private route = inject(ActivatedRoute);
   private authService = inject(AuthService);
   private organizationService = inject(OrganizationService);
+  private ngZone = inject(NgZone);
+
+  @ViewChild('googleBtnContainer') googleBtnContainer?: ElementRef;
 
   private returnUrl: string | undefined;
+  private googleClientId: string | null = null;
+  private googleScriptLoaded = false;
 
   hidePassword = true;
   loading = false;
@@ -264,13 +271,75 @@ export class LoginComponent implements OnInit {
       next: (providers) => {
         this.googleEnabled = providers.google;
         this.microsoftEnabled = providers.microsoft;
+        if (providers.google && providers.google_client_id) {
+          this.googleClientId = providers.google_client_id;
+          this.loadGoogleScript();
+        }
       },
       error: () => {} // SSO buttons just won't show
     });
   }
 
-  loginWithGoogle(): void {
-    window.location.href = `${environment.apiUrl}/auth/sso/google?return_url=${encodeURIComponent(this.returnUrl || '/dashboard')}`;
+  ngAfterViewInit(): void {
+    // Google button will be rendered once both the script and the container are ready
+    this.tryRenderGoogleButton();
+  }
+
+  private loadGoogleScript(): void {
+    if (this.googleScriptLoaded || document.getElementById('google-gsi-script')) {
+      this.googleScriptLoaded = true;
+      this.tryRenderGoogleButton();
+      return;
+    }
+    const script = document.createElement('script');
+    script.id = 'google-gsi-script';
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.onload = () => {
+      this.googleScriptLoaded = true;
+      this.tryRenderGoogleButton();
+    };
+    document.head.appendChild(script);
+  }
+
+  private tryRenderGoogleButton(): void {
+    if (!this.googleScriptLoaded || !this.googleClientId || !this.googleBtnContainer) {
+      return;
+    }
+    const google = (window as any).google;
+    if (!google?.accounts?.id) {
+      return;
+    }
+    google.accounts.id.initialize({
+      client_id: this.googleClientId,
+      callback: (response: any) => this.handleGoogleCredential(response),
+      auto_select: false,
+    });
+    google.accounts.id.renderButton(this.googleBtnContainer.nativeElement, {
+      type: 'standard',
+      theme: 'outline',
+      size: 'large',
+      width: 360,
+      text: 'continue_with',
+    });
+  }
+
+  private handleGoogleCredential(response: any): void {
+    // Google Identity Services calls this outside Angular zone
+    this.ngZone.run(() => {
+      this.loading = true;
+      this.errorMessage = '';
+      this.authService.loginWithGoogleToken(response.credential).subscribe({
+        next: () => {
+          this.loading = false;
+          this.authService.navigateToDashboard(this.returnUrl);
+        },
+        error: (err) => {
+          this.errorMessage = err.error?.detail || 'Google sign-in failed. Please try again.';
+          this.loading = false;
+        },
+      });
+    });
   }
 
   loginWithMicrosoft(): void {
