@@ -9,7 +9,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatListModule } from '@angular/material/list';
 import { MatDividerModule } from '@angular/material/divider';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { AuthService, UserOrganizationInfo } from '../../core/auth/auth.service';
 import { OrganizationService } from '../../core/services/organization.service';
 
@@ -27,6 +27,7 @@ import { OrganizationService } from '../../core/services/organization.service';
     MatProgressSpinnerModule,
     MatListModule,
     MatDividerModule,
+    RouterLink,
   ],
   template: `
     <div class="login-container">
@@ -114,6 +115,10 @@ import { OrganizationService } from '../../core/services/organization.service';
                 {{ isRegisterMode ? 'Already have an account?' : 'Create Account' }}
               </button>
             </div>
+
+            <div class="forgot-password-row" *ngIf="!isRegisterMode">
+              <a routerLink="/forgot-password" class="forgot-password-link">Forgot Password?</a>
+            </div>
           </form>
         </mat-card-content>
       </mat-card>
@@ -176,6 +181,17 @@ import { OrganizationService } from '../../core/services/organization.service';
       justify-content: center;
       gap: 8px;
       padding: 16px;
+    }
+
+    .forgot-password-row {
+      text-align: center;
+      margin-top: 12px;
+    }
+
+    .forgot-password-link {
+      color: #667eea;
+      text-decoration: none;
+      font-size: 14px;
     }
   `]
 })

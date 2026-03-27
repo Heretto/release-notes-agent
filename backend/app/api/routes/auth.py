@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 from app.models.database import get_db, User, OrganizationMember, user_organizations
 from app.models.organization import Organization, OrganizationRole
-from app.models.schemas import UserCreate, UserResponse, LoginRequest, TokenResponse, OrganizationCreate, UserOrganizationInfo
+from app.models.schemas import UserCreate, UserResponse, LoginRequest, TokenResponse, OrganizationCreate, UserOrganizationInfo, ForgotPasswordRequest, ResetPasswordRequest
 from app.core.security import (
     verify_password,
     get_password_hash,
@@ -15,11 +15,17 @@ from app.core.security import (
     decode_token,
     set_auth_cookies,
     clear_auth_cookies,
+    create_password_reset_token,
+    decode_password_reset_token,
 )
+from app.core.exceptions import AuthenticationError
 from app.config import get_settings
 from app.core.rate_limit import limiter
+import logging
 import uuid
 import re
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth")
 settings = get_settings()
@@ -33,7 +39,7 @@ def create_slug(name: str) -> str:
     return slug
 
 @router.post("/register", response_model=UserResponse)
-@limiter.limit("5/minute")
+@limiter.limit("20/minute")
 async def register(
     request: Request,
     user_data: UserCreate,
@@ -107,7 +113,7 @@ async def register(
     return new_user
 
 @router.post("/login")
-@limiter.limit("10/minute")
+@limiter.limit("30/minute")
 async def login(
     request: Request,
     credentials: LoginRequest,
@@ -188,7 +194,7 @@ async def login(
     }
 
 @router.post("/refresh")
-@limiter.limit("20/minute")
+@limiter.limit("60/minute")
 async def refresh_token_endpoint(
     request: Request,
     response: Response,
@@ -278,3 +284,59 @@ async def logout(response: Response):
     """Logout: clear auth cookies."""
     clear_auth_cookies(response)
     return {"message": "Successfully logged out"}
+
+
+@router.post("/forgot-password")
+@limiter.limit("3/minute")
+async def forgot_password(
+    request: Request,
+    body: ForgotPasswordRequest,
+    db: Session = Depends(get_db),
+):
+    """Request a password reset email."""
+    if not settings.smtp_configured:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Password reset is not available. Contact your administrator.",
+        )
+
+    user = db.query(User).filter(User.email == body.email).first()
+    if user and user.is_active:
+        token = create_password_reset_token(user.email)
+        try:
+            from app.services.email_service import send_password_reset_email
+            await send_password_reset_email(user.email, token)
+        except Exception:
+            logger.exception("Failed to send password reset email")
+
+    # Always return success to prevent email enumeration
+    return {"message": "If an account with that email exists, a password reset link has been sent."}
+
+
+@router.post("/reset-password")
+@limiter.limit("5/minute")
+async def reset_password(
+    request: Request,
+    body: ResetPasswordRequest,
+    db: Session = Depends(get_db),
+):
+    """Reset password using a valid reset token."""
+    try:
+        email = decode_password_reset_token(body.token)
+    except AuthenticationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=e.message,
+        )
+
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid password reset token",
+        )
+
+    user.password_hash = get_password_hash(body.new_password)
+    db.commit()
+
+    return {"message": "Password has been reset successfully."}
