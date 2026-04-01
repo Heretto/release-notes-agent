@@ -178,15 +178,53 @@ All incoming webhooks are verified using HMAC signatures to ensure authenticity.
 
 ### Production Deployment with Docker
 
-1. Update environment variables for production
-2. Use production Docker Compose configuration:
+1. Copy and configure the production environment file:
    ```bash
-   docker-compose -f docker-compose.prod.yml up -d
+   cp .env.production.example .env.production
+   # Edit .env.production with your secrets and configuration
    ```
 
-### Kubernetes Deployment
+2. Deploy using the provided script:
+   ```bash
+   ./deployment/deploy.sh
+   ```
+   This builds Docker images, runs database migrations, and starts all services.
 
-Helm charts and Kubernetes manifests are available in the `/k8s` directory (to be added).
+### Deploying to Google Cloud Platform
+
+A full GCP deployment guide is available at [`deployment/GCP_DEPLOYMENT_GUIDE.md`](deployment/GCP_DEPLOYMENT_GUIDE.md).
+
+**Automated setup:**
+
+```bash
+./deployment/quick-deploy-gcp.sh
+```
+
+This interactively creates a Compute Engine VM, firewall rules, and a static IP.
+
+**Manual setup summary:**
+
+1. Create a Compute Engine VM (e2-standard-2 recommended, ~$50/month)
+2. SSH into the VM and clone the repository
+3. Configure `.env.production` with your secrets
+4. Run `./deployment/deploy.sh`
+5. (Optional) Set up SSL with Let's Encrypt:
+   ```bash
+   ./deployment/setup-ssl.sh your-domain.com
+   ```
+
+### Deployment Scripts
+
+The `deployment/` directory includes several operational scripts:
+
+| Script | Purpose |
+|--------|---------|
+| `deploy.sh` | Build, migrate, and start all production services |
+| `quick-deploy-gcp.sh` | Automated GCP VM provisioning |
+| `setup-ssl.sh` | SSL/TLS certificate setup with Let's Encrypt |
+| `backup.sh` | Database backup (retains 30, optional GCS upload) |
+| `health-check.sh` | Container, disk, and memory monitoring with Slack/email alerts |
+| `startup-script.sh` | GCP VM bootstrap (Docker, firewall, fail2ban, swap) |
 
 ## Troubleshooting
 
