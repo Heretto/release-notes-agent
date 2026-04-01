@@ -53,6 +53,7 @@ required_vars=(
     "APP_SECRET_KEY"
     "JWT_SECRET_KEY"
     "ENCRYPTION_KEY"
+    "DOMAIN"
 )
 
 for var in "${required_vars[@]}"; do
@@ -108,17 +109,27 @@ docker-compose -f docker-compose.production.yml ps
 echo -e "${YELLOW}Applying database migrations...${NC}"
 docker-compose -f docker-compose.production.yml exec -T backend alembic upgrade head || true
 
-# Show logs
-echo -e "${GREEN}Deployment completed!${NC}"
-echo -e "${YELLOW}Showing recent logs...${NC}"
-docker-compose -f docker-compose.production.yml logs --tail=50
+# Provision SSL certificate if not already present
+CERT_PATH="deployment/certbot/conf/live/$DOMAIN"
+if [ -f "$CERT_PATH/fullchain.pem" ]; then
+    echo -e "${GREEN}SSL certificate already exists for $DOMAIN${NC}"
+else
+    echo -e "${YELLOW}Provisioning SSL certificate for $DOMAIN...${NC}"
+    bash deployment/setup-ssl.sh
+fi
 
-echo -e "${GREEN}Application is now running!${NC}"
-echo -e "Backend API: http://localhost:8000"
-echo -e "Frontend: http://localhost"
+# Restart nginx to pick up SSL config
+echo -e "${YELLOW}Restarting nginx...${NC}"
+docker-compose -f docker-compose.production.yml restart nginx
+
+# Show status
+echo -e "${GREEN}Deployment completed!${NC}"
+docker-compose -f docker-compose.production.yml ps
+
+echo -e "${GREEN}Application is running at https://$DOMAIN${NC}"
 echo ""
 echo -e "${YELLOW}Useful commands:${NC}"
 echo "  View logs: docker-compose -f docker-compose.production.yml logs -f"
-echo "  Stop services: docker-compose -f docker-compose.production.yml stop"
-echo "  Restart services: docker-compose -f docker-compose.production.yml restart"
-echo "  View status: docker-compose -f docker-compose.production.yml ps"
+echo "  Stop:      docker-compose -f docker-compose.production.yml stop"
+echo "  Restart:   docker-compose -f docker-compose.production.yml restart"
+echo "  Status:    docker-compose -f docker-compose.production.yml ps"
