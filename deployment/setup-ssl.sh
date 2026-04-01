@@ -1,82 +1,152 @@
 #!/bin/bash
-# SSL Setup Script using Let's Encrypt
+# Automated SSL setup using Let's Encrypt / Certbot
+#
+# Reads DOMAIN and SSL_EMAIL from .env.production (or environment).
+# Designed to be called from deploy.sh or run standalone.
+#
+# Usage:
+#   ./deployment/setup-ssl.sh                  # uses DOMAIN from .env.production
+#   DOMAIN=example.com ./deployment/setup-ssl.sh   # override
 
 set -e
 
-# Colors
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-# Check if domain is provided
-if [ $# -eq 0 ]; then
-    echo -e "${RED}Error: No domain specified${NC}"
-    echo "Usage: $0 <domain> [www.domain]"
-    echo "Example: $0 example.com www.example.com"
+# Load .env.production if present and DOMAIN is not already set
+if [ -z "$DOMAIN" ] && [ -f ".env.production" ]; then
+    set -a
+    . .env.production
+    set +a
+fi
+
+if [ -z "$DOMAIN" ]; then
+    echo -e "${RED}Error: DOMAIN is not set.${NC}"
+    echo "Set it in .env.production or pass it as an environment variable:"
+    echo "  DOMAIN=example.com ./deployment/setup-ssl.sh"
     exit 1
 fi
 
-DOMAIN=$1
-DOMAINS="$@"
-
-# Validate domain names — only allow alphanumeric, hyphens, dots, and wildcards
-for d in $DOMAINS; do
-    if ! echo "$d" | grep -qP '^(\*\.)?[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$'; then
-        echo -e "${RED}Error: Invalid domain name: $d${NC}"
-        exit 1
-    fi
-done
-
-# Check if Certbot is installed
-if ! command -v certbot &> /dev/null; then
-    echo -e "${YELLOW}Installing Certbot...${NC}"
-    sudo apt-get update
-    sudo apt-get install -y certbot python3-certbot-nginx
-fi
-
-# Check if nginx is running
-if ! docker-compose -f docker-compose.production.yml ps | grep -q nginx; then
-    echo -e "${RED}Nginx container is not running. Please start it first.${NC}"
+# Validate domain
+if ! echo "$DOMAIN" | grep -qP '^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)+$'; then
+    echo -e "${RED}Error: Invalid domain name: $DOMAIN${NC}"
     exit 1
 fi
 
-# Update nginx configuration with actual domain
-echo -e "${YELLOW}Updating nginx configuration...${NC}"
-sed -i "s/your-domain\\.com/$DOMAIN/g" deployment/nginx-production.conf
+EMAIL="${SSL_EMAIL:-admin@$DOMAIN}"
+COMPOSE="docker compose -f docker-compose.production.yml --env-file .env.production"
+CERT_PATH="deployment/certbot/conf/live/$DOMAIN"
 
-# Get SSL certificate
-echo -e "${YELLOW}Obtaining SSL certificate for: $DOMAINS${NC}"
+echo -e "${YELLOW}Setting up SSL for: $DOMAIN${NC}"
 
-# Create webroot directory
-mkdir -p deployment/certbot/www
+# ---------------------------------------------------------------
+# Step 1: Check if cert already exists
+# ---------------------------------------------------------------
+if [ -f "$CERT_PATH/fullchain.pem" ]; then
+    echo -e "${GREEN}SSL certificate already exists for $DOMAIN${NC}"
+    echo "  To force renewal: rm -rf deployment/certbot/conf/live/$DOMAIN"
+    echo "  Then re-run this script."
+    exit 0
+fi
 
-# Get certificate using webroot method
-docker run --rm \
+# ---------------------------------------------------------------
+# Step 2: Create directories
+# ---------------------------------------------------------------
+mkdir -p deployment/certbot/www deployment/certbot/conf
+
+# ---------------------------------------------------------------
+# Step 3: Start a temporary HTTP-only nginx for the ACME challenge
+# ---------------------------------------------------------------
+echo -e "${YELLOW}Starting temporary HTTP-only nginx for certificate validation...${NC}"
+
+# Create a minimal HTTP-only config for the ACME challenge
+cat > deployment/nginx-acme-temp.conf << 'ACMEEOF'
+server {
+    listen 80;
+    server_name _;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 200 'SSL setup in progress...\n';
+        add_header Content-Type text/plain;
+    }
+}
+ACMEEOF
+
+# Stop nginx if running (ignore errors)
+$COMPOSE stop nginx 2>/dev/null || true
+
+# Start a temporary nginx container with the ACME config
+docker run -d --rm \
+    --name release-notes-acme-nginx \
+    -p 80:80 \
+    -v "$(pwd)/deployment/nginx-acme-temp.conf:/etc/nginx/conf.d/default.conf:ro" \
     -v "$(pwd)/deployment/certbot/www:/var/www/certbot" \
+    nginx:alpine
+
+# Give it a moment to start
+sleep 2
+
+# Verify it's running
+if ! curl -s -o /dev/null -w "%{http_code}" http://localhost/.well-known/acme-challenge/ | grep -q "403\|404\|200"; then
+    echo -e "${RED}Temporary nginx failed to start. Check port 80 is available.${NC}"
+    docker stop release-notes-acme-nginx 2>/dev/null || true
+    rm -f deployment/nginx-acme-temp.conf
+    exit 1
+fi
+
+# ---------------------------------------------------------------
+# Step 4: Request the certificate
+# ---------------------------------------------------------------
+echo -e "${YELLOW}Requesting SSL certificate from Let's Encrypt...${NC}"
+
+docker run --rm \
     -v "$(pwd)/deployment/certbot/conf:/etc/letsencrypt" \
+    -v "$(pwd)/deployment/certbot/www:/var/www/certbot" \
     certbot/certbot certonly \
     --webroot \
     --webroot-path=/var/www/certbot \
-    --email "${SSL_EMAIL:-admin@$DOMAIN}" \
+    -d "$DOMAIN" \
+    --email "$EMAIL" \
     --agree-tos \
     --no-eff-email \
-    -d "$(echo "$DOMAINS" | tr ' ' ',')"
+    --non-interactive
 
-if [ $? -eq 0 ]; then
-    echo -e "${GREEN}SSL certificate obtained successfully!${NC}"
-    
-    # Restart nginx to load new certificates
-    echo -e "${YELLOW}Restarting nginx...${NC}"
-    docker-compose -f docker-compose.production.yml restart nginx
-    
-    echo -e "${GREEN}SSL setup completed!${NC}"
-    echo ""
-    echo -e "${YELLOW}Certificate auto-renewal:${NC}"
-    echo "Add this to your crontab (crontab -e):"
-    echo "0 0,12 * * * docker run --rm -v \$(pwd)/deployment/certbot/www:/var/www/certbot -v \$(pwd)/deployment/certbot/conf:/etc/letsencrypt certbot/certbot renew --quiet && docker-compose -f docker-compose.production.yml restart nginx"
-    
-else
-    echo -e "${RED}Failed to obtain SSL certificate${NC}"
+CERTBOT_EXIT=$?
+
+# ---------------------------------------------------------------
+# Step 5: Clean up temporary nginx
+# ---------------------------------------------------------------
+docker stop release-notes-acme-nginx 2>/dev/null || true
+rm -f deployment/nginx-acme-temp.conf
+
+if [ $CERTBOT_EXIT -ne 0 ]; then
+    echo -e "${RED}Failed to obtain SSL certificate.${NC}"
+    echo "Common issues:"
+    echo "  - DNS for $DOMAIN doesn't point to this server"
+    echo "  - Port 80 is blocked by a firewall"
+    echo "  - Let's Encrypt rate limit reached"
     exit 1
 fi
+
+echo -e "${GREEN}SSL certificate obtained successfully!${NC}"
+
+# ---------------------------------------------------------------
+# Step 6: Set up auto-renewal cron job
+# ---------------------------------------------------------------
+CRON_CMD="0 3 * * * cd $(pwd) && docker run --rm -v $(pwd)/deployment/certbot/conf:/etc/letsencrypt -v $(pwd)/deployment/certbot/www:/var/www/certbot certbot/certbot renew --quiet && docker compose -f docker-compose.production.yml --env-file .env.production restart nginx >/dev/null 2>&1"
+
+# Add cron job if not already present
+if ! crontab -l 2>/dev/null | grep -q "certbot/certbot renew"; then
+    (crontab -l 2>/dev/null; echo "$CRON_CMD") | crontab -
+    echo -e "${GREEN}Auto-renewal cron job installed (daily at 3am)${NC}"
+else
+    echo -e "${YELLOW}Auto-renewal cron job already exists${NC}"
+fi
+
+echo -e "${GREEN}SSL setup complete for $DOMAIN${NC}"
