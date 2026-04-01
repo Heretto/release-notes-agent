@@ -67,6 +67,13 @@ services:
       JIRA_WEBHOOK_SECRET: ${JIRA_WEBHOOK_SECRET}
       HERETTO_BASE_URL: ${HERETTO_BASE_URL:-https://api.heretto.com}
       CORS_ORIGINS: ${CORS_ORIGINS:-https://localhost}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-https://localhost}
     volumes:
       - ./backend/logs:/app/logs
       - ./backend/uploads:/app/uploads
