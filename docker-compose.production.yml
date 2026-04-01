@@ -45,6 +45,25 @@ services:
           memory: 256M
           cpus: '0.25'
 
+  smtp:
+    image: namshi/smtp:latest
+    container_name: release-notes-smtp
+    restart: always
+    environment:
+      MAILNAME: ${DOMAIN:-localhost}
+    networks:
+      - app-network
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+          cpus: '0.10'
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   backend:
     build:
       context: ./backend
@@ -56,6 +75,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      smtp:
+        condition: service_started
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-produser}:${POSTGRES_PASSWORD:?error}@postgres:5432/${POSTGRES_DB:-release_notes_production}
       REDIS_URL: redis://:${REDIS_PASSWORD:?error}@redis:6379/0
@@ -67,6 +88,13 @@ services:
       JIRA_WEBHOOK_SECRET: ${JIRA_WEBHOOK_SECRET}
       HERETTO_BASE_URL: ${HERETTO_BASE_URL:-https://api.heretto.com}
       CORS_ORIGINS: ${CORS_ORIGINS:-https://localhost}
+      SMTP_HOST: ${SMTP_HOST:-smtp}
+      SMTP_PORT: ${SMTP_PORT:-25}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-noreply@${DOMAIN:-localhost}}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-false}
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-https://${DOMAIN:-localhost}}
     volumes:
       - ./backend/logs:/app/logs
       - ./backend/uploads:/app/uploads
