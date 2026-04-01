@@ -72,7 +72,7 @@ class DITAValidatorV2:
         """Validate DITA content against DTD."""
         try:
             # Parse the document
-            parser = etree.XMLParser(recover=False, no_network=False)
+            parser = etree.XMLParser(recover=False, no_network=True, resolve_entities=False)
             doc = etree.fromstring(content.encode('utf-8'), parser)
             
             # Auto-detect topic type from root element if not specified
@@ -124,9 +124,9 @@ class DITAValidatorV2:
         errors = []
         
         try:
-            parser = etree.XMLParser(recover=False)
+            parser = etree.XMLParser(recover=False, no_network=True, resolve_entities=False)
             doc = etree.fromstring(content.encode('utf-8'), parser)
-            
+
             # Determine topic type and validate accordingly
             topic_type = doc.tag
             
@@ -260,7 +260,7 @@ class DITAValidatorV2:
         
         try:
             # Try parsing to get line numbers
-            parser = etree.XMLParser(recover=False)
+            parser = etree.XMLParser(recover=False, no_network=True, resolve_entities=False)
             doc = etree.fromstring(content.encode('utf-8'), parser)
             
             # Run validation

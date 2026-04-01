@@ -5,9 +5,12 @@ This provides better control over API versions and requests.
 
 import httpx
 import base64
+import logging
 from typing import List, Dict, Optional, Any
 from urllib.parse import quote
 import asyncio
+
+logger = logging.getLogger(__name__)
 
 from app.models.schemas import JiraTicket
 
@@ -55,16 +58,18 @@ class JiraServiceV3:
                         "message": f"Connected as {user_data.get('displayName', 'Unknown')}"
                     }
                 else:
+                    logger.warning("Jira connection test failed: HTTP %s — %s", response.status_code, response.text)
                     return {
                         "success": False,
                         "error": f"HTTP {response.status_code}",
-                        "message": response.text
+                        "message": f"Jira returned HTTP {response.status_code} — check your credentials and server URL"
                     }
         except Exception as e:
+            logger.error("Jira connection test error: %s", e, exc_info=True)
             return {
                 "success": False,
-                "error": str(e),
-                "message": f"Connection failed: {str(e)}"
+                "error": "connection_failed",
+                "message": "Connection failed — check your server URL and network connectivity"
             }
     
     async def execute_query(self, jql: str, max_results: int = 100, start_at: int = 0) -> List[JiraTicket]:
@@ -130,7 +135,8 @@ class JiraServiceV3:
                 return [self._transform_issue(issue) for issue in issues]
                 
         except Exception as e:
-            raise Exception(f"Jira query error: {str(e)}")
+            logger.error("Jira query error: %s", e, exc_info=True)
+            raise Exception("Jira query failed — check your JQL syntax and credentials")
     
     def _transform_issue(self, issue: Dict[str, Any]) -> JiraTicket:
         """Transform Jira API v3 issue to our schema."""
@@ -229,7 +235,8 @@ class JiraServiceV3:
                 return [{"key": p.get("key"), "name": p.get("name")} for p in projects]
                 
         except Exception as e:
-            raise Exception(f"Failed to get projects: {str(e)}")
+            logger.error("Failed to get Jira projects: %s", e, exc_info=True)
+            raise Exception("Failed to get projects — check your credentials and permissions")
     
     async def get_versions(self, project_key: str) -> List[Dict[str, str]]:
         """Get versions for a project."""
@@ -248,7 +255,8 @@ class JiraServiceV3:
                 return [{"id": v.get("id"), "name": v.get("name")} for v in versions]
                 
         except Exception as e:
-            raise Exception(f"Failed to get versions: {str(e)}")
+            logger.error("Failed to get versions for project %s: %s", project_key, e, exc_info=True)
+            raise Exception("Failed to get versions — check your credentials and project key")
     
     async def get_issue(self, issue_key: str) -> JiraTicket:
         """Get a single issue by key."""
@@ -273,7 +281,8 @@ class JiraServiceV3:
                 return self._transform_issue(issue_data)
                 
         except Exception as e:
-            raise Exception(f"Failed to get issue {issue_key}: {str(e)}")
+            logger.error("Failed to get issue %s: %s", issue_key, e, exc_info=True)
+            raise Exception(f"Failed to get issue {issue_key} — check your credentials and issue key")
 
 
 # Backward compatibility - use V3 by default

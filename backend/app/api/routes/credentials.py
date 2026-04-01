@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
 from typing import List
 from uuid import UUID
+import logging
+
+logger = logging.getLogger(__name__)
 
 from app.models.database import get_db, User, Credential, CredentialType
 from app.models.schemas import (
@@ -13,14 +15,26 @@ from app.models.schemas import (
     HerettoCredentialResponse,
     JiraCredentials,
     HerettoCredentials,
-    AICredentials
+    AICredentials,
+    JiraCredentialCreate,
+    JiraCredentialUpdate,
+    HerettoCredentialCreate,
+    HerettoCredentialUpdate,
+    AICredentialCreate,
 )
 from app.api.dependencies import get_current_active_user
-from app.core.security import encrypt_credentials, decrypt_credentials
+from app.core.security import encrypt_credentials, decrypt_credentials, validate_server_url
 from app.services.jira_service_v3 import JiraServiceV3
 from app.services.heretto_service import HerettoService
 
 router = APIRouter(prefix="/credentials")
+
+
+def _mask_secret(value: str) -> str:
+    """Mask a secret string, showing only first 4 and last 4 characters."""
+    if not value or len(value) <= 8:
+        return "*" * len(value) if value else ""
+    return value[:4] + "*" * min(len(value) - 8, 20) + value[-4:]
 
 # Generic credentials endpoints
 @router.get("/", response_model=List[CredentialResponse])
@@ -28,9 +42,11 @@ async def list_credentials(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """List all credentials for current user."""
+    """List all credentials for current user's organization."""
+    if not current_user.current_organization_id:
+        return []
     credentials = db.query(Credential).filter(
-        Credential.user_id == current_user.id
+        Credential.organization_id == current_user.current_organization_id
     ).all()
     return credentials
 
@@ -41,33 +57,41 @@ async def create_credential(
     db: Session = Depends(get_db)
 ):
     """Create new credential."""
-    # Check if credential with same name exists
+    if not current_user.current_organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User must be part of an organization to create credentials"
+        )
+
+    # Check if credential with same name exists in the organization
     existing = db.query(Credential).filter(
-        Credential.user_id == current_user.id,
+        Credential.organization_id == current_user.current_organization_id,
         Credential.type == credential_data.type,
         Credential.name == credential_data.name
     ).first()
-    
+
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Credential with this name already exists"
         )
-    
+
     # Encrypt and store credential
     encrypted_data = encrypt_credentials(credential_data.credentials)
-    
+
     new_credential = Credential(
         user_id=current_user.id,
+        organization_id=current_user.current_organization_id,
         type=credential_data.type,
         name=credential_data.name,
-        encrypted_data=encrypted_data
+        encrypted_data=encrypted_data,
+        created_by=current_user.email,
     )
-    
+
     db.add(new_credential)
     db.commit()
     db.refresh(new_credential)
-    
+
     return new_credential
 
 # Jira-specific endpoints
@@ -97,82 +121,77 @@ async def list_jira_credentials(
                 name=cred.name,
                 server_url=decrypted.get("server_url", ""),
                 email=decrypted.get("email", ""),
-                api_token=decrypted.get("api_token", ""),
+                api_token=_mask_secret(decrypted.get("api_token", "")),
                 created_at=cred.created_at,
                 updated_at=cred.updated_at
             ))
         except Exception as e:
-            # Log the error but skip this credential
-            print(f"[ERROR] Failed to decrypt credential {cred.id}: {e}")
-            # Optionally, return a placeholder or skip
+            logger.error("Failed to decrypt credential %s: %s", cred.id, e)
             continue
-    
+
     return result
 
 @router.post("/jira", response_model=JiraCredentialResponse)
 async def create_jira_credential(
-    credential_data: dict,
+    credential_data: JiraCredentialCreate,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """Create new Jira credential for the organization."""
-    # Check user has an organization
     if not current_user.current_organization_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="User must be part of an organization to create credentials"
         )
-    
-    # Check if credential with same name exists in the organization
+
     existing = db.query(Credential).filter(
         Credential.organization_id == current_user.current_organization_id,
         Credential.type == CredentialType.JIRA,
-        Credential.name == credential_data.get("name")
+        Credential.name == credential_data.name
     ).first()
-    
+
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Jira credential with this name already exists"
         )
-    
-    # Extract and validate Jira-specific fields
-    jira_creds = {
-        "server_url": credential_data.get("server_url"),
-        "email": credential_data.get("email"),
-        "api_token": credential_data.get("api_token")
-    }
-    
-    if not all(jira_creds.values()):
+
+    try:
+        validate_server_url(credential_data.server_url)
+    except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Missing required Jira credential fields"
+            detail=f"Invalid server URL: {e}"
         )
-    
-    # Encrypt and store credential
+
+    jira_creds = {
+        "server_url": credential_data.server_url,
+        "email": credential_data.email,
+        "api_token": credential_data.api_token
+    }
+
     encrypted_data = encrypt_credentials(jira_creds)
-    
+
     new_credential = Credential(
-        user_id=current_user.id,  # Track who created it
-        organization_id=current_user.current_organization_id,  # Owned by organization
+        user_id=current_user.id,
+        organization_id=current_user.current_organization_id,
         type=CredentialType.JIRA,
-        name=credential_data.get("name"),
+        name=credential_data.name,
         encrypted_data=encrypted_data,
-        created_by=current_user.email  # For display purposes
+        created_by=current_user.email
     )
     
     db.add(new_credential)
     db.commit()
     db.refresh(new_credential)
     
-    # Return with decrypted data
     return JiraCredentialResponse(
         id=new_credential.id,
         type=new_credential.type,
         name=new_credential.name,
         server_url=jira_creds["server_url"],
         email=jira_creds["email"],
-        api_token=jira_creds["api_token"],
+        api_token=_mask_secret(jira_creds["api_token"]),
         created_at=new_credential.created_at,
         updated_at=new_credential.updated_at
     )
@@ -180,43 +199,44 @@ async def create_jira_credential(
 @router.put("/jira/{credential_id}", response_model=JiraCredentialResponse)
 async def update_jira_credential(
     credential_id: UUID,
-    credential_data: dict,
+    credential_data: JiraCredentialUpdate,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """Update existing Jira credential."""
     credential = db.query(Credential).filter(
         Credential.id == credential_id,
-        or_(
-            Credential.user_id == current_user.id,
-            Credential.organization_id == current_user.current_organization_id
-        ),
+        Credential.organization_id == current_user.current_organization_id,
         Credential.type == CredentialType.JIRA
     ).first()
-    
+
     if not credential:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Jira credential not found"
         )
-    
-    if credential_data.get("name"):
-        credential.name = credential_data.get("name")
-    
-    # Get existing credentials
+
+    if credential_data.name:
+        credential.name = credential_data.name
+
     existing_creds = decrypt_credentials(credential.encrypted_data)
-    
-    # Update encrypted data if new credentials provided
+
     jira_creds = {}
-    if credential_data.get("server_url"):
-        jira_creds["server_url"] = credential_data.get("server_url")
-    if credential_data.get("email"):
-        jira_creds["email"] = credential_data.get("email")
-    if credential_data.get("api_token"):
-        jira_creds["api_token"] = credential_data.get("api_token")
-    
+    if credential_data.server_url:
+        try:
+            validate_server_url(credential_data.server_url)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid server URL: {e}"
+            )
+        jira_creds["server_url"] = credential_data.server_url
+    if credential_data.email:
+        jira_creds["email"] = credential_data.email
+    if credential_data.api_token and "*" not in credential_data.api_token:
+        jira_creds["api_token"] = credential_data.api_token
+
     if jira_creds:
-        # Merge with existing credentials
         existing_creds.update(jira_creds)
         encrypted_data = encrypt_credentials(existing_creds)
         credential.encrypted_data = encrypted_data
@@ -224,14 +244,13 @@ async def update_jira_credential(
     db.commit()
     db.refresh(credential)
     
-    # Return with decrypted data
     return JiraCredentialResponse(
         id=credential.id,
         type=credential.type,
         name=credential.name,
         server_url=existing_creds.get("server_url", ""),
         email=existing_creds.get("email", ""),
-        api_token=existing_creds.get("api_token", ""),
+        api_token=_mask_secret(existing_creds.get("api_token", "")),
         created_at=credential.created_at,
         updated_at=credential.updated_at
     )
@@ -245,10 +264,7 @@ async def delete_jira_credential(
     """Delete Jira credential."""
     credential = db.query(Credential).filter(
         Credential.id == credential_id,
-        or_(
-            Credential.user_id == current_user.id,
-            Credential.organization_id == current_user.current_organization_id
-        ),
+        Credential.organization_id == current_user.current_organization_id,
         Credential.type == CredentialType.JIRA
     ).first()
     
@@ -288,12 +304,12 @@ async def list_heretto_credentials(
                 name=cred.name,
                 server_url=decrypted.get("server_url", ""),
                 username=decrypted.get("username", ""),
-                token=decrypted.get("token", ""),
+                token=_mask_secret(decrypted.get("token", "")),
                 created_at=cred.created_at,
                 updated_at=cred.updated_at
             ))
         except Exception as e:
-            print(f"[ERROR] Failed to decrypt credential {cred.id}: {e}")
+            logger.error("Failed to decrypt credential %s: %s", cred.id, e)
             continue
 
     return result
@@ -343,7 +359,7 @@ async def get_heretto_folder_info(
 
 @router.post("/heretto", response_model=HerettoCredentialResponse)
 async def create_heretto_credential(
-    credential_data: dict,
+    credential_data: HerettoCredentialCreate,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -357,7 +373,7 @@ async def create_heretto_credential(
     existing = db.query(Credential).filter(
         Credential.organization_id == current_user.current_organization_id,
         Credential.type == CredentialType.HERETTO,
-        Credential.name == credential_data.get("name")
+        Credential.name == credential_data.name
     ).first()
 
     if existing:
@@ -366,17 +382,19 @@ async def create_heretto_credential(
             detail="Heretto credential with this name already exists"
         )
 
-    heretto_creds = {
-        "server_url": credential_data.get("server_url"),
-        "username": credential_data.get("username"),
-        "token": credential_data.get("token")
-    }
-
-    if not all(heretto_creds.values()):
+    try:
+        validate_server_url(credential_data.server_url)
+    except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Missing required Heretto credential fields"
+            detail=f"Invalid server URL: {e}"
         )
+
+    heretto_creds = {
+        "server_url": credential_data.server_url,
+        "username": credential_data.username,
+        "token": credential_data.token
+    }
 
     encrypted_data = encrypt_credentials(heretto_creds)
 
@@ -384,7 +402,7 @@ async def create_heretto_credential(
         user_id=current_user.id,
         organization_id=current_user.current_organization_id,
         type=CredentialType.HERETTO,
-        name=credential_data.get("name"),
+        name=credential_data.name,
         encrypted_data=encrypted_data,
         created_by=current_user.email
     )
@@ -399,7 +417,7 @@ async def create_heretto_credential(
         name=new_credential.name,
         server_url=heretto_creds["server_url"],
         username=heretto_creds["username"],
-        token=heretto_creds["token"],
+        token=_mask_secret(heretto_creds["token"]),
         created_at=new_credential.created_at,
         updated_at=new_credential.updated_at
     )
@@ -407,17 +425,14 @@ async def create_heretto_credential(
 @router.put("/heretto/{credential_id}", response_model=HerettoCredentialResponse)
 async def update_heretto_credential(
     credential_id: UUID,
-    credential_data: dict,
+    credential_data: HerettoCredentialUpdate,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """Update existing Heretto credential."""
     credential = db.query(Credential).filter(
         Credential.id == credential_id,
-        or_(
-            Credential.user_id == current_user.id,
-            Credential.organization_id == current_user.current_organization_id
-        ),
+        Credential.organization_id == current_user.current_organization_id,
         Credential.type == CredentialType.HERETTO
     ).first()
 
@@ -427,18 +442,25 @@ async def update_heretto_credential(
             detail="Heretto credential not found"
         )
 
-    if credential_data.get("name"):
-        credential.name = credential_data.get("name")
+    if credential_data.name:
+        credential.name = credential_data.name
 
     existing_creds = decrypt_credentials(credential.encrypted_data)
 
     heretto_creds = {}
-    if credential_data.get("server_url"):
-        heretto_creds["server_url"] = credential_data.get("server_url")
-    if credential_data.get("username"):
-        heretto_creds["username"] = credential_data.get("username")
-    if credential_data.get("token"):
-        heretto_creds["token"] = credential_data.get("token")
+    if credential_data.server_url:
+        try:
+            validate_server_url(credential_data.server_url)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid server URL: {e}"
+            )
+        heretto_creds["server_url"] = credential_data.server_url
+    if credential_data.username:
+        heretto_creds["username"] = credential_data.username
+    if credential_data.token and "*" not in credential_data.token:
+        heretto_creds["token"] = credential_data.token
 
     if heretto_creds:
         existing_creds.update(heretto_creds)
@@ -454,7 +476,7 @@ async def update_heretto_credential(
         name=credential.name,
         server_url=existing_creds.get("server_url", ""),
         username=existing_creds.get("username", ""),
-        token=existing_creds.get("token", ""),
+        token=_mask_secret(existing_creds.get("token", "")),
         created_at=credential.created_at,
         updated_at=credential.updated_at
     )
@@ -468,10 +490,7 @@ async def delete_heretto_credential(
     """Delete Heretto credential."""
     credential = db.query(Credential).filter(
         Credential.id == credential_id,
-        or_(
-            Credential.user_id == current_user.id,
-            Credential.organization_id == current_user.current_organization_id
-        ),
+        Credential.organization_id == current_user.current_organization_id,
         Credential.type == CredentialType.HERETTO
     ).first()
 
@@ -532,70 +551,51 @@ async def list_ai_credentials(
 
 @router.post("/ai", response_model=CredentialResponse)
 async def create_ai_credential(
-    credential_data: dict,
+    credential_data: AICredentialCreate,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """Create new AI provider credential."""
-    provider = credential_data.get("provider", "").lower()
-    
-    # Map provider to credential type
     type_mapping = {
         "gemini": CredentialType.GEMINI,
         "openai": CredentialType.OPENAI,
         "anthropic": CredentialType.ANTHROPIC
     }
-    
-    if provider not in type_mapping:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid AI provider: {provider}"
-        )
-    
-    credential_type = type_mapping[provider]
-    
-    # Check user has an organization
+
+    credential_type = type_mapping[credential_data.provider]
+
     if not current_user.current_organization_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="User must be part of an organization to create credentials"
         )
-    
-    # Check if credential with same name exists in the organization
+
     existing = db.query(Credential).filter(
         Credential.organization_id == current_user.current_organization_id,
         Credential.type == credential_type,
-        Credential.name == credential_data.get("name")
+        Credential.name == credential_data.name
     ).first()
-    
+
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"{provider.capitalize()} credential with this name already exists"
+            detail=f"{credential_data.provider.capitalize()} credential with this name already exists"
         )
-    
-    # Extract and validate AI-specific fields
+
     ai_creds = {
-        "api_key": credential_data.get("api_key"),
-        "model": credential_data.get("model", "")
+        "api_key": credential_data.api_key,
+        "model": credential_data.model or ""
     }
-    
-    if not ai_creds.get("api_key"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="API key is required"
-        )
-    
-    # Encrypt and store credential
+
     encrypted_data = encrypt_credentials(ai_creds)
-    
+
     new_credential = Credential(
-        user_id=current_user.id,  # Track who created it
-        organization_id=current_user.current_organization_id,  # Owned by organization
+        user_id=current_user.id,
+        organization_id=current_user.current_organization_id,
         type=credential_type,
-        name=credential_data.get("name"),
+        name=credential_data.name,
         encrypted_data=encrypted_data,
-        created_by=current_user.email  # For display purposes
+        created_by=current_user.email
     )
     
     db.add(new_credential)
@@ -611,9 +611,12 @@ async def get_ai_credential(
     db: Session = Depends(get_db)
 ):
     """Get single AI credential with details (API key masked)."""
+    if not current_user.current_organization_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="AI credential not found")
+
     credential = db.query(Credential).filter(
         Credential.id == credential_id,
-        Credential.user_id == current_user.id,
+        Credential.organization_id == current_user.current_organization_id,
         Credential.type.in_([CredentialType.GEMINI, CredentialType.OPENAI, CredentialType.ANTHROPIC])
     ).first()
     
@@ -639,7 +642,7 @@ async def get_ai_credential(
         "type": credential.type,
         "name": credential.name,
         "provider": provider_mapping.get(credential.type, "unknown"),
-        "api_key": api_key[:4] + "*" * (min(len(api_key) - 8, 20)) + api_key[-4:] if len(api_key) > 8 else "*" * len(api_key),
+        "api_key": _mask_secret(api_key),
         "model": decrypted.get("model", ""),
         "created_at": credential.created_at,
         "updated_at": credential.updated_at
@@ -655,10 +658,7 @@ async def update_credential(
     """Update existing credential."""
     credential = db.query(Credential).filter(
         Credential.id == credential_id,
-        or_(
-            Credential.user_id == current_user.id,
-            Credential.organization_id == current_user.current_organization_id
-        )
+        Credential.organization_id == current_user.current_organization_id
     ).first()
 
     if not credential:
@@ -699,10 +699,7 @@ async def delete_credential(
     """Delete credential."""
     credential = db.query(Credential).filter(
         Credential.id == credential_id,
-        or_(
-            Credential.user_id == current_user.id,
-            Credential.organization_id == current_user.current_organization_id
-        )
+        Credential.organization_id == current_user.current_organization_id
     ).first()
 
     if not credential:
@@ -729,10 +726,7 @@ async def test_credential(
     
     credential = db.query(Credential).filter(
         Credential.id == credential_id,
-        or_(
-            Credential.user_id == current_user.id,
-            Credential.organization_id == current_user.current_organization_id
-        )
+        Credential.organization_id == current_user.current_organization_id
     ).first()
 
     if not credential:
@@ -778,96 +772,46 @@ async def test_credential(
                 response = await client.get(test_url, headers=headers)
                 
                 if response.status_code == 200:
-                    # Success! Now try to get some issues using POST /search/jql endpoint
                     user_data = response.json()
                     search_url = f"{server_url}/rest/api/3/search/jql"
                     search_body = {
-                        "jql": "created >= -30d order by created desc",  # Search for issues created in last 30 days
+                        "jql": "created >= -30d order by created desc",
                         "maxResults": 5,
                         "fields": ["summary", "status", "created", "key"]
                     }
                     search_response = await client.post(search_url, headers=headers, json=search_body, timeout=10.0)
-                    
+
                     if search_response.status_code == 200:
                         search_data = search_response.json()
-                        result = {
+                        return {
                             "success": True,
                             "status_code": 200,
                             "timestamp": datetime.utcnow().isoformat(),
-                            "test_url": search_url,
-                            "message": f"Successfully connected as {user_data.get('displayName', user_data.get('emailAddress', 'Unknown'))}. Found {search_data.get('total', 0)} accessible issues.",
-                            "response_body": {
-                                "user": {
-                                    "displayName": user_data.get("displayName"),
-                                    "emailAddress": user_data.get("emailAddress"),
-                                    "accountType": user_data.get("accountType")
-                                },
-                                "total": search_data.get("total", 0),
-                                "maxResults": search_data.get("maxResults", 0),
-                                "issues": [
-                                    {
-                                        "key": issue.get("key"),
-                                        "summary": issue.get("fields", {}).get("summary"),
-                                        "status": issue.get("fields", {}).get("status", {}).get("name"),
-                                        "created": issue.get("fields", {}).get("created")
-                                    }
-                                    for issue in search_data.get("issues", [])[:5]
-                                ]
-                            }
+                            "message": f"Successfully connected as {user_data.get('displayName', 'Unknown')}. Found {search_data.get('total', 0)} accessible issues.",
                         }
-                        return result
                     else:
-                        # User auth works but can't search issues
-                        result = {
+                        return {
                             "success": True,
                             "status_code": 200,
                             "timestamp": datetime.utcnow().isoformat(),
-                            "test_url": test_url,
                             "message": f"Connected as {user_data.get('displayName', 'Unknown')} but unable to search issues. Check project permissions.",
-                            "response_body": {
-                                "user": {
-                                    "displayName": user_data.get("displayName"),
-                                    "emailAddress": user_data.get("emailAddress")
-                                }
-                            }
                         }
-                        return result
-                
-                # If /myself fails, continue with original response handling
-                
-                # Prepare detailed response
-                result = {
-                    "success": response.status_code == 200,
-                    "status_code": response.status_code,
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "test_url": test_url,
-                    "response_headers": dict(response.headers),
-                }
-                
-                if response.status_code == 200:
-                    response_data = response.json()
-                    result["message"] = f"Successfully connected to Jira. Found {response_data.get('total', 0)} total issues."
-                    result["response_body"] = {
-                        "total": response_data.get("total", 0),
-                        "maxResults": response_data.get("maxResults", 0),
-                        "issues": [
-                            {
-                                "key": issue.get("key"),
-                                "summary": issue.get("fields", {}).get("summary"),
-                                "status": issue.get("fields", {}).get("status", {}).get("name"),
-                                "created": issue.get("fields", {}).get("created")
-                            }
-                            for issue in response_data.get("issues", [])[:5]
-                        ]
-                    }
+
+                # /myself failed
+                status_code = response.status_code
+                if status_code == 401:
+                    message = "Authentication failed — check your email and API token"
+                elif status_code == 403:
+                    message = "Access denied — check your API token permissions"
                 else:
-                    result["message"] = f"Connection failed: HTTP {response.status_code}"
-                    try:
-                        result["response_body"] = response.json()
-                    except:
-                        result["response_body"] = response.text
-                
-                return result
+                    message = f"Connection failed with status {status_code}"
+
+                return {
+                    "success": False,
+                    "status_code": status_code,
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "message": message,
+                }
             
         elif credential.type.value == "heretto":
             heretto_service = HerettoService(
@@ -995,115 +939,87 @@ async def test_credential(
                             # This shouldn't happen since we use max_completion_tokens by default
                             pass
                     
-                    # Prepare response headers (sanitize sensitive data)
-                    response_headers = dict(response.headers)
-                    if "x-api-key" in response_headers:
-                        response_headers["x-api-key"] = "***"
-                    if "authorization" in response_headers:
-                        response_headers["authorization"] = "***"
-                    
-                    # Parse response
-                    try:
-                        response_data = response.json()
-                    except:
-                        response_data = {"text": response.text[:500] if response.text else "No response body"}
-                    
                     # Special handling for Gemini 404 errors - list available models
                     if provider == "gemini" and response.status_code == 404:
                         try:
                             import google.generativeai as genai
                             genai.configure(api_key=api_key)
-                            
-                            # Get list of available models
+
                             available_models = []
                             for m in genai.list_models():
                                 if 'generateContent' in m.supported_generation_methods:
                                     model_name = m.name
                                     if model_name.startswith("models/"):
-                                        model_name = model_name[7:]  # Remove "models/" prefix
+                                        model_name = model_name[7:]
                                     available_models.append(model_name)
-                            
-                            # Create helpful error message
-                            error_message = f"Model '{model or 'gemini-2.5-pro'}' not found. Available Gemini models: {', '.join(available_models)}"
-                            
+
                             return {
                                 "success": False,
                                 "status_code": 404,
-                                "message": error_message,
+                                "message": f"Model '{model or 'gemini-2.5-pro'}' not found. Available models: {', '.join(available_models)}",
                                 "timestamp": datetime.utcnow().isoformat(),
-                                "request": {
-                                    "url": api_url,
-                                    "method": "POST",
-                                    "headers": headers,  # Sanitized headers
-                                    "body": request_body
-                                },
-                                "response": {
-                                    "status_code": response.status_code,
-                                    "headers": response_headers,
-                                    "body": response_data,
-                                    "available_models": available_models
-                                }
                             }
-                        except Exception as list_error:
-                            # If we can't list models, return original error with suggestion
+                        except Exception:
                             return {
                                 "success": False,
                                 "status_code": 404,
                                 "message": f"Model '{model or 'gemini-2.5-pro'}' not found. Try models like: gemini-1.5-pro, gemini-1.5-flash, gemini-pro",
                                 "timestamp": datetime.utcnow().isoformat(),
-                                "request": {
-                                    "url": api_url,
-                                    "method": "POST",
-                                    "headers": headers,  # Sanitized headers
-                                    "body": request_body
-                                },
-                                "response": {
-                                    "status_code": response.status_code,
-                                    "headers": response_headers,
-                                    "body": response_data
-                                }
                             }
-                    
-                    return {
-                        "success": response.status_code == 200,
-                        "status_code": response.status_code,
-                        "message": f"{provider.capitalize()} connection {'successful' if response.status_code == 200 else 'failed'}",
-                        "timestamp": datetime.utcnow().isoformat(),
-                        "request": {
-                            "url": api_url,
-                            "method": "POST",
-                            "headers": headers,  # Sanitized headers
-                            "body": request_body
-                        },
-                        "response": {
-                            "status_code": response.status_code,
-                            "headers": response_headers,
-                            "body": response_data if isinstance(response_data, dict) else {"text": str(response_data)[:500]}
+
+                    # Return sanitized result — no raw response bodies or headers
+                    if response.status_code == 200:
+                        return {
+                            "success": True,
+                            "status_code": 200,
+                            "message": f"{provider.capitalize()} connection successful",
+                            "timestamp": datetime.utcnow().isoformat(),
                         }
-                    }
+                    else:
+                        status_code = response.status_code
+                        if status_code == 401:
+                            user_message = "Authentication failed — check your API key"
+                        elif status_code == 403:
+                            user_message = "Access denied — check your API key permissions"
+                        elif status_code == 429:
+                            user_message = "Rate limited — try again later"
+                        else:
+                            user_message = "Connection failed"
+
+                        return {
+                            "success": False,
+                            "status_code": status_code,
+                            "message": f"{provider.capitalize()} {user_message}",
+                            "timestamp": datetime.utcnow().isoformat(),
+                        }
             except Exception as e:
                 error_msg = str(e)
-                # Extract more specific error info if available
+                logger.error("AI credential test failed for %s: %s", credential.id, error_msg)
+                # Map error to user-safe status code without leaking internals
                 status_code = 500
+                user_message = "Connection failed"
                 if "401" in error_msg or "unauthorized" in error_msg.lower():
                     status_code = 401
+                    user_message = "Authentication failed — check your API key"
                 elif "403" in error_msg or "forbidden" in error_msg.lower():
                     status_code = 403
+                    user_message = "Access denied — check your API key permissions"
                 elif "404" in error_msg or "not found" in error_msg.lower():
                     status_code = 404
+                    user_message = "API endpoint not found — check provider and model"
                 elif "400" in error_msg or "invalid" in error_msg.lower():
                     status_code = 400
-                    
+                    user_message = "Invalid request — check your credential configuration"
+
                 return {
                     "success": False,
                     "status_code": status_code,
-                    "message": f"{credential.type.value.capitalize()} connection failed",
+                    "message": f"{credential.type.value.capitalize()} {user_message}",
                     "timestamp": datetime.utcnow().isoformat(),
                     "request": {
                         "provider": credential.type.value.lower(),
                         "model": decrypted.get("model", "default")
                     },
-                    "error": error_msg
                 }
             
         else:
@@ -1115,44 +1031,34 @@ async def test_credential(
             }
             
     except httpx.ConnectError as e:
-        # Connection-specific errors
-        error_msg = str(e)
-        if "All connection attempts failed" in error_msg:
-            return {
-                "success": False,
-                "status_code": 503,
-                "message": "Unable to connect to the server. Please check the server URL and your network connection.",
-                "timestamp": datetime.utcnow().isoformat(),
-                "error_details": f"Connection failed: {error_msg}",
-                "troubleshooting": [
-                    "Verify the server URL is correct",
-                    "Check if the server is accessible from your network",
-                    "Ensure there are no firewall or proxy issues",
-                    "Try accessing the URL directly in a browser"
-                ]
-            }
+        logger.error("Credential test connection error for %s: %s", credential_id, e)
         return {
             "success": False,
             "status_code": 503,
-            "message": f"Connection error: {error_msg}",
+            "message": "Unable to connect to the server. Please check the server URL and your network connection.",
             "timestamp": datetime.utcnow().isoformat(),
-            "error_details": str(e)
+            "troubleshooting": [
+                "Verify the server URL is correct",
+                "Check if the server is accessible from your network",
+                "Ensure there are no firewall or proxy issues",
+                "Try accessing the URL directly in a browser"
+            ]
         }
     except httpx.TimeoutException as e:
+        logger.error("Credential test timeout for %s: %s", credential_id, e)
         return {
             "success": False,
             "status_code": 504,
             "message": "Connection timed out. The server took too long to respond.",
             "timestamp": datetime.utcnow().isoformat(),
-            "error_details": str(e)
         }
     except Exception as e:
+        logger.error("Credential test failed for %s: %s", credential_id, e)
         return {
             "success": False,
             "status_code": 500,
-            "message": f"Test failed: {str(e)}",
+            "message": "An unexpected error occurred while testing the credential.",
             "timestamp": datetime.utcnow().isoformat(),
-            "error_details": str(e)
         }
 
 @router.post("/{credential_id}/test-upload")
@@ -1174,10 +1080,7 @@ async def test_heretto_upload(
 
     credential = db.query(Credential).filter(
         Credential.id == credential_id,
-        or_(
-            Credential.user_id == current_user.id,
-            Credential.organization_id == current_user.current_organization_id
-        ),
+        Credential.organization_id == current_user.current_organization_id,
         Credential.type == CredentialType.HERETTO
     ).first()
 

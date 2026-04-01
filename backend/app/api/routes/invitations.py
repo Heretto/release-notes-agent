@@ -1,6 +1,6 @@
 """Invitation acceptance routes for unauthenticated users."""
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
 from typing import Optional
@@ -11,6 +11,7 @@ from app.models.database import get_db, User
 from app.models.organization import Organization, OrganizationMember, OrganizationInvitation
 from app.core.security import get_password_hash
 from app.models.schemas import OrganizationInvitationResponse
+from app.core.rate_limit import limiter
 
 router = APIRouter(prefix="/invitations")
 
@@ -39,7 +40,9 @@ class AcceptInvitationResponse(BaseModel):
 
 
 @router.get("/info/{token}", response_model=InvitationInfoResponse)
+@limiter.limit("10/minute")
 async def get_invitation_info(
+    request: Request,
     token: str,
     db: Session = Depends(get_db)
 ):
@@ -77,38 +80,38 @@ async def get_invitation_info(
     inviter = db.query(User).filter(
         User.id == invitation.invited_by
     ).first()
-    
-    # Check if user already exists
-    existing_user = db.query(User).filter(
-        User.email == invitation.email
-    ).first()
-    
+
+    # Note: we intentionally do NOT reveal whether the email is already
+    # registered (user enumeration risk).  The frontend's 409 handler
+    # will switch to the existing-user flow when needed.
     return InvitationInfoResponse(
         email=invitation.email,
         organization_name=organization.name,
         role=str(invitation.role.value if hasattr(invitation.role, 'value') else invitation.role).lower(),
         invited_by_email=inviter.email if inviter else "Unknown",
         expires_at=invitation.expires_at,
-        is_existing_user=existing_user is not None
+        is_existing_user=False
     )
 
 
 @router.post("/accept/{token}", response_model=AcceptInvitationResponse)
+@limiter.limit("20/minute")
 async def accept_invitation_new_user(
+    request: Request,
     token: str,
-    request: AcceptInvitationRequest,
+    body: AcceptInvitationRequest,
     db: Session = Depends(get_db)
 ):
     """Accept an invitation and create account if new user (public endpoint)."""
     # Validate passwords match
-    if request.password != request.confirm_password:
+    if body.password != body.confirm_password:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Passwords do not match"
         )
     
     # Validate password strength
-    if len(request.password) < 8:
+    if len(body.password) < 8:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Password must be at least 8 characters long"
@@ -153,16 +156,19 @@ async def accept_invitation_new_user(
         # Create new user
         user = User(
             email=invitation.email,
-            password_hash=get_password_hash(request.password),
+            password_hash=get_password_hash(body.password),
             is_active=True,
             is_superuser=False
         )
         db.add(user)
         db.flush()
     else:
-        # For existing users, update password if they're accepting invitation
-        # This allows password reset via invitation
-        user.password_hash = get_password_hash(request.password)
+        # Existing users must use the /accept-existing/{token} endpoint
+        # which verifies their current password before joining the org.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An account with this email already exists. Please use the existing user flow to verify your identity."
+        )
     
     # Check if already a member
     existing_member = db.query(OrganizationMember).filter(
@@ -209,9 +215,11 @@ class ExistingUserAcceptRequest(BaseModel):
 
 
 @router.post("/accept-existing/{token}")
+@limiter.limit("20/minute")
 async def accept_invitation_existing_user(
+    request: Request,
     token: str,
-    request: ExistingUserAcceptRequest,
+    body: ExistingUserAcceptRequest,
     db: Session = Depends(get_db)
 ):
     """Accept invitation for existing users (requires password verification)."""
@@ -248,7 +256,7 @@ async def accept_invitation_existing_user(
         )
     
     # Verify password
-    if not verify_password(request.password, user.password_hash):
+    if not verify_password(body.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid password"

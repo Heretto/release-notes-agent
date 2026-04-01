@@ -1,36 +1,32 @@
 import google.generativeai as genai
 from typing import AsyncIterator
 import asyncio
+import logging
 
 from app.services.ai_service import AIServiceInterface, GenerationRequest, GenerationResponse
 
+logger = logging.getLogger(__name__)
+
 class GeminiAdapter(AIServiceInterface):
     """Google Gemini AI service implementation."""
-    
+
     def __init__(self, api_key: str, model_name: str = "gemini-2.5-pro"):
         genai.configure(api_key=api_key)
-        
-        # IMPORTANT: Do NOT include "models/" prefix - the SDK handles this internally
-        # If we pass "models/gemini-1.5-pro-latest", the SDK might create "models/models/..."
-        # which causes 404 errors
+
+        # The SDK handles the "models/" prefix internally
         if model_name.startswith("models/"):
-            model_name = model_name[7:]  # Remove "models/" prefix
-            print(f"[GeminiAdapter] Stripped 'models/' prefix from model name")
-        
-        # For safety, also check for common model name issues
-        # Ensure we're using the base model name without prefixes
+            model_name = model_name[7:]
+
         clean_model_name = model_name.strip()
-        
-        print(f"[GeminiAdapter] Initializing with model: {clean_model_name}")
-        
+
+        logger.debug("Initializing GeminiAdapter with model: %s", clean_model_name)
+
         try:
-            # Use the clean model name without any prefix
             self.model = genai.GenerativeModel(clean_model_name)
             self._model_name = clean_model_name
-            print(f"[GeminiAdapter] Successfully initialized model: {clean_model_name}")
+            logger.debug("GeminiAdapter initialized successfully")
         except Exception as e:
-            print(f"[GeminiAdapter] Failed to initialize model {clean_model_name}: {e}")
-            print(f"[GeminiAdapter] Full error: {repr(e)}")
+            logger.error("Failed to initialize GeminiAdapter: %s", e)
             raise
     
     async def generate(self, request: GenerationRequest) -> GenerationResponse:

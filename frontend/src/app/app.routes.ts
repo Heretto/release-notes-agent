@@ -1,5 +1,6 @@
 import { Routes } from '@angular/router';
 import { AuthGuard } from './core/auth/auth.guard';
+import { AdminGuard } from './core/auth/admin.guard';
 import { SuperuserGuard } from './core/auth/superuser.guard';
 
 export const routes: Routes = [
@@ -11,6 +12,14 @@ export const routes: Routes = [
   {
     path: 'invite/:token',
     loadComponent: () => import('./features/invitations/accept-invitation.component').then(m => m.AcceptInvitationComponent)
+  },
+  {
+    path: 'forgot-password',
+    loadComponent: () => import('./features/auth/forgot-password.component').then(m => m.ForgotPasswordComponent)
+  },
+  {
+    path: 'reset-password',
+    loadComponent: () => import('./features/auth/reset-password.component').then(m => m.ResetPasswordComponent)
   },
   
   // Protected routes (with layout)
@@ -49,6 +58,7 @@ export const routes: Routes = [
       },
       {
         path: 'admin',
+        canActivate: [AdminGuard],
         loadComponent: () => import('./features/admin/admin.component').then(m => m.AdminComponent)
       },
       {

@@ -3,6 +3,9 @@ from sqlalchemy.orm import Session
 from typing import List
 from uuid import UUID
 from pydantic import BaseModel
+import logging
+
+logger = logging.getLogger(__name__)
 
 from app.models.database import get_db, User, InstructionSet
 from app.models.schemas import (
@@ -97,9 +100,15 @@ async def update_instruction_set(
             InstructionSet.is_default == True
         ).update({"is_default": False})
     
-    # Update fields
+    # Update fields — whitelist to prevent overwriting sensitive attributes
+    _INSTRUCTION_UPDATABLE_FIELDS = {
+        "name", "description", "jql_query", "system_prompt",
+        "user_instructions", "dita_template_id", "heretto_folder_id",
+        "publish_to_heretto", "is_default",
+    }
     for field, value in instruction_data.model_dump(exclude_unset=True).items():
-        setattr(instruction_set, field, value)
+        if field in _INSTRUCTION_UPDATABLE_FIELDS:
+            setattr(instruction_set, field, value)
     
     db.commit()
     db.refresh(instruction_set)
@@ -218,12 +227,12 @@ async def test_instruction_query(
             "message": f"Successfully retrieved {len(issues)} issues (limited to 10 for testing)"
         }
     except Exception as e:
+        logger.error("JQL query test failed for instruction set %s: %s", instruction_set.id, e, exc_info=True)
         return {
             "success": False,
             "instruction_set": {
                 "name": instruction_set.name,
                 "jql_query": instruction_set.jql_query
             },
-            "error": str(e),
-            "message": f"Failed to execute JQL query: {str(e)}"
+            "message": "Failed to execute JQL query — check your query syntax and Jira credentials"
         }

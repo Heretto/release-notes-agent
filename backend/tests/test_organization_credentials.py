@@ -16,7 +16,7 @@ from app.api.routes.credentials import (
     list_ai_credentials,
     create_ai_credential
 )
-from app.models.schemas import JiraCredentialResponse
+from app.models.schemas import JiraCredentialResponse, JiraCredentialCreate, AICredentialCreate
 
 
 @pytest.fixture
@@ -188,12 +188,12 @@ class TestCredentialCreationInOrganization:
         self, mock_user_with_org, mock_organization, mock_db
     ):
         """Test that new credentials are created with the organization_id."""
-        credential_data = {
-            "name": "New Org Jira",
-            "server_url": "https://neworg.atlassian.net",
-            "email": "neworg@example.com",
-            "api_token": "new_token"
-        }
+        credential_data = JiraCredentialCreate(
+            name="New Org Jira",
+            server_url="https://neworg.atlassian.net",
+            email="neworg@example.com",
+            api_token="new_token"
+        )
         
         # Mock that no existing credential exists
         mock_db.query.return_value.filter.return_value.first.return_value = None
@@ -231,12 +231,12 @@ class TestCredentialCreationInOrganization:
         """Test that a user without an organization cannot create credentials."""
         from fastapi import HTTPException
         
-        credential_data = {
-            "name": "Should Fail",
-            "server_url": "https://fail.atlassian.net",
-            "email": "fail@example.com",
-            "api_token": "fail_token"
-        }
+        credential_data = JiraCredentialCreate(
+            name="Should Fail",
+            server_url="https://fail.atlassian.net",
+            email="fail@example.com",
+            api_token="fail_token"
+        )
         
         # Should raise an exception
         with pytest.raises(HTTPException) as exc_info:
@@ -298,12 +298,12 @@ class TestAICredentialsOrganizationAccess:
         self, mock_user_with_org, mock_organization, mock_db
     ):
         """Test creating an AI credential assigns it to the organization."""
-        credential_data = {
-            "name": "Org AI Key",
-            "provider": "openai",
-            "api_key": "sk-org-key",
-            "model": "gpt-4"
-        }
+        credential_data = AICredentialCreate(
+            name="Org AI Key",
+            provider="openai",
+            api_key="sk-org-key",
+            model="gpt-4"
+        )
         
         # Mock that no existing credential exists
         mock_db.query.return_value.filter.return_value.first.return_value = None
@@ -336,12 +336,12 @@ class TestCredentialIsolation:
         self, mock_user_with_org, mock_user_different_org, mock_organization, mock_db
     ):
         """Test that credential names only need to be unique within an organization."""
-        credential_data = {
-            "name": "Same Name",  # Same name in different orgs should be allowed
-            "server_url": "https://test.atlassian.net",
-            "email": "test@example.com",
-            "api_token": "test_token"
-        }
+        credential_data = JiraCredentialCreate(
+            name="Same Name",
+            server_url="https://test.atlassian.net",
+            email="test@example.com",
+            api_token="test_token"
+        )
         
         # For user in org 1 - no existing credential
         mock_db.query.return_value.filter.return_value.first.return_value = None
@@ -375,12 +375,12 @@ class TestCredentialTracking:
         self, mock_user_with_org, mock_organization, mock_db
     ):
         """Test that credentials track who created them."""
-        credential_data = {
-            "name": "Tracked Credential",
-            "server_url": "https://tracked.atlassian.net",
-            "email": "tracked@example.com",
-            "api_token": "tracked_token"
-        }
+        credential_data = JiraCredentialCreate(
+            name="Tracked Credential",
+            server_url="https://tracked.atlassian.net",
+            email="tracked@example.com",
+            api_token="tracked_token"
+        )
         
         mock_db.query.return_value.filter.return_value.first.return_value = None
         

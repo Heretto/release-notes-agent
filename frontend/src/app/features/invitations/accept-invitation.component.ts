@@ -368,11 +368,21 @@ export class AcceptInvitationComponent implements OnInit {
       },
       error: (error) => {
         this.accepting = false;
-        this.snackBar.open(
-          error.error?.detail || 'Failed to accept invitation', 
-          'Close', 
-          { duration: 5000 }
-        );
+        if (error.status === 409 && this.invitationInfo) {
+          // User already exists — switch to existing user flow
+          this.invitationInfo.is_existing_user = true;
+          this.snackBar.open(
+            'An account with this email already exists. Please enter your current password to join.',
+            'Close',
+            { duration: 5000 }
+          );
+        } else {
+          this.snackBar.open(
+            error.error?.detail || 'Failed to accept invitation',
+            'Close',
+            { duration: 5000 }
+          );
+        }
       }
     });
   }

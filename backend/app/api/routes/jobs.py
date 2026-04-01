@@ -3,6 +3,11 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from uuid import UUID
 from datetime import datetime
+import re
+import logging
+from urllib.parse import quote
+
+logger = logging.getLogger(__name__)
 
 from app.models.database import get_db, User, Job, JobArtifact, JobRequest, InstructionSet, Credential, CredentialType, JobStatus, JobTrigger
 from app.models.schemas import (
@@ -16,6 +21,7 @@ from app.models.schemas import (
 from app.api.dependencies import get_current_active_user, get_current_active_user_with_org, CurrentUserContext
 from app.services.job_orchestrator import JobOrchestrator
 from app.core.security import decrypt_credentials
+from app.config import get_settings
 
 router = APIRouter(prefix="/jobs")
 
@@ -28,11 +34,14 @@ async def list_jobs(
     db: Session = Depends(get_db)
 ):
     """List jobs with optional filtering."""
+    settings = get_settings()
+    limit = min(limit, settings.max_query_limit)
+
     query = db.query(Job).filter(Job.organization_id == context.organization_id)
-    
+
     if status:
         query = query.filter(Job.status == status)
-    
+
     jobs = query.order_by(Job.created_at.desc()).offset(offset).limit(limit).all()
     return jobs
 
@@ -199,8 +208,14 @@ async def get_job_requests(
     formatted_requests = []
     for req in requests:
         import json
-        request_data = json.loads(req.request_data) if req.request_data else {}
-        response_data = json.loads(req.response_data) if req.response_data else {}
+        try:
+            request_data = json.loads(req.request_data) if req.request_data else {}
+        except (json.JSONDecodeError, ValueError):
+            request_data = {}
+        try:
+            response_data = json.loads(req.response_data) if req.response_data else {}
+        except (json.JSONDecodeError, ValueError):
+            response_data = {}
         
         formatted_requests.append({
             "id": str(req.id),
@@ -289,12 +304,18 @@ async def download_artifact(
     else:
         content_type = "text/plain"
     
+    # Sanitize filename: extract basename and allow only safe characters
+    from pathlib import PurePosixPath
+    safe_name = PurePosixPath(artifact.filename).name
+    safe_name = safe_name.replace("\\", "")  # strip any remaining backslashes
+    safe_name = re.sub(r'[^\w.\-]', '_', safe_name).strip('_.') or "download"
+
     # Return the file as a downloadable response
     return Response(
         content=artifact.content,
         media_type=content_type,
         headers={
-            "Content-Disposition": f'attachment; filename="{artifact.filename}"'
+            "Content-Disposition": f"attachment; filename=\"{safe_name}\"; filename*=UTF-8''{quote(safe_name)}"
         }
     )
 
@@ -477,9 +498,10 @@ async def preview_jira_query(
             tickets=tickets
         )
     except Exception as e:
+        logger.error("JQL query preview failed: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"JQL query failed: {str(e)}"
+            detail="JQL query failed — check your query syntax and Jira credentials"
         )
 
 @router.post("/{job_id}/rerun", response_model=JobResponse)

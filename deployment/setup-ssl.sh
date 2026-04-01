@@ -20,6 +20,14 @@ fi
 DOMAIN=$1
 DOMAINS="$@"
 
+# Validate domain names — only allow alphanumeric, hyphens, dots, and wildcards
+for d in $DOMAINS; do
+    if ! echo "$d" | grep -qP '^(\*\.)?[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$'; then
+        echo -e "${RED}Error: Invalid domain name: $d${NC}"
+        exit 1
+    fi
+done
+
 # Check if Certbot is installed
 if ! command -v certbot &> /dev/null; then
     echo -e "${YELLOW}Installing Certbot...${NC}"
@@ -35,7 +43,7 @@ fi
 
 # Update nginx configuration with actual domain
 echo -e "${YELLOW}Updating nginx configuration...${NC}"
-sed -i "s/your-domain.com/$DOMAIN/g" deployment/nginx-production.conf
+sed -i "s/your-domain\\.com/$DOMAIN/g" deployment/nginx-production.conf
 
 # Get SSL certificate
 echo -e "${YELLOW}Obtaining SSL certificate for: $DOMAINS${NC}"
@@ -53,7 +61,7 @@ docker run --rm \
     --email "${SSL_EMAIL:-admin@$DOMAIN}" \
     --agree-tos \
     --no-eff-email \
-    -d $(echo $DOMAINS | tr ' ' ',')
+    -d "$(echo "$DOMAINS" | tr ' ' ',')"
 
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}SSL certificate obtained successfully!${NC}"

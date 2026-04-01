@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, Validators, ReactiveFormsModule } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
@@ -9,6 +9,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatListModule } from '@angular/material/list';
 import { MatDividerModule } from '@angular/material/divider';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { AuthService, UserOrganizationInfo } from '../../core/auth/auth.service';
 import { OrganizationService } from '../../core/services/organization.service';
 
@@ -26,6 +27,7 @@ import { OrganizationService } from '../../core/services/organization.service';
     MatProgressSpinnerModule,
     MatListModule,
     MatDividerModule,
+    RouterLink,
   ],
   template: `
     <div class="login-container">
@@ -113,6 +115,10 @@ import { OrganizationService } from '../../core/services/organization.service';
                 {{ isRegisterMode ? 'Already have an account?' : 'Create Account' }}
               </button>
             </div>
+
+            <div class="forgot-password-row" *ngIf="!isRegisterMode">
+              <a routerLink="/forgot-password" class="forgot-password-link">Forgot Password?</a>
+            </div>
           </form>
         </mat-card-content>
       </mat-card>
@@ -176,12 +182,26 @@ import { OrganizationService } from '../../core/services/organization.service';
       gap: 8px;
       padding: 16px;
     }
+
+    .forgot-password-row {
+      text-align: center;
+      margin-top: 12px;
+    }
+
+    .forgot-password-link {
+      color: #667eea;
+      text-decoration: none;
+      font-size: 14px;
+    }
   `]
 })
-export class LoginComponent {
+export class LoginComponent implements OnInit {
   private fb = inject(FormBuilder);
+  private route = inject(ActivatedRoute);
   private authService = inject(AuthService);
   private organizationService = inject(OrganizationService);
+
+  private returnUrl: string | undefined;
 
   hidePassword = true;
   loading = false;
@@ -189,6 +209,10 @@ export class LoginComponent {
   isRegisterMode = false;
   showOrgSelection = false;
   userOrganizations: UserOrganizationInfo[] = [];
+
+  ngOnInit(): void {
+    this.returnUrl = this.route.snapshot.queryParams['returnUrl'];
+  }
 
   loginForm: FormGroup = this.fb.group({
     organizationName: ['', []],
@@ -224,7 +248,7 @@ export class LoginComponent {
               this.userOrganizations = orgs;
               this.showOrgSelection = true;
             } else {
-              this.authService.navigateToDashboard();
+              this.authService.navigateToDashboard(this.returnUrl);
             }
           },
           error: (error) => {
@@ -243,7 +267,7 @@ export class LoginComponent {
       next: (response) => {
         this.authService.updateTokens(response);
         this.loading = false;
-        this.authService.navigateToDashboard();
+        this.authService.navigateToDashboard(this.returnUrl);
       },
       error: (error) => {
         this.errorMessage = error.error?.detail || 'Failed to switch organization';

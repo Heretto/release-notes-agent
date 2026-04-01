@@ -42,7 +42,10 @@ if [ ! -f ".env.production" ]; then
 fi
 
 # Load environment variables
-export $(cat .env.production | grep -v '^#' | xargs)
+set -a
+# shellcheck source=/dev/null
+. .env.production
+set +a
 
 # Validate required environment variables
 required_vars=(

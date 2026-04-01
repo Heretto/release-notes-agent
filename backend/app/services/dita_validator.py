@@ -14,9 +14,9 @@ class DITAValidator:
         """Validate XML structure."""
         try:
             # Parse XML
-            parser = etree.XMLParser(remove_blank_text=True)
+            parser = etree.XMLParser(remove_blank_text=True, no_network=True, resolve_entities=False)
             doc = etree.fromstring(content.encode('utf-8'), parser)
-            
+
             # Basic validation passed
             return True, None
             
@@ -28,9 +28,9 @@ class DITAValidator:
     def validate_dita_structure(self, content: str) -> Tuple[bool, Optional[str]]:
         """Validate DITA topic structure."""
         try:
-            parser = etree.XMLParser(remove_blank_text=True)
+            parser = etree.XMLParser(remove_blank_text=True, no_network=True, resolve_entities=False)
             doc = etree.fromstring(content.encode('utf-8'), parser)
-            
+
             # Check for required elements
             if doc.tag != 'topic':
                 return False, "Root element must be 'topic'"

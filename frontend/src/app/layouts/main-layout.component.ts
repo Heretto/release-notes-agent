@@ -48,10 +48,6 @@ import { AccountService } from '../core/services/account.service';
             <mat-icon matListItemIcon>vpn_key</mat-icon>
             <span matListItemTitle>Credentials</span>
           </a>
-          <a mat-list-item routerLink="/settings" routerLinkActive="active">
-            <mat-icon matListItemIcon>settings</mat-icon>
-            <span matListItemTitle>Settings</span>
-          </a>
           <a mat-list-item routerLink="/account" routerLinkActive="active">
             <mat-icon matListItemIcon>account_circle</mat-icon>
             <span matListItemTitle>Account</span>
