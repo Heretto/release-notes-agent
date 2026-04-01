@@ -49,6 +49,8 @@ echo -e "${YELLOW}Setting up SSL for: $DOMAIN${NC}"
 # ---------------------------------------------------------------
 if [ -f "$CERT_PATH/fullchain.pem" ]; then
     echo -e "${GREEN}SSL certificate already exists for $DOMAIN${NC}"
+    echo "  To force renewal: rm -rf $CERT_PATH"
+    echo "  Then re-run this script."
     exit 0
 fi
 
@@ -124,7 +126,6 @@ echo -e "${GREEN}SSL certificate obtained!${NC}"
 # ---------------------------------------------------------------
 echo -e "${YELLOW}Adding HTTPS configuration to nginx...${NC}"
 
-# Check if HTTPS block already exists
 if grep -q "listen 443 ssl" deployment/nginx-production.conf; then
     echo -e "${YELLOW}HTTPS block already exists in nginx config, skipping.${NC}"
 else
@@ -209,19 +210,15 @@ SSLEOF
 fi
 
 # ---------------------------------------------------------------
-# Add HTTP→HTTPS redirect
+# Add HTTP->HTTPS redirect if not already present
 # ---------------------------------------------------------------
 if ! grep -q "return 301 https" deployment/nginx-production.conf; then
-    # Insert redirect before the closing brace of the HTTP server block
-    sed -i '/location \/.well-known\/acme-challenge\//,/}/ {
-        /}/a\
-\
-    # Redirect all other HTTP traffic to HTTPS\
-    location / {\
-        return 301 https://\$host\$request_uri;\
-    }
-    }' deployment/nginx-production.conf
-    echo -e "${GREEN}HTTP→HTTPS redirect added.${NC}"
+    # Replace the HTTP server's catch-all location block content with a redirect.
+    # The ACME challenge location stays — only the fallback location gets the redirect.
+    sed -i '/# Frontend application/,/^    }$/ {
+        s|proxy_pass http://frontend;|return 301 https://\$host\$request_uri;|
+    }' deployment/nginx-production.conf 2>/dev/null || true
+    echo -e "${GREEN}HTTP->HTTPS redirect configured.${NC}"
 fi
 
 # ---------------------------------------------------------------
