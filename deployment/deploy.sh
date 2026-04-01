@@ -11,8 +11,6 @@ NC='\033[0m' # No Color
 
 # Configuration
 PROJECT_NAME="release-notes-agent"
-DEPLOY_USER="appuser"
-DEPLOY_PATH="/home/$DEPLOY_USER/app"
 
 echo -e "${GREEN}Starting deployment of $PROJECT_NAME${NC}"
 
@@ -83,7 +81,7 @@ echo -e "${YELLOW}Building Docker images...${NC}"
 docker compose -f docker-compose.production.yml --env-file .env.production build
 
 # Run database migrations
-echo -e "${YELLOW}Running database migrations...${NC}"
+echo -e "${YELLOW}Starting database...${NC}"
 docker compose -f docker-compose.production.yml --env-file .env.production up -d postgres
 sleep 5  # Wait for postgres to be ready
 
@@ -93,7 +91,7 @@ if docker compose -f docker-compose.production.yml --env-file .env.production ps
     docker compose -f docker-compose.production.yml --env-file .env.production stop
 fi
 
-# Start services
+# Start services (nginx may fail on first deploy if no cert yet — that's OK)
 echo -e "${YELLOW}Starting services...${NC}"
 docker compose -f docker-compose.production.yml --env-file .env.production up -d
 
@@ -118,18 +116,15 @@ else
     bash deployment/setup-ssl.sh
 fi
 
-# Restart nginx to pick up the SSL cert (the main compose already started it,
-# but it may have failed if the cert didn't exist yet on first deploy)
+# Restart nginx to pick up the SSL config
 echo -e "${YELLOW}Restarting nginx with SSL...${NC}"
 docker compose -f docker-compose.production.yml --env-file .env.production up -d nginx
 
-# Show logs
+# Show status
 echo -e "${GREEN}Deployment completed!${NC}"
-echo -e "${YELLOW}Showing recent logs...${NC}"
-docker compose -f docker-compose.production.yml --env-file .env.production logs --tail=20
+docker compose -f docker-compose.production.yml --env-file .env.production ps
 
-echo -e "${GREEN}Application is now running!${NC}"
-echo -e "  https://$DOMAIN"
+echo -e "${GREEN}Application is running at https://$DOMAIN${NC}"
 echo ""
 echo -e "${YELLOW}Useful commands:${NC}"
 echo "  View logs: docker compose -f docker-compose.production.yml --env-file .env.production logs -f"
