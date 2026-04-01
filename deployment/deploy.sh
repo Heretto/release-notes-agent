@@ -29,8 +29,8 @@ if ! command_exists docker; then
     exit 1
 fi
 
-if ! command_exists docker-compose; then
-    echo -e "${RED}Docker Compose is not installed. Please install Docker Compose first.${NC}"
+if ! docker compose version >/dev/null 2>&1; then
+    echo -e "${RED}Docker Compose plugin is not installed. Please install it first.${NC}"
     exit 1
 fi
 
@@ -53,6 +53,7 @@ required_vars=(
     "APP_SECRET_KEY"
     "JWT_SECRET_KEY"
     "ENCRYPTION_KEY"
+    "DOMAIN"
 )
 
 for var in "${required_vars[@]}"; do
@@ -79,22 +80,22 @@ fi
 
 # Build images
 echo -e "${YELLOW}Building Docker images...${NC}"
-docker-compose -f docker-compose.production.yml build
+docker compose -f docker-compose.production.yml --env-file .env.production build
 
 # Run database migrations
 echo -e "${YELLOW}Running database migrations...${NC}"
-docker-compose -f docker-compose.production.yml up -d postgres
+docker compose -f docker-compose.production.yml --env-file .env.production up -d postgres
 sleep 5  # Wait for postgres to be ready
 
 # Check if this is first deployment
-if docker-compose -f docker-compose.production.yml ps | grep -q "release-notes-backend"; then
+if docker compose -f docker-compose.production.yml --env-file .env.production ps | grep -q "release-notes-backend"; then
     echo -e "${YELLOW}Stopping existing services...${NC}"
-    docker-compose -f docker-compose.production.yml stop
+    docker compose -f docker-compose.production.yml --env-file .env.production stop
 fi
 
 # Start services
 echo -e "${YELLOW}Starting services...${NC}"
-docker-compose -f docker-compose.production.yml up -d
+docker compose -f docker-compose.production.yml --env-file .env.production up -d
 
 # Wait for services to be healthy
 echo -e "${YELLOW}Waiting for services to be healthy...${NC}"
@@ -102,23 +103,36 @@ sleep 10
 
 # Check service status
 echo -e "${YELLOW}Checking service status...${NC}"
-docker-compose -f docker-compose.production.yml ps
+docker compose -f docker-compose.production.yml --env-file .env.production ps
 
 # Run database migrations in backend container
 echo -e "${YELLOW}Applying database migrations...${NC}"
-docker-compose -f docker-compose.production.yml exec -T backend alembic upgrade head || true
+docker compose -f docker-compose.production.yml --env-file .env.production exec -T backend alembic upgrade head || true
+
+# Provision SSL certificate if not already present
+CERT_PATH="deployment/certbot/conf/live/$DOMAIN"
+if [ -f "$CERT_PATH/fullchain.pem" ]; then
+    echo -e "${GREEN}SSL certificate already exists for $DOMAIN${NC}"
+else
+    echo -e "${YELLOW}Provisioning SSL certificate for $DOMAIN...${NC}"
+    bash deployment/setup-ssl.sh
+fi
+
+# Restart nginx to pick up the SSL cert (the main compose already started it,
+# but it may have failed if the cert didn't exist yet on first deploy)
+echo -e "${YELLOW}Restarting nginx with SSL...${NC}"
+docker compose -f docker-compose.production.yml --env-file .env.production up -d nginx
 
 # Show logs
 echo -e "${GREEN}Deployment completed!${NC}"
 echo -e "${YELLOW}Showing recent logs...${NC}"
-docker-compose -f docker-compose.production.yml logs --tail=50
+docker compose -f docker-compose.production.yml --env-file .env.production logs --tail=20
 
 echo -e "${GREEN}Application is now running!${NC}"
-echo -e "Backend API: http://localhost:8000"
-echo -e "Frontend: http://localhost"
+echo -e "  https://$DOMAIN"
 echo ""
 echo -e "${YELLOW}Useful commands:${NC}"
-echo "  View logs: docker-compose -f docker-compose.production.yml logs -f"
-echo "  Stop services: docker-compose -f docker-compose.production.yml stop"
-echo "  Restart services: docker-compose -f docker-compose.production.yml restart"
-echo "  View status: docker-compose -f docker-compose.production.yml ps"
+echo "  View logs: docker compose -f docker-compose.production.yml --env-file .env.production logs -f"
+echo "  Stop:      docker compose -f docker-compose.production.yml --env-file .env.production stop"
+echo "  Restart:   docker compose -f docker-compose.production.yml --env-file .env.production restart"
+echo "  Status:    docker compose -f docker-compose.production.yml --env-file .env.production ps"
