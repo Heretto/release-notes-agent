@@ -88,6 +88,29 @@ def decode_token(token: str) -> Dict[str, Any]:
     except jwt.PyJWTError:
         raise AuthenticationError("Invalid token")
 
+def create_password_reset_token(email: str) -> str:
+    """Create a short-lived JWT for password reset."""
+    expire = datetime.utcnow() + timedelta(minutes=settings.password_reset_token_expire_minutes)
+    to_encode = {"sub": email, "type": "password_reset", "exp": expire}
+    return jwt.encode(to_encode, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+
+
+def decode_password_reset_token(token: str) -> str:
+    """Decode and validate a password reset token. Returns the email address."""
+    try:
+        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+        if payload.get("type") != "password_reset":
+            raise AuthenticationError("Invalid token type")
+        email = payload.get("sub")
+        if not email:
+            raise AuthenticationError("Invalid token")
+        return email
+    except jwt.ExpiredSignatureError:
+        raise AuthenticationError("Password reset link has expired")
+    except jwt.PyJWTError:
+        raise AuthenticationError("Invalid password reset token")
+
+
 def generate_csrf_token() -> str:
     """Generate a cryptographically random CSRF token."""
     return secrets.token_urlsafe(32)

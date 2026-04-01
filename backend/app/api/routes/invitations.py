@@ -95,23 +95,23 @@ async def get_invitation_info(
 
 
 @router.post("/accept/{token}", response_model=AcceptInvitationResponse)
-@limiter.limit("5/minute")
+@limiter.limit("20/minute")
 async def accept_invitation_new_user(
-    http_request: Request,
+    request: Request,
     token: str,
-    request: AcceptInvitationRequest,
+    body: AcceptInvitationRequest,
     db: Session = Depends(get_db)
 ):
     """Accept an invitation and create account if new user (public endpoint)."""
     # Validate passwords match
-    if request.password != request.confirm_password:
+    if body.password != body.confirm_password:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Passwords do not match"
         )
     
     # Validate password strength
-    if len(request.password) < 8:
+    if len(body.password) < 8:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Password must be at least 8 characters long"
@@ -156,7 +156,7 @@ async def accept_invitation_new_user(
         # Create new user
         user = User(
             email=invitation.email,
-            password_hash=get_password_hash(request.password),
+            password_hash=get_password_hash(body.password),
             is_active=True,
             is_superuser=False
         )
@@ -215,11 +215,11 @@ class ExistingUserAcceptRequest(BaseModel):
 
 
 @router.post("/accept-existing/{token}")
-@limiter.limit("5/minute")
+@limiter.limit("20/minute")
 async def accept_invitation_existing_user(
-    http_request: Request,
+    request: Request,
     token: str,
-    request: ExistingUserAcceptRequest,
+    body: ExistingUserAcceptRequest,
     db: Session = Depends(get_db)
 ):
     """Accept invitation for existing users (requires password verification)."""
@@ -256,7 +256,7 @@ async def accept_invitation_existing_user(
         )
     
     # Verify password
-    if not verify_password(request.password, user.password_hash):
+    if not verify_password(body.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid password"

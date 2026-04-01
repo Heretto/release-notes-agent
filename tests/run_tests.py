@@ -175,6 +175,7 @@ class TestRunner:
             ("api/test_invitation_flow.py", "Invitation Flow"),
             ("api/test_multi_org_login.py", "Multi-Org Login Regression"),
             ("api/test_admin_visibility.py", "Admin Visibility Regression"),
+            ("api/test_password_reset.py", "Password Reset Flow"),
 
             # Integration Tests
             ("integration/test_jira_v3.py", "JIRA API v3 Integration"),

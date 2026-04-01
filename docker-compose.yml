@@ -32,6 +32,13 @@ services:
       timeout: 5s
       retries: 5
 
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: release-notes-mailpit
+    ports:
+      - "127.0.0.1:8025:8025"
+      - "127.0.0.1:1025:1025"
+
   backend:
     build:
       context: ./backend
@@ -42,6 +49,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      mailpit:
+        condition: service_started
     environment:
       DATABASE_URL: postgresql://user:password@postgres:5432/release_notes_db
       REDIS_URL: redis://:devpassword@redis:6379/0
@@ -53,6 +62,13 @@ services:
       JIRA_WEBHOOK_SECRET: ${JIRA_WEBHOOK_SECRET:-webhook-secret}
       HERETTO_BASE_URL: ${HERETTO_BASE_URL:-https://api.heretto.com}
       CORS_ORIGINS: http://localhost:4200
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-noreply@release-notes.local}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-false}
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:4200}
     ports:
       - "127.0.0.1:8000:8000"
     volumes:

@@ -13,6 +13,14 @@ export const routes: Routes = [
     path: 'invite/:token',
     loadComponent: () => import('./features/invitations/accept-invitation.component').then(m => m.AcceptInvitationComponent)
   },
+  {
+    path: 'forgot-password',
+    loadComponent: () => import('./features/auth/forgot-password.component').then(m => m.ForgotPasswordComponent)
+  },
+  {
+    path: 'reset-password',
+    loadComponent: () => import('./features/auth/reset-password.component').then(m => m.ResetPasswordComponent)
+  },
   
   // Protected routes (with layout)
   {

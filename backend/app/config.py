@@ -35,6 +35,23 @@ class Settings(BaseSettings):
     # Heretto
     heretto_base_url: str = "https://api.heretto.com"
     
+    # Email / SMTP (all optional — password reset disabled when not configured)
+    smtp_host: Optional[str] = None
+    smtp_port: int = 587
+    smtp_username: Optional[str] = None
+    smtp_password: Optional[str] = None
+    smtp_from_email: Optional[str] = None
+    smtp_from_name: str = "Release Notes Agent"
+    smtp_use_tls: bool = True
+
+    # Password reset
+    password_reset_token_expire_minutes: int = 30
+    frontend_base_url: str = "http://localhost:4200"
+
+    @property
+    def smtp_configured(self) -> bool:
+        return bool(self.smtp_host and self.smtp_from_email)
+
     # Cookies
     cookie_secure: bool = False  # Set True in production behind HTTPS
     cookie_domain: Optional[str] = None  # None = current domain only
