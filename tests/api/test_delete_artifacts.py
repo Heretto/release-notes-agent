@@ -31,7 +31,7 @@ def login():
 
 def get_jobs(headers):
     """Get list of jobs"""
-    response = requests.get(f"{BASE_URL}/jobs/", headers=headers)
+    response = requests.get(f"{BASE_URL}/jobs", headers=headers)
     return response.json()
 
 def get_artifacts(job_id, headers):

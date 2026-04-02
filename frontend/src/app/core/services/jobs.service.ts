@@ -40,9 +40,9 @@ export class JobsService {
 
   getJobs(status?: string): Observable<Job[]> {
     if (status) {
-      return this.http.get<Job[]>(`${this.apiUrl}/`, { params: { status } });
+      return this.http.get<Job[]>(`${this.apiUrl}`, { params: { status } });
     }
-    return this.http.get<Job[]>(`${this.apiUrl}/`);
+    return this.http.get<Job[]>(`${this.apiUrl}`);
   }
 
   getJob(id: string): Observable<Job> {
@@ -50,7 +50,7 @@ export class JobsService {
   }
 
   createJob(job: JobCreate): Observable<Job> {
-    return this.http.post<Job>(`${this.apiUrl}/`, job);
+    return this.http.post<Job>(`${this.apiUrl}`, job);
   }
 
   cancelJob(id: string): Observable<void> {

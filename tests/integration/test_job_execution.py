@@ -56,7 +56,7 @@ def wait_for_job(headers, job_id, timeout=120):
 
 def get_instruction_set(headers):
     """Get the first available instruction set, creating one if needed."""
-    resp = requests.get(f"{BASE_URL}/instructions/", headers=headers)
+    resp = requests.get(f"{BASE_URL}/instructions", headers=headers)
     assert resp.status_code == 200, f"Failed to list instructions: {resp.status_code}"
     instruction_sets = resp.json()
     if instruction_sets:
@@ -64,7 +64,7 @@ def get_instruction_set(headers):
 
     # Create a minimal instruction set for testing
     create_resp = requests.post(
-        f"{BASE_URL}/instructions/",
+        f"{BASE_URL}/instructions",
         json={
             "name": "Test Instruction Set",
             "jql_query": "project = EZDNXTGEN ORDER BY created DESC",

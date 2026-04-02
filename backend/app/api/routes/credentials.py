@@ -38,7 +38,7 @@ def _mask_secret(value: str) -> str:
     return value[:4] + "*" * min(len(value) - 8, 20) + value[-4:]
 
 # Generic credentials endpoints
-@router.get("/", response_model=List[CredentialResponse])
+@router.get("", response_model=List[CredentialResponse])
 async def list_credentials(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -51,7 +51,7 @@ async def list_credentials(
     ).all()
     return credentials
 
-@router.post("/", response_model=CredentialResponse)
+@router.post("", response_model=CredentialResponse)
 async def create_credential(
     credential_data: CredentialCreate,
     current_user: User = Depends(get_current_active_user),
