@@ -38,7 +38,7 @@ def test_dita_validation_integration():
     # Get instruction sets
     print("\n2. Getting instruction sets...")
     instr_resp = requests.get(
-        f"{API_BASE_URL}/instructions/",
+        f"{API_BASE_URL}/instructions",
         headers=headers
     )
     
@@ -64,7 +64,7 @@ def test_dita_validation_integration():
     }
     
     create_resp = requests.post(
-        f"{API_BASE_URL}/jobs/",
+        f"{API_BASE_URL}/jobs",
         json=job_data,
         headers=headers
     )

@@ -25,7 +25,7 @@ from app.config import get_settings
 
 router = APIRouter(prefix="/jobs")
 
-@router.get("/", response_model=List[JobResponse])
+@router.get("", response_model=List[JobResponse])
 async def list_jobs(
     status: Optional[JobStatusEnum] = None,
     limit: int = 50,
@@ -45,7 +45,7 @@ async def list_jobs(
     jobs = query.order_by(Job.created_at.desc()).offset(offset).limit(limit).all()
     return jobs
 
-@router.post("/", response_model=JobResponse)
+@router.post("", response_model=JobResponse)
 async def create_job(
     job_data: JobCreate,
     background_tasks: BackgroundTasks,

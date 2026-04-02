@@ -140,13 +140,14 @@ def set_auth_cookies(response, access_token: str, refresh_token: str) -> None:
     )
     # CSRF token — readable by JavaScript so the frontend can send it as a header.
     # The double-submit pattern validates that the cookie value matches the header.
+    # path="/" so document.cookie can read it from any Angular route (e.g. /credentials).
     response.set_cookie(
         key="csrf_token",
         value=generate_csrf_token(),
         httponly=False,
         secure=settings.cookie_secure,
         samesite="lax",
-        path="/api/v1",
+        path="/",
         max_age=settings.jwt_access_token_expire_minutes * 60,
         domain=settings.cookie_domain,
     )
@@ -166,7 +167,7 @@ def clear_auth_cookies(response) -> None:
     )
     response.delete_cookie(
         key="csrf_token",
-        path="/api/v1",
+        path="/",
         domain=settings.cookie_domain,
     )
 

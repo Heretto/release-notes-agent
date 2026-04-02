@@ -17,7 +17,7 @@ from app.services.job_orchestrator import JobOrchestrator
 
 router = APIRouter(prefix="/webhooks")
 
-@router.get("/", response_model=List[WebhookConfigResponse])
+@router.get("", response_model=List[WebhookConfigResponse])
 async def list_webhook_configs(
     context: CurrentUserContext = Depends(get_current_active_user_with_org),
     db: Session = Depends(get_db)
@@ -28,7 +28,7 @@ async def list_webhook_configs(
     ).all()
     return configs
 
-@router.post("/", response_model=WebhookConfigCreateResponse)
+@router.post("", response_model=WebhookConfigCreateResponse)
 async def create_webhook_config(
     config_data: WebhookConfigCreate,
     context: CurrentUserContext = Depends(get_current_active_user_with_org),
