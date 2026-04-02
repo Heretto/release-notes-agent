@@ -10,7 +10,6 @@ __pycache__/
 *.pyo
 venv/
 tests/
-scripts/
 *.log
 *.md
 Dockerfile
