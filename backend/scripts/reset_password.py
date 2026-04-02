@@ -21,7 +21,16 @@ from typing import Optional
 from datetime import datetime
 
 # Add parent directory to path to import app modules
-sys.path.insert(0, str(Path(__file__).parent.parent))
+BACKEND_DIR = Path(__file__).parent.parent
+sys.path.insert(0, str(BACKEND_DIR))
+
+# If running outside a venv, try to activate the project venv automatically
+if not hasattr(sys, 'real_prefix') and sys.base_prefix == sys.prefix:
+    venv_python = BACKEND_DIR / "venv" / "bin" / "python"
+    if venv_python.exists():
+        import subprocess
+        result = subprocess.run([str(venv_python)] + sys.argv, env={**os.environ, "VIRTUAL_ENV": str(BACKEND_DIR / "venv")})
+        sys.exit(result.returncode)
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
