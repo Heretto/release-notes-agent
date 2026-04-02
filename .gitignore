@@ -60,6 +60,9 @@ Thumbs.db
 postgres_data/
 redis_data/
 
+# Generated deployment files (modified at runtime by setup-ssl.sh)
+deployment/nginx-production.conf
+
 # Application
 .env.production
 .env
