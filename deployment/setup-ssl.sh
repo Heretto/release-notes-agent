@@ -59,6 +59,16 @@ fi
 # ---------------------------------------------------------------
 mkdir -p deployment/certbot/www deployment/certbot/conf
 
+# Ensure the working nginx config exists (copy from template on first run)
+if [ ! -f "deployment/nginx-production.conf" ]; then
+    if [ -f "deployment/nginx-production.conf.template" ]; then
+        cp deployment/nginx-production.conf.template deployment/nginx-production.conf
+    else
+        echo -e "${RED}Error: deployment/nginx-production.conf not found and no template available.${NC}"
+        exit 1
+    fi
+fi
+
 # ---------------------------------------------------------------
 # Start a temporary HTTP-only nginx for the ACME challenge
 # ---------------------------------------------------------------

@@ -70,6 +70,13 @@ mkdir -p deployment/certbot/conf
 mkdir -p backend/logs
 mkdir -p backend/uploads
 
+# Initialise nginx config from template if it doesn't exist yet
+# (nginx-production.conf is gitignored; setup-ssl.sh appends the HTTPS block to it)
+if [ ! -f "deployment/nginx-production.conf" ]; then
+    echo -e "${YELLOW}Initialising nginx config from template...${NC}"
+    cp deployment/nginx-production.conf.template deployment/nginx-production.conf
+fi
+
 # Pull latest code (optional)
 if [ "$1" = "--pull" ]; then
     echo -e "${YELLOW}Pulling latest code from git...${NC}"
