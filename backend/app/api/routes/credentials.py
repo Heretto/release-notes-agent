@@ -1,12 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from typing import List
 from uuid import UUID
 import logging
 
 logger = logging.getLogger(__name__)
 
-from app.models.database import get_db, User, Credential, CredentialType
+from app.models.database import get_db, User, Credential, CredentialType, Job
 from app.models.schemas import (
     CredentialCreate,
     CredentialUpdate,
@@ -274,9 +275,16 @@ async def delete_jira_credential(
             detail="Jira credential not found"
         )
     
-    db.delete(credential)
-    db.commit()
-    
+    try:
+        db.delete(credential)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot delete credential: it is referenced by existing jobs"
+        )
+
     return {"message": "Jira credential deleted successfully"}
 
 # Heretto-specific endpoints
@@ -500,8 +508,15 @@ async def delete_heretto_credential(
             detail="Heretto credential not found"
         )
 
-    db.delete(credential)
-    db.commit()
+    try:
+        db.delete(credential)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot delete credential: it is referenced by existing jobs"
+        )
 
     return {"message": "Heretto credential deleted successfully"}
 
@@ -708,9 +723,13 @@ async def delete_credential(
             detail="Credential not found"
         )
     
+    # Nullify references from jobs before deleting so history is preserved
+    db.query(Job).filter(Job.ai_credential_id == credential_id).update(
+        {Job.ai_credential_id: None}, synchronize_session=False
+    )
     db.delete(credential)
     db.commit()
-    
+
     return {"message": "Credential deleted successfully"}
 
 @router.post("/{credential_id}/test")
