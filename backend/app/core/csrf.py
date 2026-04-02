@@ -10,9 +10,9 @@ never attaches that header automatically.
 """
 
 import hmac
-from fastapi import Request, HTTPException, status
+from fastapi import Request, status
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
-from starlette.responses import Response
+from starlette.responses import Response, JSONResponse
 
 _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
@@ -36,9 +36,9 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         csrf_header = request.headers.get("x-csrf-token", "")
 
         if not csrf_cookie or not csrf_header or not hmac.compare_digest(csrf_cookie, csrf_header):
-            raise HTTPException(
+            return JSONResponse(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="CSRF token missing or invalid",
+                content={"detail": "CSRF token missing or invalid"},
             )
 
         return await call_next(request)
