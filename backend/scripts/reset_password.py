@@ -23,32 +23,11 @@ from datetime import datetime
 # Add parent directory to path to import app modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from sqlalchemy import create_engine, Column, String, Boolean, DateTime, text
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.sql import func
 from app.config import get_settings
-import hashlib
-import uuid
-
-# Create a simplified User model that matches the actual database
-Base = declarative_base()
-
-class User(Base):
-    __tablename__ = "users"
-    
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    email = Column(String(255), unique=True, nullable=False, index=True)
-    password_hash = Column(String(255), nullable=False)
-    is_active = Column(Boolean, default=True)
-    is_superuser = Column(Boolean, default=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-
-def get_password_hash(password: str) -> str:
-    """Hash a password using SHA256."""
-    return hashlib.sha256(password.encode()).hexdigest()
+from app.models.database import User
+from app.core.security import get_password_hash
 
 
 class PasswordManager:
@@ -147,13 +126,13 @@ class PasswordManager:
             ).scalar()
             
             if result:
-                # Query the user_organizations association table
+                # Query the organization_members table
                 org_result = self.session.execute(
                     text("""
-                        SELECT o.name, uo.role 
-                        FROM user_organizations uo
-                        JOIN organizations o ON o.id = uo.organization_id
-                        WHERE uo.user_id = :user_id
+                        SELECT o.name, om.role
+                        FROM organization_members om
+                        JOIN organizations o ON o.id = om.organization_id
+                        WHERE om.user_id = :user_id
                     """),
                     {"user_id": user.id}
                 ).fetchall()
