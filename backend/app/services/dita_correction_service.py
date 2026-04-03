@@ -39,8 +39,8 @@ class DITACorrectionService:
         current_content = content
         
         for attempt in range(1, max_attempts + 1):
-            # Validate current content
-            valid, errors = self.validator.validate_structure(current_content)
+            # Validate current content (DTD if available, structural otherwise)
+            valid, errors = self.validator.validate_with_dtd(current_content)
             
             if valid:
                 correction_log.append(f"Attempt {attempt}: Validation successful")
@@ -63,7 +63,7 @@ class DITACorrectionService:
                 corrected_content = await self._get_ai_correction(correction_prompt)
                 
                 # Validate the correction
-                valid_after, errors_after = self.validator.validate_structure(corrected_content)
+                valid_after, errors_after = self.validator.validate_with_dtd(corrected_content)
                 
                 if valid_after:
                     correction_log.append(f"Attempt {attempt}: AI correction successful")
@@ -82,7 +82,7 @@ class DITACorrectionService:
         # Final validation attempt with auto-fixes
         correction_log.append("Applying automatic fixes as final attempt")
         final_content = self.validator.auto_fix_common_issues(current_content)
-        valid_final, _ = self.validator.validate_structure(final_content)
+        valid_final, _ = self.validator.validate_with_dtd(final_content)
         
         return final_content, valid_final, correction_log
     
@@ -198,9 +198,9 @@ Never add markdown formatting or explanations - return only pure XML."""
         # First, try automatic fixes
         validation_log.append("Applying automatic fixes...")
         content = self.validator.auto_fix_common_issues(content)
-        
-        # Validate
-        valid, errors = self.validator.validate_structure(content)
+
+        # Validate (DTD if available, structural otherwise)
+        valid, errors = self.validator.validate_with_dtd(content)
         
         if valid:
             validation_log.append("Content valid after automatic fixes")
@@ -256,7 +256,7 @@ Ensure all content is in valid DITA elements. No markdown, no plain text outside
                 
                 # Apply fixes and validate
                 content = self.validator.auto_fix_common_issues(content)
-                valid, _ = self.validator.validate_structure(content)
+                valid, _ = self.validator.validate_with_dtd(content)
                 
                 if valid:
                     validation_log.append("Successfully regenerated valid DITA content")

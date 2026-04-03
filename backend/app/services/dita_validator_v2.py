@@ -5,6 +5,8 @@ Enhanced DITA Validator with DTD validation and AI-driven error correction.
 import os
 import re
 import logging
+import subprocess
+import tempfile
 from typing import Tuple, Optional, List, Dict, Any
 from lxml import etree
 from pathlib import Path
@@ -55,60 +57,127 @@ class DITAValidatorV2:
         return os.path.exists(dtd_path)
     
     def _get_dtd(self, topic_type: str = "topic") -> Optional[etree.DTD]:
-        """Load DITA DTD from local files."""
-        # Due to the complexity of DITA 1.3 DTDs with extensive entity references,
-        # we use our comprehensive structural validation that enforces DITA 1.3 rules
-        # without the overhead of full DTD parsing. This avoids entity expansion issues
-        # while still providing strict DITA validation.
-        
-        if self._dtd_available(topic_type):
-            logger.debug(f"DITA 1.3 DTD available for '{topic_type}', using enhanced structural validation")
-        
-        # Return None to use our structural validation
-        # Our structural validation implements DITA 1.3 requirements
+        """Return None — DITA 1.3 DTDs exceed lxml's entity amplification limit.
+        DTD validation is performed via xmllint instead (see _validate_with_xmllint).
+        """
         return None
+
+    # ------------------------------------------------------------------
+    # xmllint-based DTD validation
+    # ------------------------------------------------------------------
+
+    _XMLLINT_AVAILABLE: Optional[bool] = None  # class-level cache
+
+    @classmethod
+    def _xmllint_available(cls) -> bool:
+        """Return True if xmllint is present on PATH."""
+        if cls._XMLLINT_AVAILABLE is None:
+            try:
+                subprocess.run(
+                    ["xmllint", "--version"],
+                    capture_output=True,
+                    timeout=5,
+                )
+                cls._XMLLINT_AVAILABLE = True
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                cls._XMLLINT_AVAILABLE = False
+        return cls._XMLLINT_AVAILABLE
+
+    def _base_dtd_path(self) -> Optional[str]:
+        """Return the absolute path to basetopic.dtd, or None if not found."""
+        path = os.path.join(self.dtd_dir, "dtd", "base", "dtd", "basetopic.dtd")
+        return path if os.path.exists(path) else None
+
+    def _inject_system_doctype(self, content: str, topic_type: str, dtd_path: str) -> str:
+        """Replace the DOCTYPE declaration with a local SYSTEM identifier."""
+        # Strip any existing DOCTYPE
+        stripped = re.sub(
+            r'<!DOCTYPE\s[^>]*(?:"[^"]*"[^>]*)?>',
+            '',
+            content,
+            flags=re.DOTALL,
+        ).strip()
+        doctype = f'<!DOCTYPE {topic_type} SYSTEM "{dtd_path}">'
+        # Insert after the XML declaration if present
+        xml_decl = re.match(r'<\?xml[^?]*\?>', stripped)
+        if xml_decl:
+            pos = xml_decl.end()
+            return stripped[:pos] + '\n' + doctype + stripped[pos:]
+        return doctype + '\n' + stripped
+
+    def _validate_with_xmllint(self, content: str, topic_type: str = "topic") -> Tuple[Optional[bool], Optional[List[str]]]:
+        """Validate against the DITA 1.3 base DTD using xmllint.
+
+        Returns (True, None) on success, (False, errors) on failure,
+        or (None, None) when xmllint / DTD files are unavailable.
+        """
+        if not self._xmllint_available():
+            logger.debug("xmllint not found; skipping DTD validation")
+            return None, None
+
+        dtd_path = self._base_dtd_path()
+        if dtd_path is None:
+            logger.debug("DITA base DTD not found; skipping xmllint validation")
+            return None, None
+
+        validated_xml = self._inject_system_doctype(content, topic_type, dtd_path)
+
+        tmp = tempfile.NamedTemporaryFile(
+            mode='w', suffix='.xml', delete=False, encoding='utf-8'
+        )
+        try:
+            tmp.write(validated_xml)
+            tmp.close()
+
+            result = subprocess.run(
+                ["xmllint", "--valid", "--noout", tmp.name],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+        finally:
+            os.unlink(tmp.name)
+
+        if result.returncode == 0:
+            logger.debug("xmllint DTD validation passed")
+            return True, None
+
+        # Parse errors from stderr
+        errors: List[str] = []
+        for line in result.stderr.splitlines():
+            line = line.strip()
+            if line and ("validity error" in line or "parser error" in line or "error" in line.lower()):
+                errors.append(line)
+        if not errors and result.stderr.strip():
+            errors = [result.stderr.strip()]
+
+        logger.debug(f"xmllint DTD validation failed with {len(errors)} error(s)")
+        return False, errors
     
     def validate_with_dtd(self, content: str, topic_type: Optional[str] = None) -> Tuple[bool, Optional[List[str]]]:
-        """Validate DITA content against DTD."""
-        try:
-            # Parse the document
-            parser = etree.XMLParser(recover=False, no_network=True, resolve_entities=False)
-            doc = etree.fromstring(content.encode('utf-8'), parser)
-            
-            # Auto-detect topic type from root element if not specified
-            if topic_type is None:
+        """Validate DITA content against the DITA 1.3 DTD.
+
+        Uses xmllint when available (most accurate — full DTD content model).
+        Falls back to structural validation when xmllint or the DTD files are absent.
+        """
+        # Auto-detect topic type from root element tag
+        if topic_type is None:
+            try:
+                parser = etree.XMLParser(recover=True, no_network=True, resolve_entities=False)
+                doc = etree.fromstring(content.encode('utf-8'), parser)
                 root_tag = doc.tag
-                # Map root element names to DTD types
-                if root_tag in self.DTD_FILES:
-                    topic_type = root_tag
-                else:
-                    topic_type = "topic"  # Default fallback
-                logger.debug(f"Auto-detected topic type: {topic_type} from root element: {root_tag}")
-            
-            # Get DTD
-            dtd = self._get_dtd(topic_type)
-            if dtd is None:
-                logger.info("DTD not available, falling back to structural validation")
-                # Fall back to structural validation
-                return self.validate_structure(content)
-            
-            # Validate against DTD
-            if not dtd.validate(doc):
-                errors = []
-                for error in dtd.error_log:
-                    errors.append(f"Line {error.line}: {error.message}")
-                logger.debug(f"DTD validation failed with {len(errors)} errors")
-                return False, errors
-            
-            logger.debug("DTD validation passed successfully")
-            return True, None
-            
-        except etree.XMLSyntaxError as e:
-            errors = [f"XML Syntax Error at line {e.lineno}: {e.msg}"]
-            return False, errors
-        except Exception as e:
-            logger.warning(f"DTD validation exception: {e}")
-            return False, [f"Validation error: {str(e)}"]
+                topic_type = root_tag if root_tag in self.DTD_FILES else "topic"
+            except Exception:
+                topic_type = "topic"
+
+        # --- xmllint DTD validation (preferred) ---
+        xmllint_valid, xmllint_errors = self._validate_with_xmllint(content, topic_type)
+        if xmllint_valid is not None:
+            return xmllint_valid, xmllint_errors
+
+        # --- Fallback: structural validation ---
+        logger.info("xmllint unavailable; using structural validation")
+        return self.validate_structure(content)
     
     def validate(self, content: str) -> Tuple[bool, Optional[str]]:
         """Main validation method for backward compatibility."""

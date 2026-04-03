@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y \
     postgresql-client \
     libxml2-dev \
     libxslt-dev \
+    libxml2-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements
