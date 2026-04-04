@@ -83,9 +83,22 @@ class DITAValidatorV2:
                 cls._XMLLINT_AVAILABLE = False
         return cls._XMLLINT_AVAILABLE
 
-    def _base_dtd_path(self) -> Optional[str]:
-        """Return the absolute path to basetopic.dtd, or None if not found."""
-        path = os.path.join(self.dtd_dir, "dtd", "base", "dtd", "basetopic.dtd")
+    # DTD files that work with xmllint (no SVG entity loop).
+    # - topic uses basetopic.dtd because topic.dtd includes svgDomain.mod which
+    #   has an entity reference loop that xmllint cannot resolve.
+    # - concept/task/reference use *-nosvg.dtd variants (generated from the
+    #   originals with SVG domain sections stripped out).
+    _XMLLINT_DTD_FILES = {
+        "topic": "dtd/base/dtd/basetopic.dtd",
+        "concept": "dtd/technicalContent/dtd/concept-nosvg.dtd",
+        "task": "dtd/technicalContent/dtd/task-nosvg.dtd",
+        "reference": "dtd/technicalContent/dtd/reference-nosvg.dtd",
+    }
+
+    def _dtd_path_for_xmllint(self, topic_type: str) -> Optional[str]:
+        """Return the DTD path suitable for xmllint, or None if not found."""
+        relative = self._XMLLINT_DTD_FILES.get(topic_type, self._XMLLINT_DTD_FILES["topic"])
+        path = os.path.join(self.dtd_dir, relative)
         return path if os.path.exists(path) else None
 
     def _inject_system_doctype(self, content: str, topic_type: str, dtd_path: str) -> str:
@@ -115,9 +128,9 @@ class DITAValidatorV2:
             logger.debug("xmllint not found; skipping DTD validation")
             return None, None
 
-        dtd_path = self._base_dtd_path()
+        dtd_path = self._dtd_path_for_xmllint(topic_type)
         if dtd_path is None:
-            logger.debug("DITA base DTD not found; skipping xmllint validation")
+            logger.debug(f"No xmllint-compatible DTD for topic_type={topic_type!r}; skipping")
             return None, None
 
         validated_xml = self._inject_system_doctype(content, topic_type, dtd_path)
@@ -319,42 +332,50 @@ class DITAValidatorV2:
                     errors.append(f"Unexpected namespace attribute '{attr}' on <{elem.tag}>")
     
     def extract_validation_errors(self, content: str) -> Dict[str, Any]:
-        """Extract detailed validation errors for AI correction."""
+        """Extract detailed validation errors for AI correction.
+
+        Uses DTD validation via xmllint when available so the LLM receives
+        precise, line-level DTD errors rather than coarse structural ones.
+        Falls back to structural validation when xmllint or DTDs are absent.
+        """
         errors_dict = {
             "has_errors": False,
             "errors": [],
             "warnings": [],
             "line_errors": {}
         }
-        
+
         try:
-            # Try parsing to get line numbers
+            # Try parsing first — catches malformed XML with line numbers.
             parser = etree.XMLParser(recover=False, no_network=True, resolve_entities=False)
-            doc = etree.fromstring(content.encode('utf-8'), parser)
-            
-            # Run validation
-            valid, errors = self.validate_structure(content)
-            
-            if not valid and errors:
-                errors_dict["has_errors"] = True
-                for error in errors:
-                    # Parse error message for line numbers
-                    line_match = re.search(r'line (\d+)', error, re.IGNORECASE)
-                    if line_match:
-                        line_no = int(line_match.group(1))
-                        if line_no not in errors_dict["line_errors"]:
-                            errors_dict["line_errors"][line_no] = []
-                        errors_dict["line_errors"][line_no].append(error)
-                    else:
-                        errors_dict["errors"].append(error)
-                        
+            etree.fromstring(content.encode('utf-8'), parser)
         except etree.XMLSyntaxError as e:
             errors_dict["has_errors"] = True
-            if hasattr(e, 'lineno'):
+            if hasattr(e, 'lineno') and e.lineno:
                 errors_dict["line_errors"][e.lineno] = [f"XML Syntax Error: {e.msg}"]
             else:
                 errors_dict["errors"].append(f"XML Syntax Error: {e.msg}")
-        
+            return errors_dict
+
+        # Use DTD validation (xmllint) when available for precise error messages;
+        # fall back to structural validation.
+        valid, errors = self.validate_with_dtd(content)
+
+        if not valid and errors:
+            errors_dict["has_errors"] = True
+            for error in errors:
+                # xmllint errors include "filename:LINE:" prefix — extract line number.
+                line_match = re.search(r':(\d+):', error)
+                if not line_match:
+                    line_match = re.search(r'line (\d+)', error, re.IGNORECASE)
+                if line_match:
+                    line_no = int(line_match.group(1))
+                    if line_no not in errors_dict["line_errors"]:
+                        errors_dict["line_errors"][line_no] = []
+                    errors_dict["line_errors"][line_no].append(error)
+                else:
+                    errors_dict["errors"].append(error)
+
         return errors_dict
     
     def generate_correction_prompt(self, content: str, errors: Dict[str, Any]) -> str:
