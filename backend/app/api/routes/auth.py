@@ -46,6 +46,12 @@ async def register(
     db: Session = Depends(get_db)
 ):
     """Register a new user with organization."""
+    if settings.sso_only:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Registration is disabled. Please sign in using SSO."
+        )
+
     # Check if user exists
     existing_user = db.query(User).filter(User.email == user_data.email).first()
     if existing_user:

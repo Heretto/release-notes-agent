@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     def smtp_configured(self) -> bool:
         return bool(self.smtp_host and self.smtp_from_email)
     # SSO / OAuth
+    # When True, the /auth/register endpoint is disabled and the frontend hides
+    # the registration form, requiring all users to authenticate via SSO.
+    sso_only: bool = False
+
     google_oauth_client_id: Optional[str] = None  # Google Sign-In: client ID only, no secret needed
     microsoft_oauth_client_id: Optional[str] = None
     microsoft_oauth_client_secret: Optional[str] = None

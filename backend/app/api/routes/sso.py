@@ -185,6 +185,7 @@ async def get_sso_providers():
     resp: dict = {
         "google": google_enabled,
         "microsoft": microsoft_enabled,
+        "sso_only": settings.sso_only,
     }
     # Frontend needs the client ID to render the Google Sign-In button
     if google_enabled:

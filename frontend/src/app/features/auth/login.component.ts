@@ -127,7 +127,7 @@ import { environment } from '../../../environments/environment';
                 </span>
               </button>
 
-              <button mat-button type="button" (click)="switchToRegister()">
+              <button mat-button type="button" (click)="switchToRegister()" *ngIf="!ssoOnly">
                 {{ isRegisterMode ? 'Already have an account?' : 'Create Account' }}
               </button>
             </div>
@@ -266,6 +266,7 @@ export class LoginComponent implements OnInit, AfterViewInit {
 
   googleEnabled = false;
   microsoftEnabled = false;
+  ssoOnly = false;
 
   ngOnInit(): void {
     this.returnUrl = this.route.snapshot.queryParams['returnUrl'];
@@ -287,6 +288,7 @@ export class LoginComponent implements OnInit, AfterViewInit {
       next: (providers) => {
         this.googleEnabled = providers.google;
         this.microsoftEnabled = providers.microsoft;
+        this.ssoOnly = providers.sso_only ?? false;
         if (providers.google && providers.google_client_id) {
           this.googleClientId = providers.google_client_id;
           this.loadGoogleScript();
