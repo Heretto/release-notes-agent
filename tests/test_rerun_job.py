@@ -5,17 +5,14 @@ Test the job rerun functionality.
 
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 import requests
 import json
 import time
 from uuid import uuid4
 
-# Configuration
-API_BASE_URL = "http://localhost:8000/api/v1"
-TEST_EMAIL = "admin@example.com"
-TEST_PASSWORD = "admin123"  # Update with actual password
+from config import API_BASE_URL, TEST_EMAIL, TEST_PASSWORD, ensure_test_account
 
 def test_rerun_job():
     """Test the job rerun functionality."""

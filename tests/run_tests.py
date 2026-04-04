@@ -78,6 +78,57 @@ class TestRunner:
             print(f" ({errors} failed)", end="")
         print()
         
+    def run_pytest_docker(self, container_test_path: str, description: str) -> bool:
+        """Run pytest tests inside the backend Docker container.
+
+        ``container_test_path`` is the path relative to ``/app`` inside the
+        container (i.e. relative to the ``backend/`` directory on the host).
+        """
+        project_root = self.tests_dir.parent
+        compose_file = project_root / "docker-compose.yml"
+
+        print(f"\n{'='*60}")
+        print(f"Running: {description} (pytest / Docker)")
+        print(f"Path (container): {container_test_path}")
+        print('='*60)
+
+        try:
+            result = subprocess.run(
+                [
+                    "docker", "compose",
+                    "-f", str(compose_file),
+                    "exec", "backend",
+                    "python", "-m", "pytest", container_test_path, "-v", "--tb=short",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+
+            if result.stdout:
+                print(result.stdout)
+            if result.stderr:
+                # docker compose writes its own warnings to stderr; suppress them
+                filtered = "\n".join(
+                    line for line in result.stderr.splitlines()
+                    if "level=warning" not in line and line.strip()
+                )
+                if filtered:
+                    print("STDERR:", filtered)
+
+            success = result.returncode == 0
+            self.test_results[description] = "✓ PASSED" if success else "✗ FAILED"
+            return success
+
+        except subprocess.TimeoutExpired:
+            print("✗ Test timed out after 300 seconds")
+            self.test_results[description] = "✗ TIMEOUT"
+            return False
+        except Exception as e:
+            print(f"✗ Error running test: {e}")
+            self.test_results[description] = "✗ ERROR"
+            return False
+
     def run_python_test(self, test_file: Path, description: str) -> bool:
         """Run a Python test file and return success status."""
         print(f"\n{'='*60}")
@@ -162,11 +213,16 @@ class TestRunner:
             pre_test_job_ids = None
 
         # Define test order and descriptions
-        tests = [
-            # Unit Tests
+        # Each entry is (relative path from tests/, description)
+        script_tests = [
+            # Backend unit tests (pytest, run inside Docker container)
+            # These run first so failures are visible before slower integration tests.
+
+            # Unit Tests (plain Python / unittest)
             ("unit/test_dita_validation.py", "DITA Validation"),
             ("unit/test_settings.py", "Settings and Configuration"),
             ("unit/services/test_valid_models.py", "AI Model Names Validation"),
+            ("test_dtd_validation.py", "DTD Validation System Check"),
 
             # API Tests
             ("api/test_credentials.py", "Credentials CRUD Operations"),
@@ -184,15 +240,31 @@ class TestRunner:
             ("integration/ai/test_configured_ai.py", "Configured AI Services"),
             ("integration/test_job_execution.py", "Job Execution"),
             ("integration/test_dita_validation_e2e.py", "DITA Validation End-to-End"),
+            ("test_rerun_job.py", "Job Rerun Functionality"),
+        ]
 
-            # Utilities Tests (optional, run if requested)
-            # ("utilities/database/test_job_model_inspection.py", "Database Inspection"),
+        # pytest tests that run inside the backend Docker container.
+        # Paths are relative to /app inside the container (= backend/ on the host).
+        pytest_docker_tests = [
+            ("tests/unit/test_csrf_middleware.py", "CSRF Middleware"),
+            ("tests/unit/test_dita_validator.py", "DITA Validator (DTD/xmllint)"),
+            ("tests/unit/test_dita_fixture_validation.py", "DITA Fixture Validation Cases"),
+            ("tests/test_user_organization_registration.py", "User Organization Registration"),
+            ("tests/integration/test_dita_correction_service.py", "DITA Correction Loop"),
         ]
 
         passed = 0
         failed = 0
 
-        for test_path, description in tests:
+        # Run pytest-in-Docker tests
+        for container_path, description in pytest_docker_tests:
+            if self.run_pytest_docker(container_path, description):
+                passed += 1
+            else:
+                failed += 1
+
+        # Run plain Python script tests
+        for test_path, description in script_tests:
             test_file = self.tests_dir / test_path
             if test_file.exists():
                 if self.run_python_test(test_file, description):

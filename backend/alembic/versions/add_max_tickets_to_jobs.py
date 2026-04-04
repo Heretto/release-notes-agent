@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = 'add_max_tickets'
-down_revision = None
+down_revision = 'add_ai_credential_to_jobs'
 branch_labels = None
 depends_on = None
 

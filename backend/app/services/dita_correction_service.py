@@ -152,6 +152,23 @@ Return ONLY the corrected DITA XML. Do not include any explanation, commentary, 
         
         return prompt
     
+    def _detect_topic_type(self, content: str) -> str:
+        """Return the root DITA element name (topic, concept, task, reference, …)."""
+        try:
+            from lxml import etree
+            parser = etree.XMLParser(recover=True, no_network=True, resolve_entities=False)
+            doc = etree.fromstring(content.encode("utf-8"), parser)
+            tag = doc.tag
+            if tag in self.validator.DTD_FILES:
+                return tag
+        except Exception:
+            pass
+        # Fallback: scan for the first recognised root open tag
+        for t in ("concept", "task", "reference", "topic"):
+            if f"<{t}" in content:
+                return t
+        return "topic"
+
     async def _get_ai_correction(self, prompt: str) -> str:
         """Get AI correction for DITA content."""
         
@@ -228,18 +245,45 @@ Never add markdown formatting or explanations - return only pure XML."""
         # Final attempt: regenerate with stricter prompt if we have the original
         if original_prompt and max_cycles > 0:
             validation_log.append("Final attempt: Regenerating with stricter DITA requirements")
-            
-            enhanced_prompt = original_prompt + """
+
+            # Detect the topic type from the current content so the regeneration
+            # prompt uses the correct DOCTYPE and root element.
+            topic_type = self._detect_topic_type(content)
+            doctype_hint, root_open, body_element, root_close = {
+                "concept": (
+                    '<!DOCTYPE concept PUBLIC "-//OASIS//DTD DITA Concept//EN" "concept.dtd">',
+                    '<concept id="valid_id_here">',
+                    "<conbody>\n    <!-- Your content sections here -->\n  </conbody>",
+                    "</concept>",
+                ),
+                "task": (
+                    '<!DOCTYPE task PUBLIC "-//OASIS//DTD DITA Task//EN" "task.dtd">',
+                    '<task id="valid_id_here">',
+                    "<taskbody>\n    <!-- Your steps here -->\n  </taskbody>",
+                    "</task>",
+                ),
+                "reference": (
+                    '<!DOCTYPE reference PUBLIC "-//OASIS//DTD DITA Reference//EN" "reference.dtd">',
+                    '<reference id="valid_id_here">',
+                    "<refbody>\n    <!-- Your reference sections here -->\n  </refbody>",
+                    "</reference>",
+                ),
+            }.get(topic_type, (
+                '<!DOCTYPE topic PUBLIC "-//OASIS//DTD DITA Topic//EN" "topic.dtd">',
+                '<topic id="valid_id_here">',
+                "<body>\n    <!-- Your content sections here -->\n  </body>",
+                "</topic>",
+            ))
+
+            enhanced_prompt = original_prompt + f"""
 
 CRITICAL REQUIREMENT: Generate ONLY valid DITA 1.3 XML with this exact structure:
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE topic PUBLIC "-//OASIS//DTD DITA Topic//EN" "topic.dtd">
-<topic id="valid_id_here">
+{doctype_hint}
+{root_open}
   <title>Title Here</title>
-  <body>
-    <!-- Your content sections here -->
-  </body>
-</topic>
+  {body_element}
+{root_close}
 
 Ensure all content is in valid DITA elements. No markdown, no plain text outside of elements."""
             
