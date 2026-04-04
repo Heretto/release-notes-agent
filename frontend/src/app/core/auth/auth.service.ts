@@ -147,5 +147,18 @@ export class AuthService {
       token,
       new_password: newPassword,
     });
+    
+  getSSOProviders(): Observable<{google: boolean, microsoft: boolean, google_client_id?: string}> {
+    return this.http.get<{google: boolean, microsoft: boolean, google_client_id?: string}>(`${environment.apiUrl}/auth/sso/providers`);
+  }
+
+  loginWithGoogleToken(credential: string): Observable<LoginResponse> {
+    return this.http.post<LoginResponse>(`${environment.apiUrl}/auth/sso/google/token`, {
+      credential,
+    }).pipe(
+      tap((res) => {
+        this.setAuthState(res.expires_at);
+      })
+    );
   }
 }

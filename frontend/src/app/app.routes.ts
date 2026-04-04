@@ -21,6 +21,10 @@ export const routes: Routes = [
     path: 'reset-password',
     loadComponent: () => import('./features/auth/reset-password.component').then(m => m.ResetPasswordComponent)
   },
+  {
+    path: 'auth/sso/complete',
+    loadComponent: () => import('./features/auth/sso-callback.component').then(m => m.SSOCallbackComponent)
+  },
   
   // Protected routes (with layout)
   {

@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, AfterViewInit, inject, NgZone, ElementRef, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, Validators, ReactiveFormsModule } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
@@ -12,6 +12,7 @@ import { MatDividerModule } from '@angular/material/divider';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { AuthService, UserOrganizationInfo } from '../../core/auth/auth.service';
 import { OrganizationService } from '../../core/services/organization.service';
+import { environment } from '../../../environments/environment';
 
 @Component({
   selector: 'app-login',
@@ -64,6 +65,21 @@ import { OrganizationService } from '../../core/services/organization.service';
         </mat-card-header>
 
         <mat-card-content>
+          <!-- SSO Buttons -->
+          <div class="sso-buttons" *ngIf="googleEnabled || microsoftEnabled">
+            <div #googleBtnContainer *ngIf="googleEnabled" class="google-btn-wrapper"></div>
+            <button mat-stroked-button class="sso-btn" type="button"
+                    *ngIf="microsoftEnabled" (click)="loginWithMicrosoft()">
+              <mat-icon>login</mat-icon>
+              Continue with Microsoft
+            </button>
+            <div class="sso-divider">
+              <mat-divider></mat-divider>
+              <span class="sso-divider-text">or sign in with email</span>
+              <mat-divider></mat-divider>
+            </div>
+          </div>
+
           <form [formGroup]="loginForm" (ngSubmit)="onSubmit()">
             <mat-form-field appearance="outline" class="full-width" *ngIf="isRegisterMode">
               <mat-label>Organization Name</mat-label>
@@ -192,16 +208,52 @@ import { OrganizationService } from '../../core/services/organization.service';
       color: #667eea;
       text-decoration: none;
       font-size: 14px;
+    .sso-buttons {
+      margin-bottom: 16px;
+    }
+
+    .google-btn-wrapper {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 8px;
+    }
+
+    .sso-btn {
+      width: 100%;
+      margin-bottom: 8px;
+      height: 42px;
+    }
+
+    .sso-divider {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 16px 0;
+    }
+
+    .sso-divider mat-divider {
+      flex: 1;
+    }
+
+    .sso-divider-text {
+      color: rgba(0, 0, 0, 0.38);
+      font-size: 13px;
+      white-space: nowrap;
     }
   `]
 })
-export class LoginComponent implements OnInit {
+export class LoginComponent implements OnInit, AfterViewInit {
   private fb = inject(FormBuilder);
   private route = inject(ActivatedRoute);
   private authService = inject(AuthService);
   private organizationService = inject(OrganizationService);
+  private ngZone = inject(NgZone);
+
+  @ViewChild('googleBtnContainer') googleBtnContainer?: ElementRef;
 
   private returnUrl: string | undefined;
+  private googleClientId: string | null = null;
+  private googleScriptLoaded = false;
 
   hidePassword = true;
   loading = false;
@@ -210,8 +262,102 @@ export class LoginComponent implements OnInit {
   showOrgSelection = false;
   userOrganizations: UserOrganizationInfo[] = [];
 
+  googleEnabled = false;
+  microsoftEnabled = false;
+
   ngOnInit(): void {
     this.returnUrl = this.route.snapshot.queryParams['returnUrl'];
+
+    // Check for SSO error from redirect
+    const ssoError = this.route.snapshot.queryParams['sso_error'];
+    if (ssoError) {
+      const messages: Record<string, string> = {
+        token_exchange_failed: 'SSO sign-in failed. Please try again.',
+        no_user_info: 'Could not retrieve your account information from the provider.',
+        email_not_verified: 'Your email is not verified with the SSO provider.',
+        session_failed: 'SSO session could not be established. Please try again.',
+      };
+      this.errorMessage = messages[ssoError] || 'SSO sign-in failed. Please try again.';
+    }
+
+    // Discover available SSO providers
+    this.authService.getSSOProviders().subscribe({
+      next: (providers) => {
+        this.googleEnabled = providers.google;
+        this.microsoftEnabled = providers.microsoft;
+        if (providers.google && providers.google_client_id) {
+          this.googleClientId = providers.google_client_id;
+          this.loadGoogleScript();
+        }
+      },
+      error: () => {} // SSO buttons just won't show
+    });
+  }
+
+  ngAfterViewInit(): void {
+    // Google button will be rendered once both the script and the container are ready
+    this.tryRenderGoogleButton();
+  }
+
+  private loadGoogleScript(): void {
+    if (this.googleScriptLoaded || document.getElementById('google-gsi-script')) {
+      this.googleScriptLoaded = true;
+      this.tryRenderGoogleButton();
+      return;
+    }
+    const script = document.createElement('script');
+    script.id = 'google-gsi-script';
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.onload = () => {
+      this.googleScriptLoaded = true;
+      this.tryRenderGoogleButton();
+    };
+    document.head.appendChild(script);
+  }
+
+  private tryRenderGoogleButton(): void {
+    if (!this.googleScriptLoaded || !this.googleClientId || !this.googleBtnContainer) {
+      return;
+    }
+    const google = (window as any).google;
+    if (!google?.accounts?.id) {
+      return;
+    }
+    google.accounts.id.initialize({
+      client_id: this.googleClientId,
+      callback: (response: any) => this.handleGoogleCredential(response),
+      auto_select: false,
+    });
+    google.accounts.id.renderButton(this.googleBtnContainer.nativeElement, {
+      type: 'standard',
+      theme: 'outline',
+      size: 'large',
+      width: 360,
+      text: 'continue_with',
+    });
+  }
+
+  private handleGoogleCredential(response: any): void {
+    // Google Identity Services calls this outside Angular zone
+    this.ngZone.run(() => {
+      this.loading = true;
+      this.errorMessage = '';
+      this.authService.loginWithGoogleToken(response.credential).subscribe({
+        next: () => {
+          this.loading = false;
+          this.authService.navigateToDashboard(this.returnUrl);
+        },
+        error: (err) => {
+          this.errorMessage = err.error?.detail || 'Google sign-in failed. Please try again.';
+          this.loading = false;
+        },
+      });
+    });
+  }
+
+  loginWithMicrosoft(): void {
+    window.location.href = `${environment.apiUrl}/auth/sso/microsoft?return_url=${encodeURIComponent(this.returnUrl || '/dashboard')}`;
   }
 
   loginForm: FormGroup = this.fb.group({

@@ -34,6 +34,10 @@ pydantic==2.5.2
 pydantic-settings==2.1.0
 email-validator==2.1.0
 
+# OAuth / SSO
+authlib==1.4.1
+itsdangerous==2.2.0
+
 # Rate limiting
 slowapi==0.1.9
 

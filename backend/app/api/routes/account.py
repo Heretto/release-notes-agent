@@ -24,6 +24,8 @@ class AccountResponse(BaseModel):
     organization_role: Optional[str] = None
     organization_id: Optional[str] = None
     organization_name: Optional[str] = None
+    oauth_provider: Optional[str] = None
+    has_password: bool = True
 
 @router.get("/me", response_model=AccountResponse)
 async def get_account_info(
@@ -37,7 +39,9 @@ async def get_account_info(
         email=current_user.email,
         is_active=current_user.is_active,
         is_superuser=current_user.is_superuser,
-        created_at=current_user.created_at.isoformat()
+        created_at=current_user.created_at.isoformat(),
+        oauth_provider=current_user.oauth_provider,
+        has_password=current_user.password_hash is not None,
     )
 
     # Use the org from the JWT token context (the user's current org)
@@ -57,19 +61,20 @@ async def update_account(
 ):
     """Update current user account information."""
     
-    # If updating password, verify current password
+    # If updating password, verify current password (unless SSO-only user setting one for the first time)
     if account_data.new_password:
-        if not account_data.current_password:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Current password is required to set a new password"
-            )
-        
-        if not verify_password(account_data.current_password, current_user.password_hash):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Current password is incorrect"
-            )
+        if current_user.password_hash:
+            if not account_data.current_password:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Current password is required to set a new password"
+                )
+
+            if not verify_password(account_data.current_password, current_user.password_hash):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Current password is incorrect"
+                )
         
         # Validate new password strength
         if len(account_data.new_password) < 8:

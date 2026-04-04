@@ -109,49 +109,49 @@ async def accept_invitation_new_user(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Passwords do not match"
         )
-    
+
     # Validate password strength
     if len(body.password) < 8:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Password must be at least 8 characters long"
         )
-    
+
     # Get invitation
     invitation = db.query(OrganizationInvitation).filter(
         OrganizationInvitation.token == token,
         OrganizationInvitation.accepted_at.is_(None)
     ).first()
-    
+
     if not invitation:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Invalid or expired invitation"
         )
-    
+
     # Check if invitation has expired
     if invitation.expires_at < datetime.now(timezone.utc):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="This invitation has expired"
         )
-    
+
     # Get organization
     organization = db.query(Organization).filter(
         Organization.id == invitation.organization_id
     ).first()
-    
+
     if not organization:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Organization not found"
         )
-    
+
     # Check if user exists
     user = db.query(User).filter(
         User.email == invitation.email
     ).first()
-    
+
     if not user:
         # Create new user
         user = User(
@@ -224,37 +224,37 @@ async def accept_invitation_existing_user(
 ):
     """Accept invitation for existing users (requires password verification)."""
     from app.core.security import verify_password
-    
+
     # Get invitation
     invitation = db.query(OrganizationInvitation).filter(
         OrganizationInvitation.token == token,
         OrganizationInvitation.accepted_at.is_(None)
     ).first()
-    
+
     if not invitation:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Invalid or expired invitation"
         )
-    
+
     # Check if invitation has expired
     if invitation.expires_at < datetime.now(timezone.utc):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="This invitation has expired"
         )
-    
+
     # Get user
     user = db.query(User).filter(
         User.email == invitation.email
     ).first()
-    
+
     if not user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Please use the new user registration flow"
         )
-    
+
     # Verify password
     if not verify_password(body.password, user.password_hash):
         raise HTTPException(
