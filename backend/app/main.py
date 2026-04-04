@@ -34,7 +34,8 @@ app = FastAPI(
     title="AI Release Notes Agent API",
     description="Automated DITA release notes generation from Jira tickets",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
+    redirect_slashes=False,
 )
 
 # Rate limiting

@@ -11,7 +11,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers
 revision = 'add_ai_credential_to_jobs'
-down_revision = None
+down_revision = 'migrate_existing_users_to_organizations'
 branch_labels = None
 depends_on = None
 

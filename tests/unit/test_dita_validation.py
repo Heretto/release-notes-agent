@@ -197,7 +197,12 @@ class TestDITAValidation(unittest.TestCase):
         errors = self.validator.extract_validation_errors(invalid_dita)
         
         self.assertTrue(errors["has_errors"], "Should have errors")
-        self.assertTrue(len(errors["errors"]) > 0, "Should have error list")
+        # DTD validation via xmllint emits line-numbered errors into line_errors;
+        # structural validation puts them in errors.  Either is acceptable.
+        all_errors = errors["errors"] + [
+            e for errs in errors["line_errors"].values() for e in errs
+        ]
+        self.assertTrue(len(all_errors) > 0, "Should have at least one error (in errors or line_errors)")
     
     def test_nested_sections(self):
         """Test validation of nested sections."""

@@ -11,8 +11,6 @@ NC='\033[0m' # No Color
 
 # Configuration
 PROJECT_NAME="release-notes-agent"
-DEPLOY_USER="appuser"
-DEPLOY_PATH="/home/$DEPLOY_USER/app"
 
 echo -e "${GREEN}Starting deployment of $PROJECT_NAME${NC}"
 
@@ -29,8 +27,8 @@ if ! command_exists docker; then
     exit 1
 fi
 
-if ! command_exists docker-compose; then
-    echo -e "${RED}Docker Compose is not installed. Please install Docker Compose first.${NC}"
+if ! docker compose version >/dev/null 2>&1; then
+    echo -e "${RED}Docker Compose plugin is not installed. Please install it first.${NC}"
     exit 1
 fi
 
@@ -53,6 +51,7 @@ required_vars=(
     "APP_SECRET_KEY"
     "JWT_SECRET_KEY"
     "ENCRYPTION_KEY"
+    "DOMAIN"
 )
 
 for var in "${required_vars[@]}"; do
@@ -71,6 +70,13 @@ mkdir -p deployment/certbot/conf
 mkdir -p backend/logs
 mkdir -p backend/uploads
 
+# Initialise nginx config from template if it doesn't exist yet
+# (nginx-production.conf is gitignored; setup-ssl.sh appends the HTTPS block to it)
+if [ ! -f "deployment/nginx-production.conf" ]; then
+    echo -e "${YELLOW}Initialising nginx config from template...${NC}"
+    cp deployment/nginx-production.conf.template deployment/nginx-production.conf
+fi
+
 # Pull latest code (optional)
 if [ "$1" = "--pull" ]; then
     echo -e "${YELLOW}Pulling latest code from git...${NC}"
@@ -79,22 +85,22 @@ fi
 
 # Build images
 echo -e "${YELLOW}Building Docker images...${NC}"
-docker-compose -f docker-compose.production.yml build
+docker compose -f docker-compose.production.yml --env-file .env.production build
 
 # Run database migrations
-echo -e "${YELLOW}Running database migrations...${NC}"
-docker-compose -f docker-compose.production.yml up -d postgres
+echo -e "${YELLOW}Starting database...${NC}"
+docker compose -f docker-compose.production.yml --env-file .env.production up -d postgres
 sleep 5  # Wait for postgres to be ready
 
 # Check if this is first deployment
-if docker-compose -f docker-compose.production.yml ps | grep -q "release-notes-backend"; then
+if docker compose -f docker-compose.production.yml --env-file .env.production ps | grep -q "release-notes-backend"; then
     echo -e "${YELLOW}Stopping existing services...${NC}"
-    docker-compose -f docker-compose.production.yml stop
+    docker compose -f docker-compose.production.yml --env-file .env.production stop
 fi
 
-# Start services
+# Start services (nginx may fail on first deploy if no cert yet — that's OK)
 echo -e "${YELLOW}Starting services...${NC}"
-docker-compose -f docker-compose.production.yml up -d
+docker compose -f docker-compose.production.yml --env-file .env.production up -d
 
 # Wait for services to be healthy
 echo -e "${YELLOW}Waiting for services to be healthy...${NC}"
@@ -102,23 +108,33 @@ sleep 10
 
 # Check service status
 echo -e "${YELLOW}Checking service status...${NC}"
-docker-compose -f docker-compose.production.yml ps
+docker compose -f docker-compose.production.yml --env-file .env.production ps
 
 # Run database migrations in backend container
 echo -e "${YELLOW}Applying database migrations...${NC}"
-docker-compose -f docker-compose.production.yml exec -T backend alembic upgrade head || true
+docker compose -f docker-compose.production.yml --env-file .env.production exec -T backend alembic upgrade head || true
 
-# Show logs
+# Provision SSL certificate if not already present
+CERT_PATH="deployment/certbot/conf/live/$DOMAIN"
+if [ -f "$CERT_PATH/fullchain.pem" ]; then
+    echo -e "${GREEN}SSL certificate already exists for $DOMAIN${NC}"
+else
+    echo -e "${YELLOW}Provisioning SSL certificate for $DOMAIN...${NC}"
+    bash deployment/setup-ssl.sh
+fi
+
+# Restart nginx to pick up the SSL config
+echo -e "${YELLOW}Restarting nginx with SSL...${NC}"
+docker compose -f docker-compose.production.yml --env-file .env.production up -d nginx
+
+# Show status
 echo -e "${GREEN}Deployment completed!${NC}"
-echo -e "${YELLOW}Showing recent logs...${NC}"
-docker-compose -f docker-compose.production.yml logs --tail=50
+docker compose -f docker-compose.production.yml --env-file .env.production ps
 
-echo -e "${GREEN}Application is now running!${NC}"
-echo -e "Backend API: http://localhost:8000"
-echo -e "Frontend: http://localhost"
+echo -e "${GREEN}Application is running at https://$DOMAIN${NC}"
 echo ""
 echo -e "${YELLOW}Useful commands:${NC}"
-echo "  View logs: docker-compose -f docker-compose.production.yml logs -f"
-echo "  Stop services: docker-compose -f docker-compose.production.yml stop"
-echo "  Restart services: docker-compose -f docker-compose.production.yml restart"
-echo "  View status: docker-compose -f docker-compose.production.yml ps"
+echo "  View logs: docker compose -f docker-compose.production.yml --env-file .env.production logs -f"
+echo "  Stop:      docker compose -f docker-compose.production.yml --env-file .env.production stop"
+echo "  Restart:   docker compose -f docker-compose.production.yml --env-file .env.production restart"
+echo "  Status:    docker compose -f docker-compose.production.yml --env-file .env.production ps"

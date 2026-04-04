@@ -41,5 +41,8 @@ itsdangerous==2.2.0
 # Rate limiting
 slowapi==0.1.9
 
+# Email
+aiosmtplib==3.0.2
+
 # Utilities
 python-dateutil==2.8.2

@@ -256,7 +256,7 @@ async def accept_invitation_existing_user(
         )
 
     # Verify password
-    if not user.password_hash or not verify_password(body.password, user.password_hash):
+    if not verify_password(body.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid password"

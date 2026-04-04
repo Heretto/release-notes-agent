@@ -39,8 +39,8 @@ class DITACorrectionService:
         current_content = content
         
         for attempt in range(1, max_attempts + 1):
-            # Validate current content
-            valid, errors = self.validator.validate_structure(current_content)
+            # Validate current content (DTD if available, structural otherwise)
+            valid, errors = self.validator.validate_with_dtd(current_content)
             
             if valid:
                 correction_log.append(f"Attempt {attempt}: Validation successful")
@@ -63,7 +63,7 @@ class DITACorrectionService:
                 corrected_content = await self._get_ai_correction(correction_prompt)
                 
                 # Validate the correction
-                valid_after, errors_after = self.validator.validate_structure(corrected_content)
+                valid_after, errors_after = self.validator.validate_with_dtd(corrected_content)
                 
                 if valid_after:
                     correction_log.append(f"Attempt {attempt}: AI correction successful")
@@ -82,7 +82,7 @@ class DITACorrectionService:
         # Final validation attempt with auto-fixes
         correction_log.append("Applying automatic fixes as final attempt")
         final_content = self.validator.auto_fix_common_issues(current_content)
-        valid_final, _ = self.validator.validate_structure(final_content)
+        valid_final, _ = self.validator.validate_with_dtd(final_content)
         
         return final_content, valid_final, correction_log
     
@@ -152,6 +152,23 @@ Return ONLY the corrected DITA XML. Do not include any explanation, commentary, 
         
         return prompt
     
+    def _detect_topic_type(self, content: str) -> str:
+        """Return the root DITA element name (topic, concept, task, reference, …)."""
+        try:
+            from lxml import etree
+            parser = etree.XMLParser(recover=True, no_network=True, resolve_entities=False)
+            doc = etree.fromstring(content.encode("utf-8"), parser)
+            tag = doc.tag
+            if tag in self.validator.DTD_FILES:
+                return tag
+        except Exception:
+            pass
+        # Fallback: scan for the first recognised root open tag
+        for t in ("concept", "task", "reference", "topic"):
+            if f"<{t}" in content:
+                return t
+        return "topic"
+
     async def _get_ai_correction(self, prompt: str) -> str:
         """Get AI correction for DITA content."""
         
@@ -198,9 +215,9 @@ Never add markdown formatting or explanations - return only pure XML."""
         # First, try automatic fixes
         validation_log.append("Applying automatic fixes...")
         content = self.validator.auto_fix_common_issues(content)
-        
-        # Validate
-        valid, errors = self.validator.validate_structure(content)
+
+        # Validate (DTD if available, structural otherwise)
+        valid, errors = self.validator.validate_with_dtd(content)
         
         if valid:
             validation_log.append("Content valid after automatic fixes")
@@ -228,18 +245,45 @@ Never add markdown formatting or explanations - return only pure XML."""
         # Final attempt: regenerate with stricter prompt if we have the original
         if original_prompt and max_cycles > 0:
             validation_log.append("Final attempt: Regenerating with stricter DITA requirements")
-            
-            enhanced_prompt = original_prompt + """
+
+            # Detect the topic type from the current content so the regeneration
+            # prompt uses the correct DOCTYPE and root element.
+            topic_type = self._detect_topic_type(content)
+            doctype_hint, root_open, body_element, root_close = {
+                "concept": (
+                    '<!DOCTYPE concept PUBLIC "-//OASIS//DTD DITA Concept//EN" "concept.dtd">',
+                    '<concept id="valid_id_here">',
+                    "<conbody>\n    <!-- Your content sections here -->\n  </conbody>",
+                    "</concept>",
+                ),
+                "task": (
+                    '<!DOCTYPE task PUBLIC "-//OASIS//DTD DITA Task//EN" "task.dtd">',
+                    '<task id="valid_id_here">',
+                    "<taskbody>\n    <!-- Your steps here -->\n  </taskbody>",
+                    "</task>",
+                ),
+                "reference": (
+                    '<!DOCTYPE reference PUBLIC "-//OASIS//DTD DITA Reference//EN" "reference.dtd">',
+                    '<reference id="valid_id_here">',
+                    "<refbody>\n    <!-- Your reference sections here -->\n  </refbody>",
+                    "</reference>",
+                ),
+            }.get(topic_type, (
+                '<!DOCTYPE topic PUBLIC "-//OASIS//DTD DITA Topic//EN" "topic.dtd">',
+                '<topic id="valid_id_here">',
+                "<body>\n    <!-- Your content sections here -->\n  </body>",
+                "</topic>",
+            ))
+
+            enhanced_prompt = original_prompt + f"""
 
 CRITICAL REQUIREMENT: Generate ONLY valid DITA 1.3 XML with this exact structure:
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE topic PUBLIC "-//OASIS//DTD DITA Topic//EN" "topic.dtd">
-<topic id="valid_id_here">
+{doctype_hint}
+{root_open}
   <title>Title Here</title>
-  <body>
-    <!-- Your content sections here -->
-  </body>
-</topic>
+  {body_element}
+{root_close}
 
 Ensure all content is in valid DITA elements. No markdown, no plain text outside of elements."""
             
@@ -256,7 +300,7 @@ Ensure all content is in valid DITA elements. No markdown, no plain text outside
                 
                 # Apply fixes and validate
                 content = self.validator.auto_fix_common_issues(content)
-                valid, _ = self.validator.validate_structure(content)
+                valid, _ = self.validator.validate_with_dtd(content)
                 
                 if valid:
                     validation_log.append("Successfully regenerated valid DITA content")

@@ -12,9 +12,32 @@ import pytest
 from uuid import uuid4
 from datetime import datetime, timezone
 
+from starlette.requests import Request
+from starlette.datastructures import Headers
+
 from app.models.database import User, Organization, OrganizationMember, OrganizationRole
 from app.models.schemas import UserCreate
 from app.api.routes.auth import register, create_slug
+
+
+def _fake_request() -> Request:
+    """Minimal starlette Request for tests that call route handlers directly."""
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/api/v1/auth/register",
+        "query_string": b"",
+        "headers": [],
+        "client": ("127.0.0.1", 12345),
+    }
+    return Request(scope)
+
+
+@pytest.fixture(autouse=True)
+def _disable_rate_limiting(monkeypatch):
+    """Disable slowapi rate limiting so unit tests can call handlers directly."""
+    from app.core.rate_limit import limiter
+    monkeypatch.setattr(limiter, "enabled", False)
 
 
 class FakeDBSession:
@@ -69,7 +92,7 @@ async def test_register_creates_organization():
         organization_name="My Company"
     )
 
-    result = await register(user_data, db)
+    result = await register(_fake_request(), user_data, db)
 
     users = [o for o in db.added if isinstance(o, User)]
     orgs = [o for o in db.added if isinstance(o, Organization)]
@@ -100,7 +123,7 @@ async def test_register_creates_default_org_name_from_email():
         password="securepassword123"
     )
 
-    result = await register(user_data, db)
+    result = await register(_fake_request(), user_data, db)
 
     orgs = [o for o in db.added if isinstance(o, Organization)]
     assert len(orgs) == 1
@@ -117,7 +140,7 @@ async def test_register_sets_current_organization_id():
         organization_name="Test Org"
     )
 
-    result = await register(user_data, db)
+    result = await register(_fake_request(), user_data, db)
 
     users = [o for o in db.added if isinstance(o, User)]
     orgs = [o for o in db.added if isinstance(o, Organization)]
@@ -145,7 +168,7 @@ async def test_register_creates_org_membership_record():
         organization_name="Member Corp"
     )
 
-    result = await register(user_data, db)
+    result = await register(_fake_request(), user_data, db)
 
     members = [o for o in db.added if isinstance(o, OrganizationMember)]
     assert len(members) == 1, (
@@ -172,7 +195,7 @@ async def test_register_creates_valid_slug():
         organization_name="My Awesome Company! (2024)"
     )
 
-    result = await register(user_data, db)
+    result = await register(_fake_request(), user_data, db)
 
     orgs = [o for o in db.added if isinstance(o, Organization)]
     assert len(orgs) == 1
@@ -255,22 +278,28 @@ class TestRegisterIntegration:
     def _cleanup(self):
         from sqlalchemy import text
         try:
-            user = self.db.query(User).filter(User.email == self.TEST_EMAIL).first()
-            if user:
-                # Clear FK reference before deleting org
+            result = self.db.execute(
+                text("SELECT id FROM users WHERE email = :email"),
+                {"email": self.TEST_EMAIL}
+            ).first()
+            if result:
+                uid = str(result[0])
                 self.db.execute(
-                    text("UPDATE users SET current_organization_id = NULL WHERE id = :uid"),
-                    {"uid": str(user.id)}
+                    text("UPDATE users SET current_organization_id = NULL WHERE id = CAST(:uid AS uuid)"),
+                    {"uid": uid}
                 )
                 self.db.execute(
-                    text("DELETE FROM organization_members WHERE user_id = :uid"),
-                    {"uid": str(user.id)}
+                    text("DELETE FROM organization_members WHERE user_id = CAST(:uid AS uuid)"),
+                    {"uid": uid}
                 )
                 self.db.execute(
                     text("DELETE FROM organizations WHERE name = :name"),
                     {"name": self.TEST_ORG}
                 )
-                self.db.delete(user)
+                self.db.execute(
+                    text("DELETE FROM users WHERE id = CAST(:uid AS uuid)"),
+                    {"uid": uid}
+                )
                 self.db.commit()
         except Exception:
             self.db.rollback()
@@ -284,7 +313,7 @@ class TestRegisterIntegration:
             organization_name=self.TEST_ORG
         )
 
-        result = await register(user_data, self.db)
+        result = await register(_fake_request(), user_data, self.db)
 
         # Verify user exists in DB
         user = self.db.query(User).filter(User.email == self.TEST_EMAIL).first()
@@ -322,7 +351,7 @@ class TestRegisterIntegration:
             password="securepassword123",
             organization_name=self.TEST_ORG
         )
-        user = await register(user_data, self.db)
+        user = await register(_fake_request(), user_data, self.db)
 
         # Build the CurrentUserContext the endpoint now expects
         org = self.db.query(Organization).filter(
@@ -359,11 +388,11 @@ class TestRegisterIntegration:
             password="securepassword123",
             organization_name=self.TEST_ORG
         )
-        await register(user_data, self.db)
+        await register(_fake_request(), user_data, self.db)
 
         creds = LoginRequest(email=self.TEST_EMAIL, password="securepassword123")
         response = Response()
-        token_resp = await login(creds, response, self.db)
+        token_resp = await login(_fake_request(), creds, response, self.db)
 
         payload = decode_token(token_resp["access_token"])
         assert payload.get("org_role") == "admin", (
@@ -384,7 +413,7 @@ class TestRegisterIntegration:
             password="securepassword123",
             organization_name=self.TEST_ORG
         )
-        await register(user_data, self.db)
+        await register(_fake_request(), user_data, self.db)
 
         user = self.db.query(User).filter(User.email == self.TEST_EMAIL).first()
         org = self.db.query(Organization).filter(

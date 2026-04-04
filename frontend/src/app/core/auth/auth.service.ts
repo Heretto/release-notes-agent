@@ -138,6 +138,16 @@ export class AuthService {
     return true;
   }
 
+  forgotPassword(email: string): Observable<{ message: string }> {
+    return this.http.post<{ message: string }>(`${environment.apiUrl}/auth/forgot-password`, { email });
+  }
+
+  resetPassword(token: string, newPassword: string): Observable<{ message: string }> {
+    return this.http.post<{ message: string }>(`${environment.apiUrl}/auth/reset-password`, {
+      token,
+      new_password: newPassword,
+    });
+    
   getSSOProviders(): Observable<{google: boolean, microsoft: boolean, google_client_id?: string}> {
     return this.http.get<{google: boolean, microsoft: boolean, google_client_id?: string}>(`${environment.apiUrl}/auth/sso/providers`);
   }

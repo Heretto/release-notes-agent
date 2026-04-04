@@ -14,7 +14,7 @@ from sqlalchemy.sql import text
 
 # revision identifiers, used by Alembic.
 revision = 'add_id_to_user_organizations'
-down_revision = 'migrate_existing_users_to_organizations'
+down_revision = 'add_max_tickets'
 branch_labels = None
 depends_on = None
 

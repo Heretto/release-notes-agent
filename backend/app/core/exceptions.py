@@ -38,3 +38,7 @@ class DITAValidationError(ReleaseNotesException):
 class JobProcessingError(ReleaseNotesException):
     """Error during job processing."""
     pass
+
+class EmailNotConfiguredError(ReleaseNotesException):
+    """Email/SMTP is not configured."""
+    pass

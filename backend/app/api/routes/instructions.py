@@ -17,7 +17,7 @@ from app.api.dependencies import get_current_active_user, get_current_active_use
 
 router = APIRouter(prefix="/instructions")
 
-@router.get("/", response_model=List[InstructionSetResponse])
+@router.get("", response_model=List[InstructionSetResponse])
 async def list_instruction_sets(
     context: CurrentUserContext = Depends(get_current_active_user_with_org),
     db: Session = Depends(get_db)
@@ -28,7 +28,7 @@ async def list_instruction_sets(
     ).all()
     return instruction_sets
 
-@router.post("/", response_model=InstructionSetResponse)
+@router.post("", response_model=InstructionSetResponse)
 async def create_instruction_set(
     instruction_data: InstructionSetCreate,
     context: CurrentUserContext = Depends(get_current_active_user_with_org),

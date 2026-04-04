@@ -87,6 +87,36 @@ DATABASE_URL=postgresql://user:password@localhost:5432/release_notes_db
 REDIS_URL=redis://:devpassword@localhost:6379/0
 ```
 
+### Email / SMTP Configuration
+
+The application sends emails for password resets. In **development**, a local Mailpit server is bundled automatically — emails are captured at http://localhost:8025 with no configuration needed.
+
+For **production**, you need to configure an external SMTP provider so emails are actually delivered to users. Add these to `.env.production`:
+
+```env
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USERNAME=your-email@gmail.com
+SMTP_PASSWORD=your-app-password
+SMTP_FROM_EMAIL=noreply@yourdomain.com
+SMTP_USE_TLS=true
+FRONTEND_BASE_URL=https://yourdomain.com
+```
+
+**Supported providers:**
+
+| Provider | SMTP Host | Port | Notes |
+|----------|-----------|------|-------|
+| Gmail / Google Workspace | `smtp.gmail.com` | 587 | Requires an [App Password](https://myaccount.google.com/apppasswords) (2FA must be enabled) |
+| SendGrid | `smtp.sendgrid.net` | 587 | Use API key as password, `apikey` as username |
+| Mailgun | `smtp.mailgun.org` | 587 | Free tier: 5,000 emails/month |
+| Amazon SES | `email-smtp.us-east-1.amazonaws.com` | 587 | Region-specific host |
+| Microsoft 365 | `smtp.office365.com` | 587 | Requires authenticated user |
+
+A bundled SMTP relay (`namshi/smtp`) is included in the production compose file as a fallback, but emails sent directly from an unknown server will likely be rejected or marked as spam by recipients. For reliable delivery, use one of the providers above.
+
+If SMTP is not configured, the application still works — the password reset page will show a "Password reset is not available" message.
+
 ### First-Time Setup
 
 1. **Configure Credentials**
@@ -178,15 +208,51 @@ All incoming webhooks are verified using HMAC signatures to ensure authenticity.
 
 ### Production Deployment with Docker
 
-1. Update environment variables for production
-2. Use production Docker Compose configuration:
+1. Copy and configure the production environment file:
    ```bash
-   docker-compose -f docker-compose.prod.yml up -d
+   cp .env.production.example .env.production
+   # Edit .env.production with your secrets and configuration
    ```
 
-### Kubernetes Deployment
+2. Deploy using the provided script:
+   ```bash
+   ./deployment/deploy.sh
+   ```
+   This builds Docker images, runs database migrations, and starts all services.
 
-Helm charts and Kubernetes manifests are available in the `/k8s` directory (to be added).
+### Deploying to Google Cloud Platform
+
+A full GCP deployment guide is available at [`deployment/GCP_DEPLOYMENT_GUIDE.md`](deployment/GCP_DEPLOYMENT_GUIDE.md).
+
+**Automated setup:**
+
+```bash
+./deployment/quick-deploy-gcp.sh
+```
+
+This interactively creates a Compute Engine VM, firewall rules, and a static IP.
+
+**Manual setup summary:**
+
+1. Create a Compute Engine VM (e2-standard-2 recommended, ~$50/month)
+2. SSH into the VM and clone the repository
+3. Configure `.env.production` with your secrets (including `DOMAIN` and SMTP settings)
+4. Run `./deployment/deploy.sh`
+
+SSL is provisioned automatically during the first deploy — the script requests a Let's Encrypt certificate for the domain specified in `DOMAIN` and sets up auto-renewal via cron.
+
+### Deployment Scripts
+
+The `deployment/` directory includes several operational scripts:
+
+| Script | Purpose |
+|--------|---------|
+| `deploy.sh` | Build, migrate, and start all production services |
+| `quick-deploy-gcp.sh` | Automated GCP VM provisioning |
+| `setup-ssl.sh` | SSL/TLS certificate setup with Let's Encrypt |
+| `backup.sh` | Database backup (retains 30, optional GCS upload) |
+| `health-check.sh` | Container, disk, and memory monitoring with Slack/email alerts |
+| `startup-script.sh` | GCP VM bootstrap (Docker, firewall, fail2ban, swap) |
 
 ## Troubleshooting
 

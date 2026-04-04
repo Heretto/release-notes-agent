@@ -72,7 +72,7 @@ def _build_org_response(org, member_count: int) -> OrganizationResponse:
 
 
 # Organization endpoints
-@router.get("/", response_model=List[OrganizationResponse])
+@router.get("", response_model=List[OrganizationResponse])
 async def list_user_organizations(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -160,7 +160,7 @@ async def get_current_organization(
     return _build_org_response(org, member_count)
 
 
-@router.post("/", response_model=OrganizationResponse)
+@router.post("", response_model=OrganizationResponse)
 async def create_organization(
     org_data: OrganizationCreate,
     current_user: User = Depends(get_current_active_user),

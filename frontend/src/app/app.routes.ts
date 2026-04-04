@@ -14,6 +14,14 @@ export const routes: Routes = [
     loadComponent: () => import('./features/invitations/accept-invitation.component').then(m => m.AcceptInvitationComponent)
   },
   {
+    path: 'forgot-password',
+    loadComponent: () => import('./features/auth/forgot-password.component').then(m => m.ForgotPasswordComponent)
+  },
+  {
+    path: 'reset-password',
+    loadComponent: () => import('./features/auth/reset-password.component').then(m => m.ResetPasswordComponent)
+  },
+  {
     path: 'auth/sso/complete',
     loadComponent: () => import('./features/auth/sso-callback.component').then(m => m.SSOCallbackComponent)
   },
