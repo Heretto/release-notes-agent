@@ -208,6 +208,8 @@ import { environment } from '../../../environments/environment';
       color: #667eea;
       text-decoration: none;
       font-size: 14px;
+    }
+
     .sso-buttons {
       margin-bottom: 16px;
     }
