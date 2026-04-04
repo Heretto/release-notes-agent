@@ -12,9 +12,30 @@ import pytest
 from uuid import uuid4
 from datetime import datetime, timezone
 
+from starlette.requests import Request
+
 from app.models.database import User, Organization, OrganizationMember, OrganizationRole
 from app.models.schemas import UserCreate
 from app.api.routes.auth import register, create_slug
+
+
+def _fake_request() -> Request:
+    """Minimal starlette Request for tests that call route handlers directly."""
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/api/v1/auth/register",
+        "query_string": b"",
+        "headers": [],
+    }
+    return Request(scope)
+
+
+@pytest.fixture(autouse=True)
+def _disable_rate_limiting(monkeypatch):
+    """Disable slowapi rate limiting so unit tests can call handlers directly."""
+    from app.core.rate_limit import limiter
+    monkeypatch.setattr(limiter, "enabled", False)
 
 
 class FakeDBSession:
@@ -69,7 +90,7 @@ async def test_register_creates_organization():
         organization_name="My Company"
     )
 
-    result = await register(user_data, db)
+    result = await register(_fake_request(), user_data, db)
 
     users = [o for o in db.added if isinstance(o, User)]
     orgs = [o for o in db.added if isinstance(o, Organization)]
@@ -100,7 +121,7 @@ async def test_register_creates_default_org_name_from_email():
         password="securepassword123"
     )
 
-    result = await register(user_data, db)
+    result = await register(_fake_request(), user_data, db)
 
     orgs = [o for o in db.added if isinstance(o, Organization)]
     assert len(orgs) == 1
@@ -117,7 +138,7 @@ async def test_register_sets_current_organization_id():
         organization_name="Test Org"
     )
 
-    result = await register(user_data, db)
+    result = await register(_fake_request(), user_data, db)
 
     users = [o for o in db.added if isinstance(o, User)]
     orgs = [o for o in db.added if isinstance(o, Organization)]
@@ -145,7 +166,7 @@ async def test_register_creates_org_membership_record():
         organization_name="Member Corp"
     )
 
-    result = await register(user_data, db)
+    result = await register(_fake_request(), user_data, db)
 
     members = [o for o in db.added if isinstance(o, OrganizationMember)]
     assert len(members) == 1, (
@@ -172,7 +193,7 @@ async def test_register_creates_valid_slug():
         organization_name="My Awesome Company! (2024)"
     )
 
-    result = await register(user_data, db)
+    result = await register(_fake_request(), user_data, db)
 
     orgs = [o for o in db.added if isinstance(o, Organization)]
     assert len(orgs) == 1
@@ -284,7 +305,7 @@ class TestRegisterIntegration:
             organization_name=self.TEST_ORG
         )
 
-        result = await register(user_data, self.db)
+        result = await register(_fake_request(), user_data, self.db)
 
         # Verify user exists in DB
         user = self.db.query(User).filter(User.email == self.TEST_EMAIL).first()
@@ -322,7 +343,7 @@ class TestRegisterIntegration:
             password="securepassword123",
             organization_name=self.TEST_ORG
         )
-        user = await register(user_data, self.db)
+        user = await register(_fake_request(), user_data, self.db)
 
         # Build the CurrentUserContext the endpoint now expects
         org = self.db.query(Organization).filter(
@@ -359,11 +380,11 @@ class TestRegisterIntegration:
             password="securepassword123",
             organization_name=self.TEST_ORG
         )
-        await register(user_data, self.db)
+        await register(_fake_request(), user_data, self.db)
 
         creds = LoginRequest(email=self.TEST_EMAIL, password="securepassword123")
         response = Response()
-        token_resp = await login(creds, response, self.db)
+        token_resp = await login(_fake_request(), creds, response, self.db)
 
         payload = decode_token(token_resp["access_token"])
         assert payload.get("org_role") == "admin", (
@@ -384,7 +405,7 @@ class TestRegisterIntegration:
             password="securepassword123",
             organization_name=self.TEST_ORG
         )
-        await register(user_data, self.db)
+        await register(_fake_request(), user_data, self.db)
 
         user = self.db.query(User).filter(User.email == self.TEST_EMAIL).first()
         org = self.db.query(Organization).filter(
