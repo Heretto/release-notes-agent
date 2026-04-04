@@ -64,7 +64,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
             # BaseHTTPMiddleware bypasses FastAPI's exception handlers and
             # causes uvicorn to log an unhandled exception (500).
             return JSONResponse(
-                status_code=status.HTTP_403_FORBIDDEN,
+                status_code=403,
                 content={"detail": "CSRF token missing or invalid"},
             )
 
