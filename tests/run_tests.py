@@ -43,7 +43,7 @@ class TestRunner:
         """Fetch all current job IDs from the API."""
         token = self._get_auth_token()
         resp = requests.get(
-            f"{API_BASE_URL}/jobs/?limit=1000",
+            f"{API_BASE_URL}/jobs?limit=1000",
             headers={"Authorization": f"Bearer {token}"},
             timeout=10,
         )

@@ -26,7 +26,7 @@ export class InstructionsService {
   private apiUrl = `${environment.apiUrl}/instructions`;
 
   getInstructionSets(): Observable<InstructionSet[]> {
-    return this.http.get<InstructionSet[]>(`${this.apiUrl}/`);
+    return this.http.get<InstructionSet[]>(`${this.apiUrl}`);
   }
 
   getInstructionSet(id: string): Observable<InstructionSet> {
@@ -34,7 +34,7 @@ export class InstructionsService {
   }
 
   createInstructionSet(instruction: InstructionSet): Observable<InstructionSet> {
-    return this.http.post<InstructionSet>(`${this.apiUrl}/`, instruction);
+    return this.http.post<InstructionSet>(`${this.apiUrl}`, instruction);
   }
 
   updateInstructionSet(id: string, instruction: Partial<InstructionSet>): Observable<InstructionSet> {

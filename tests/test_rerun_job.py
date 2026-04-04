@@ -40,7 +40,7 @@ def test_rerun_job():
     # Step 2: Get an existing completed or failed job to rerun
     print("\n2. Getting existing jobs...")
     jobs_resp = requests.get(
-        f"{API_BASE_URL}/jobs/",
+        f"{API_BASE_URL}/jobs",
         headers=headers
     )
     

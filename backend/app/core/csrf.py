@@ -25,14 +25,15 @@ from starlette.responses import Response, JSONResponse
 
 _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
-# Paths exempt from CSRF regardless of cookies present.
-# These are authentication endpoints that establish or tear down sessions
-# rather than acting on an existing authenticated session.
+# Auth endpoints are exempt: login/register have no session yet, and blocking
+# logout via CSRF is worse than any CSRF-logout attack.
 _CSRF_EXEMPT_PATHS = frozenset({
     "/api/v1/auth/login",
+    "/api/v1/auth/logout",
     "/api/v1/auth/register",
     "/api/v1/auth/refresh",
-    "/api/v1/auth/logout",
+    "/api/v1/auth/forgot-password",
+    "/api/v1/auth/reset-password",
 })
 
 
@@ -63,7 +64,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
             # BaseHTTPMiddleware bypasses FastAPI's exception handlers and
             # causes uvicorn to log an unhandled exception (500).
             return JSONResponse(
-                status_code=403,
+                status_code=status.HTTP_403_FORBIDDEN,
                 content={"detail": "CSRF token missing or invalid"},
             )
 

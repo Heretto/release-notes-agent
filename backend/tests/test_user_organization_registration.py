@@ -13,6 +13,7 @@ from uuid import uuid4
 from datetime import datetime, timezone
 
 from starlette.requests import Request
+from starlette.datastructures import Headers
 
 from app.models.database import User, Organization, OrganizationMember, OrganizationRole
 from app.models.schemas import UserCreate
@@ -27,6 +28,7 @@ def _fake_request() -> Request:
         "path": "/api/v1/auth/register",
         "query_string": b"",
         "headers": [],
+        "client": ("127.0.0.1", 12345),
     }
     return Request(scope)
 
@@ -276,22 +278,28 @@ class TestRegisterIntegration:
     def _cleanup(self):
         from sqlalchemy import text
         try:
-            user = self.db.query(User).filter(User.email == self.TEST_EMAIL).first()
-            if user:
-                # Clear FK reference before deleting org
+            result = self.db.execute(
+                text("SELECT id FROM users WHERE email = :email"),
+                {"email": self.TEST_EMAIL}
+            ).first()
+            if result:
+                uid = str(result[0])
                 self.db.execute(
-                    text("UPDATE users SET current_organization_id = NULL WHERE id = :uid"),
-                    {"uid": str(user.id)}
+                    text("UPDATE users SET current_organization_id = NULL WHERE id = CAST(:uid AS uuid)"),
+                    {"uid": uid}
                 )
                 self.db.execute(
-                    text("DELETE FROM organization_members WHERE user_id = :uid"),
-                    {"uid": str(user.id)}
+                    text("DELETE FROM organization_members WHERE user_id = CAST(:uid AS uuid)"),
+                    {"uid": uid}
                 )
                 self.db.execute(
                     text("DELETE FROM organizations WHERE name = :name"),
                     {"name": self.TEST_ORG}
                 )
-                self.db.delete(user)
+                self.db.execute(
+                    text("DELETE FROM users WHERE id = CAST(:uid AS uuid)"),
+                    {"uid": uid}
+                )
                 self.db.commit()
         except Exception:
             self.db.rollback()
