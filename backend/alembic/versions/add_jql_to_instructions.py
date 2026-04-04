@@ -9,7 +9,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = 'add_jql_to_instructions'
-down_revision = None
+down_revision = 'add_id_to_user_organizations'
 branch_labels = None
 depends_on = None
 
