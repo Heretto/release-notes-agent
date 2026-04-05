@@ -51,10 +51,29 @@ class Settings(BaseSettings):
     @property
     def smtp_configured(self) -> bool:
         return bool(self.smtp_host and self.smtp_from_email)
+
     # SSO / OAuth
     # When True, the /auth/register endpoint is disabled and the frontend hides
     # the registration form, requiring all users to authenticate via SSO.
     sso_only: bool = False
+
+    # Single-organization mode
+    # When True, all new users are added to the org identified by SINGLE_ORG_SLUG
+    # instead of creating their own organization.
+    single_org_mode: bool = False
+    # Slug of the organization that new users are added to in single_org_mode.
+    # Must match the slug column of an existing organization row.
+    single_org_slug: Optional[str] = None
+    # Comma-separated list of email domains allowed to register, e.g.
+    # "example.com,contractor.com". Empty/unset means all domains are allowed.
+    allowed_email_domains: Optional[str] = None
+
+    @property
+    def allowed_domains_list(self) -> List[str]:
+        """Lowercase list of allowed email domains, or [] if unrestricted."""
+        if not self.allowed_email_domains:
+            return []
+        return [d.strip().lower() for d in self.allowed_email_domains.split(",") if d.strip()]
 
     google_oauth_client_id: Optional[str] = None  # Google Sign-In: client ID only, no secret needed
     microsoft_oauth_client_id: Optional[str] = None

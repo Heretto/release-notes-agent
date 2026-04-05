@@ -149,8 +149,8 @@ export class AuthService {
     });
   }
 
-  getSSOProviders(): Observable<{google: boolean, microsoft: boolean, sso_only: boolean, google_client_id?: string}> {
-    return this.http.get<{google: boolean, microsoft: boolean, sso_only: boolean, google_client_id?: string}>(`${environment.apiUrl}/auth/sso/providers`);
+  getSSOProviders(): Observable<{google: boolean, microsoft: boolean, sso_only: boolean, single_org_mode: boolean, google_client_id?: string}> {
+    return this.http.get<{google: boolean, microsoft: boolean, sso_only: boolean, single_org_mode: boolean, google_client_id?: string}>(`${environment.apiUrl}/auth/sso/providers`);
   }
 
   loginWithGoogleToken(credential: string): Observable<LoginResponse> {
