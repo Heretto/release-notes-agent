@@ -247,6 +247,7 @@ class TestRunner:
         # Paths are relative to /app inside the container (= backend/ on the host).
         pytest_docker_tests = [
             ("tests/unit/test_csrf_middleware.py", "CSRF Middleware"),
+            ("tests/unit/test_org_modes.py", "Org Modes (single-org & domain restriction)"),
             ("tests/unit/test_dita_validator.py", "DITA Validator (DTD/xmllint)"),
             ("tests/unit/test_dita_fixture_validation.py", "DITA Fixture Validation Cases"),
             ("tests/test_user_organization_registration.py", "User Organization Registration"),
