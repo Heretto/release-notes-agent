@@ -96,6 +96,12 @@ services:
       SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-noreply@${DOMAIN:-localhost}}
       SMTP_USE_TLS: ${SMTP_USE_TLS:-false}
       FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-https://${DOMAIN:-localhost}}
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
+      MICROSOFT_OAUTH_CLIENT_ID: ${MICROSOFT_OAUTH_CLIENT_ID:-}
+      MICROSOFT_OAUTH_CLIENT_SECRET: ${MICROSOFT_OAUTH_CLIENT_SECRET:-}
+      MICROSOFT_OAUTH_TENANT_ID: ${MICROSOFT_OAUTH_TENANT_ID:-common}
+      OAUTH_REDIRECT_BASE_URL: ${OAUTH_REDIRECT_BASE_URL:-}
+      SSO_ONLY: ${SSO_ONLY:-false}
     volumes:
       - ./backend/logs:/app/logs
       - ./backend/uploads:/app/uploads
