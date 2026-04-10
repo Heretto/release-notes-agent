@@ -180,7 +180,7 @@ OAUTH_REDIRECT_BASE_URL=https://app.example.com
 
 ---
 
-#### Single-Organization Mode
+#### Single-Organization Mode (recommended for production use)
 
 Routes all new users into a single pre-existing organization instead of letting each user create their own. New users are added as **members** (not admins). Intended for company-internal deployments where there is one shared workspace.
 
