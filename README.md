@@ -31,7 +31,7 @@ An intelligent system for automating the creation of DITA-formatted release note
 ## Prerequisites
 
 - Docker and Docker Compose
-- Google AI Studio API key (for Gemini)
+- AI platform API key (Google AI Studio, OpenAI, or Claude)
 - Jira instance with API access
 - Heretto CCMS account (optional)
 - Node.js 18+ (for local development)
