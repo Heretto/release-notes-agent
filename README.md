@@ -266,6 +266,15 @@ GOOGLE_OAUTH_CLIENT_ID=...
    - Configure output settings
    - Click "Create Job" to generate release notes
 
+### Updating a production system
+When updating a production system that is running docker behind ngnix (standard production setup), it is important to use the restart script. 
+
+```bash
+git pull
+sudo deployment/restart.sh
+```
+
+
 ## Development
 
 ### Backend Development
@@ -397,6 +406,9 @@ The `deployment/` directory includes several operational scripts:
 
 **Issue: Celery workers not processing jobs**
 - Solution: Check Redis connection and Celery worker logs
+
+**Issue: 500 error when going to the tool's URL**
+- Solution: Nginx is likely disconnected from the frontend. In some circumstances, this will be an SSL certificate issue. You will need to diagnose and resolve.
 
 ### Logs
 
