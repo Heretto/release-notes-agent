@@ -117,6 +117,134 @@ A bundled SMTP relay (`namshi/smtp`) is included in the production compose file 
 
 If SMTP is not configured, the application still works — the password reset page will show a "Password reset is not available" message.
 
+### Authentication Modes
+
+The application supports several authentication and organization modes that can be combined to match your deployment requirements.
+
+---
+
+#### Standard Mode (default)
+
+With no additional configuration, anyone can self-register. Each new user creates their own organization and becomes its administrator.
+
+```env
+# No special configuration required
+```
+
+---
+
+#### SSO-Only Mode
+
+Disables the email/password registration form entirely. Users must sign in through an SSO provider (Google or Microsoft). Existing accounts created before enabling this flag are unaffected and can still log in with their password.
+
+```env
+SSO_ONLY=true
+```
+
+When enabled, the "Create Account" button is hidden in the UI and `POST /auth/register` returns `403`.
+
+---
+
+#### Google Sign-In
+
+Enables the Google Sign-In button on the login page. Uses the client-side Identity Services flow — no client secret is required.
+
+```env
+GOOGLE_OAUTH_CLIENT_ID=your-client-id.apps.googleusercontent.com
+```
+
+**Setup:**
+1. In [Google Cloud Console](https://console.cloud.google.com) → APIs & Services → Credentials, open your OAuth 2.0 Client ID.
+2. Under **Authorized JavaScript origins**, add your domain (e.g. `https://app.example.com`). For local testing, add `http://localhost:4200`.
+3. No redirect URI is needed for this flow.
+
+---
+
+#### Microsoft SSO
+
+Enables a "Continue with Microsoft" button that uses a server-side authorization code flow.
+
+```env
+MICROSOFT_OAUTH_CLIENT_ID=your-client-id
+MICROSOFT_OAUTH_CLIENT_SECRET=your-client-secret
+MICROSOFT_OAUTH_TENANT_ID=common          # or your specific tenant ID
+OAUTH_REDIRECT_BASE_URL=https://app.example.com
+```
+
+**Setup:**
+1. In [Azure Portal](https://portal.azure.com) → App registrations → your app → Authentication.
+2. Add a redirect URI (Web platform): `https://app.example.com/api/v1/auth/sso/microsoft/callback`.
+3. For local testing: `http://localhost:8000/api/v1/auth/sso/microsoft/callback`.
+
+`OAUTH_REDIRECT_BASE_URL` tells the backend which base URL to use when constructing the callback URL. It must match the origin registered in Azure.
+
+---
+
+#### Single-Organization Mode
+
+Routes all new users into a single pre-existing organization instead of letting each user create their own. New users are added as **members** (not admins). Intended for company-internal deployments where there is one shared workspace.
+
+```env
+SINGLE_ORG_MODE=true
+SINGLE_ORG_SLUG=your-org-slug
+```
+
+`SINGLE_ORG_SLUG` must match the `slug` column of an existing organization in the database. To find it:
+
+```bash
+docker compose -f docker-compose.production.yml exec postgres \
+  psql -U produser -d release_notes_production \
+  -c "SELECT slug, name FROM organizations;"
+```
+
+When enabled:
+- The Organization Name field is hidden during registration (the user has no org to name).
+- Both password registration and SSO new-user creation add the user to the default org.
+- Users who already have accounts are unaffected.
+
+---
+
+#### Domain-Restricted Registration
+
+Restricts new account creation to specific email domains. Applies to both password registration and SSO. Useful when combined with single-organization mode to ensure only company employees can join.
+
+```env
+ALLOWED_EMAIL_DOMAINS=example.com,contractor.io
+```
+
+- Multiple domains are separated by commas.
+- The check is case-insensitive.
+- Users with existing accounts can always log in regardless of their domain.
+- If unset or empty, all domains are permitted.
+
+Returns `403` for registration attempts from non-listed domains.
+
+---
+
+#### Recommended Production Configurations
+
+**Internal company tool (SSO + single org + domain lock):**
+```env
+SSO_ONLY=true
+GOOGLE_OAUTH_CLIENT_ID=...
+SINGLE_ORG_MODE=true
+SINGLE_ORG_SLUG=acme-corp
+ALLOWED_EMAIL_DOMAINS=acme.com
+```
+
+**SaaS / multi-tenant (default behaviour, no changes needed):**
+```env
+# Each user self-registers and creates their own organization.
+```
+
+**SSO-preferred but password login still allowed:**
+```env
+GOOGLE_OAUTH_CLIENT_ID=...
+# SSO_ONLY is not set — password registration and login both still work.
+```
+
+---
+
 ### First-Time Setup
 
 1. **Configure Credentials**

@@ -102,6 +102,9 @@ services:
       MICROSOFT_OAUTH_TENANT_ID: ${MICROSOFT_OAUTH_TENANT_ID:-common}
       OAUTH_REDIRECT_BASE_URL: ${OAUTH_REDIRECT_BASE_URL:-}
       SSO_ONLY: ${SSO_ONLY:-false}
+      SINGLE_ORG_MODE: ${SINGLE_ORG_MODE:-false}
+      SINGLE_ORG_SLUG: ${SINGLE_ORG_SLUG:-}
+      ALLOWED_EMAIL_DOMAINS: ${ALLOWED_EMAIL_DOMAINS:-}
     volumes:
       - ./backend/logs:/app/logs
       - ./backend/uploads:/app/uploads

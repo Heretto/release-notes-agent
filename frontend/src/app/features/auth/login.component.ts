@@ -81,7 +81,7 @@ import { environment } from '../../../environments/environment';
           </div>
 
           <form [formGroup]="loginForm" (ngSubmit)="onSubmit()">
-            <mat-form-field appearance="outline" class="full-width" *ngIf="isRegisterMode">
+            <mat-form-field appearance="outline" class="full-width" *ngIf="isRegisterMode && !singleOrgMode">
               <mat-label>Organization Name</mat-label>
               <input matInput type="text" formControlName="organizationName" required>
               <mat-hint>Enter your company or team name</mat-hint>
@@ -267,6 +267,7 @@ export class LoginComponent implements OnInit, AfterViewInit {
   googleEnabled = false;
   microsoftEnabled = false;
   ssoOnly = false;
+  singleOrgMode = false;
 
   ngOnInit(): void {
     this.returnUrl = this.route.snapshot.queryParams['returnUrl'];
@@ -289,6 +290,7 @@ export class LoginComponent implements OnInit, AfterViewInit {
         this.googleEnabled = providers.google;
         this.microsoftEnabled = providers.microsoft;
         this.ssoOnly = providers.sso_only ?? false;
+        this.singleOrgMode = providers.single_org_mode ?? false;
         if (providers.google && providers.google_client_id) {
           this.googleClientId = providers.google_client_id;
           this.loadGoogleScript();
