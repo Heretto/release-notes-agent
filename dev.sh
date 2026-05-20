@@ -52,7 +52,7 @@ if [[ ! -d "$FRONTEND_DIR/node_modules" ]]; then
 fi
 
 echo "Starting frontend..."
-(cd "$FRONTEND_DIR" && npm start) &
+(cd "$FRONTEND_DIR" && NG_CLI_ANALYTICS=false npm start) &
 FRONTEND_PID=$!
 
 # ── Summary ───────────────────────────────────────────────────────────────────
