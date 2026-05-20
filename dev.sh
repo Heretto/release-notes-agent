@@ -21,10 +21,7 @@ trap cleanup SIGINT SIGTERM
 
 # ── Infrastructure ────────────────────────────────────────────────────────────
 echo "Starting infrastructure (postgres, redis, mailpit)..."
-docker compose up -d postgres redis mailpit
-
-echo "Waiting for postgres and redis to be healthy..."
-docker compose wait postgres redis
+docker compose up -d --wait postgres redis mailpit
 
 # ── Backend ───────────────────────────────────────────────────────────────────
 if [[ ! -f "$BACKEND_DIR/venv/bin/activate" ]]; then
