@@ -29,6 +29,10 @@ def setup_logging(level: str = "INFO") -> None:
             logging.StreamHandler(sys.stdout)
         ]
     )
+
+    # SQLAlchemy logs every query at INFO when echo=True; keep it quiet unless
+    # explicitly needed.
+    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
     
     # Use JSON formatter in production
     from app.config import get_settings
