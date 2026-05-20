@@ -19,6 +19,10 @@ cleanup() {
 
 trap cleanup SIGINT SIGTERM
 
+# ── Clear any leftover processes from a previous run ─────────────────────────
+pkill -f "uvicorn app.main:app" 2>/dev/null || true
+pkill -f "ng serve" 2>/dev/null || true
+
 # ── Infrastructure ────────────────────────────────────────────────────────────
 echo "Starting infrastructure (postgres, redis, mailpit)..."
 docker compose up -d --wait postgres redis mailpit
