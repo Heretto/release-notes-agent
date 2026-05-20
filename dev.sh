@@ -34,6 +34,9 @@ if [[ ! -f "$BACKEND_DIR/.env" ]]; then
   cp "$BACKEND_DIR/.env.example" "$BACKEND_DIR/.env"
 fi
 
+echo "Syncing backend dependencies..."
+"$BACKEND_DIR/venv/bin/pip" install -q -r "$BACKEND_DIR/requirements.txt"
+
 echo "Starting backend..."
 (
   cd "$BACKEND_DIR"
