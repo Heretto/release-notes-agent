@@ -1,97 +1,143 @@
 # AI Release Notes Agent
 
-An intelligent system for automating the creation of DITA-formatted release notes from Jira tickets using Google Gemini AI, with seamless integration to Heretto CCMS.
+An intelligent system for automating the creation of DITA-formatted release notes from Jira tickets using AI, with seamless integration to Heretto CCMS.
 
 ## Features
 
-- 🎯 **Automated Release Notes Generation** - Extract Jira tickets and generate professional release notes
-- 🤖 **AI-Powered Content** - Leverage Google Gemini for intelligent content generation
-- 📝 **DITA Format Support** - Generate valid DITA 1.3 XML topics
-- 🔄 **Heretto CCMS Integration** - Direct publishing to your documentation platform
-- 🔐 **Secure Credential Management** - Encrypted storage for all API credentials
-- 🪝 **Webhook Support** - Automated triggers from Jira events
-- 📊 **Real-time Monitoring** - Track job progress with WebSocket updates
-- 🎨 **Modern Angular UI** - Intuitive interface built with Angular 17 and Material Design
+- **Automated Release Notes Generation** — Extract Jira tickets and generate professional release notes
+- **Multi-Provider AI Support** — Works with Anthropic Claude, OpenAI GPT, and Google Gemini
+- **DITA Format Support** — Generate valid DITA 1.3 XML topics with DTD validation and auto-correction
+- **Heretto CCMS Integration** — Direct publishing to your documentation platform
+- **Secure Credential Management** — Encrypted storage for all API credentials, scoped per organization
+- **Webhook Support** — Automated triggers from Jira events
+- **Real-time Monitoring** — Track job progress with live updates
+- **Modern Angular UI** — Intuitive interface built with Angular 17 and Material Design
+- **SSO Support** — Google and Microsoft OAuth login
 
 ## Architecture
 
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│  Angular        │────▶│  FastAPI        │────▶│  PostgreSQL     │
+│  Angular 17     │────▶│  FastAPI        │────▶│  PostgreSQL     │
 │  Frontend       │     │  Backend        │     │  Database       │
 └─────────────────┘     └─────────────────┘     └─────────────────┘
                                │
-                               ├────▶ Redis (Cache/Queue)
+                               ├────▶ Redis (Queue)
                                ├────▶ Celery (Async Tasks)
                                ├────▶ Jira API
-                               ├────▶ Google Gemini AI
+                               ├────▶ Anthropic / OpenAI / Gemini
                                └────▶ Heretto CCMS
 ```
 
 ## Prerequisites
 
-- Docker and Docker Compose
-- AI platform API key (Google AI Studio, OpenAI, or Claude)
+- Docker and Docker Compose (for infrastructure)
+- Python 3.12+ (for local backend development)
+- Node.js 18+ and npm (for local frontend development)
+- At least one AI provider API key (Anthropic, OpenAI, or Google Gemini)
 - Jira instance with API access
-- Heretto CCMS account (optional)
-- Node.js 18+ (for local development)
-- Python 3.11+ (for local development)
 
-## Quick Start
+## Local Development
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/yourusername/release-notes-agent.git
-   cd release-notes-agent
-   ```
+The recommended way to run the application locally is `dev.sh`. It starts PostgreSQL, Redis, and Mailpit in Docker, then runs the backend and frontend directly on your machine (so you get hot-reload for both).
 
-2. **Set up environment variables**
-   ```bash
-   cp backend/.env.example backend/.env
-   # Edit backend/.env with your API keys and configuration
-   ```
+### 1. Clone and configure
 
-3. **Start the application with Docker Compose**
-   ```bash
-   docker-compose up -d
-   ```
+```bash
+git clone https://github.com/pboz/release-notes-agent.git
+cd release-notes-agent
 
-4. **Access the application**
-   - Frontend: http://localhost:4200
-   - Backend API: http://localhost:8000
-   - API Documentation: http://localhost:8000/docs
+# Copy and fill in backend environment
+cp backend/.env.example backend/.env
+# Edit backend/.env — at minimum set:
+#   APP_SECRET_KEY, JWT_SECRET_KEY, ENCRYPTION_KEY (any random strings for dev)
+#   DATABASE_URL (already correct for the Docker Compose Postgres)
+#   GOOGLE_AI_API_KEY, ANTHROPIC_API_KEY, or similar AI key
+```
 
-5. **Create your first user**
-   - Navigate to http://localhost:4200
-   - Click "Create Account"
-   - Enter your email and password
+### 2. Set up the backend virtualenv
+
+```bash
+cd backend
+python3 -m venv venv
+venv/bin/pip install -r requirements.txt
+```
+
+### 3. Run database migrations
+
+```bash
+cd backend
+venv/bin/alembic upgrade head
+```
+
+> Run this once after cloning, and again whenever new migrations are added.
+
+### 4. Set up the frontend
+
+```bash
+cd frontend
+npm install
+```
+
+### 5. Start everything
+
+```bash
+# From the repo root:
+./dev.sh
+```
+
+`dev.sh` starts the Docker infrastructure (Postgres, Redis, Mailpit), syncs backend dependencies, and launches both servers with live reload:
+
+| Service  | URL                          |
+|----------|------------------------------|
+| Frontend | http://localhost:4200        |
+| Backend  | http://localhost:8000        |
+| API docs | http://localhost:8000/docs   |
+| Mailpit  | http://localhost:8025        |
+
+To stop everything: `./stop.sh` (or Ctrl+C in the `dev.sh` terminal).
+
+### 6. Create your first user
+
+Navigate to http://localhost:4200 and register an account.
+
+---
 
 ## Configuration
 
 ### Environment Variables
 
-Key environment variables in `backend/.env`:
+Key variables in `backend/.env` (see `backend/.env.example` for the full list):
 
 ```env
-# Google AI Studio
-GOOGLE_AI_API_KEY=your-gemini-api-key
-GOOGLE_AI_MODEL=gemini-1.5-pro
+# Application
+APP_ENV=development
+APP_SECRET_KEY=<random string>
+JWT_SECRET_KEY=<random string>
+ENCRYPTION_KEY=<random string, min 16 chars>
 
-# Security Keys (generate strong random keys for production)
-APP_SECRET_KEY=your-app-secret-key
-JWT_SECRET_KEY=your-jwt-secret-key
-ENCRYPTION_KEY=your-encryption-key
-
-# Database
+# Database (matches Docker Compose defaults)
 DATABASE_URL=postgresql://user:password@localhost:5432/release_notes_db
 REDIS_URL=redis://:devpassword@localhost:6379/0
+
+# AI providers — add whichever you have
+ANTHROPIC_API_KEY=sk-ant-...
+GOOGLE_AI_API_KEY=...
+# OpenAI credentials are configured per-user in the UI, not via .env
+
+# SMTP — pre-configured for local Mailpit (no changes needed for dev)
+SMTP_HOST=localhost
+SMTP_PORT=1025
+SMTP_USE_TLS=false
+SMTP_FROM_EMAIL=noreply@release-notes.local
+FRONTEND_BASE_URL=http://localhost:4200
 ```
 
-### Email / SMTP Configuration
+### Email / SMTP
 
-The application sends emails for password resets. In **development**, a local Mailpit server is bundled automatically — emails are captured at http://localhost:8025 with no configuration needed.
+In **development**, Mailpit is bundled automatically — emails (password resets, invitations) are captured at http://localhost:8025 with no external service needed.
 
-For **production**, you need to configure an external SMTP provider so emails are actually delivered to users. Add these to `.env.production`:
+For **production**, configure a real SMTP provider:
 
 ```env
 SMTP_HOST=smtp.gmail.com
@@ -103,19 +149,13 @@ SMTP_USE_TLS=true
 FRONTEND_BASE_URL=https://yourdomain.com
 ```
 
-**Supported providers:**
-
 | Provider | SMTP Host | Port | Notes |
-|----------|-----------|------|-------|
-| Gmail / Google Workspace | `smtp.gmail.com` | 587 | Requires an [App Password](https://myaccount.google.com/apppasswords) (2FA must be enabled) |
-| SendGrid | `smtp.sendgrid.net` | 587 | Use API key as password, `apikey` as username |
+|---|---|---|---|
+| Gmail / Google Workspace | `smtp.gmail.com` | 587 | Requires an [App Password](https://myaccount.google.com/apppasswords) |
+| SendGrid | `smtp.sendgrid.net` | 587 | API key as password, `apikey` as username |
 | Mailgun | `smtp.mailgun.org` | 587 | Free tier: 5,000 emails/month |
 | Amazon SES | `email-smtp.us-east-1.amazonaws.com` | 587 | Region-specific host |
 | Microsoft 365 | `smtp.office365.com` | 587 | Requires authenticated user |
-
-A bundled SMTP relay (`namshi/smtp`) is included in the production compose file as a fallback, but emails sent directly from an unknown server will likely be rejected or marked as spam by recipients. For reliable delivery, use one of the providers above.
-
-If SMTP is not configured, the application still works — the password reset page will show a "Password reset is not available" message.
 
 ### Authentication Modes
 
@@ -245,76 +285,54 @@ GOOGLE_OAUTH_CLIENT_ID=...
 
 ---
 
-### First-Time Setup
+### First-Time Setup (UI)
 
-1. **Configure Credentials**
-   - Login to the web interface
-   - Navigate to Credentials
-   - Add your Jira credentials (server URL, email, API token)
-   - Add your Heretto credentials (if using)
-   - Add your AI provider credentials
+1. **Add Credentials** — Settings → Credentials → add Jira, AI provider, and optionally Heretto credentials
+2. **Create Instruction Sets** — Settings → Instructions → define system prompts and JQL query templates
+3. **Create Your First Job** — Jobs → New Job → enter a JQL query, select an instruction set, run
 
-2. **Create Instruction Sets**
-   - Navigate to Instructions
-   - Create custom prompts for different release note styles
-   - Set default instruction set for quick job creation
+### Updating a Production System
 
-3. **Create Your First Job**
-   - Navigate to Jobs
-   - Enter a JQL query (e.g., `project = MYPROJ AND fixVersion = '2.0.0'`)
-   - Select an instruction set
-   - Configure output settings
-   - Click "Create Job" to generate release notes
-
-### Updating a production system
-When updating a production system that is running docker behind ngnix (standard production setup), it is important to use the restart script. 
+When updating a production system running Docker behind Nginx (standard production setup), use the restart script:
 
 ```bash
 git pull
 sudo deployment/restart.sh
 ```
 
+---
 
-## Development
+## Running Tests
 
-### Backend Development
+Tests require the dev environment to be running (`./dev.sh`).
+
+```bash
+cd tests
+python3 run_tests.py
+```
+
+To skip cleanup of test data:
+
+```bash
+python3 run_tests.py --no-cleanup
+```
+
+Integration tests (Jira, Heretto, AI providers) are skipped automatically if the corresponding credentials are absent from the root `.env`. See `tests/config.py` for the variable names.
+
+**Running a specific test file:**
+
+```bash
+python3 run_tests.py --test api/test_credentials.py
+```
+
+**Running the pytest unit tests directly** (no running server needed):
 
 ```bash
 cd backend
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements-dev.txt
-
-# Run database migrations
-alembic upgrade head
-
-# Start development server
-uvicorn app.main:app --reload --port 8000
+venv/bin/python -m pytest tests/unit/ -v
 ```
 
-### Frontend Development
-
-```bash
-cd frontend
-npm install
-ng serve
-```
-
-Access the development server at http://localhost:4200
-
-### Running Tests
-
-**Backend Tests:**
-```bash
-cd backend
-pytest tests/
-```
-
-**Frontend Tests:**
-```bash
-cd frontend
-ng test
-```
+---
 
 ## API Documentation
 
@@ -323,10 +341,10 @@ The FastAPI backend provides automatic API documentation:
 - ReDoc: http://localhost:8000/redoc
 
 Key endpoints:
-- `POST /api/v1/auth/login` - User authentication
-- `POST /api/v1/jobs` - Create release notes job
-- `GET /api/v1/jobs/{id}` - Get job status
-- `POST /api/v1/webhooks/jira` - Jira webhook receiver
+- `POST /api/v1/auth/login` — User authentication
+- `POST /api/v1/jobs` — Create release notes job
+- `GET /api/v1/jobs/{id}` — Get job status
+- `POST /api/v1/webhooks/jira` — Jira webhook receiver
 
 ## Webhook Configuration
 
@@ -337,9 +355,9 @@ Key endpoints:
 3. Select events to trigger (e.g., "Version Released")
 4. Copy the webhook secret to your application settings
 
-### Webhook Security
+All incoming webhooks are verified using HMAC signatures.
 
-All incoming webhooks are verified using HMAC signatures to ensure authenticity.
+---
 
 ## Deployment
 
@@ -348,7 +366,7 @@ All incoming webhooks are verified using HMAC signatures to ensure authenticity.
 1. Copy and configure the production environment file:
    ```bash
    cp .env.production.example .env.production
-   # Edit .env.production with your secrets and configuration
+   # Edit .env.production with your secrets and SMTP configuration
    ```
 
 2. Deploy using the provided script:
@@ -380,8 +398,6 @@ SSL is provisioned automatically during the first deploy — the script requests
 
 ### Deployment Scripts
 
-The `deployment/` directory includes several operational scripts:
-
 | Script | Purpose |
 |--------|---------|
 | `deploy.sh` | Build, migrate, and start all production services |
@@ -391,68 +407,44 @@ The `deployment/` directory includes several operational scripts:
 | `health-check.sh` | Container, disk, and memory monitoring with Slack/email alerts |
 | `startup-script.sh` | GCP VM bootstrap (Docker, firewall, fail2ban, swap) |
 
+---
+
 ## Troubleshooting
 
-### Common Issues
+**Issue: `venv/bin/alembic upgrade head` fails with "connection refused"**
+- Make sure Postgres is running: `docker compose up -d postgres`
+
+**Issue: Backend starts but login returns 500**
+- Postgres may not be running, or `DATABASE_URL` in `backend/.env` doesn't match the Docker Compose database config
+
+**Issue: Password reset emails not arriving in Mailpit**
+- Ensure `SMTP_HOST=localhost` and `SMTP_PORT=1025` are set in `backend/.env`
 
 **Issue: Jobs failing with "No Jira credentials found"**
-- Solution: Ensure Jira credentials are configured in the Credentials section
+- Add Jira credentials in Settings → Credentials
 
-**Issue: DITA validation errors**
-- Solution: Check the generated content in job artifacts, ensure templates are valid
+**Issue: DITA validation errors in job output**
+- Check the artifact content in the job detail view; the auto-correction loop will retry up to 3 times before failing
 
-**Issue: Cannot connect to database**
-- Solution: Verify PostgreSQL is running and DATABASE_URL is correct
+**Issue: 500 error when going to the application URL**
+- Nginx may be disconnected from the frontend — in some cases this is an SSL certificate issue. Diagnose with `docker compose logs nginx` and check certificate expiry
 
-**Issue: Celery workers not processing jobs**
-- Solution: Check Redis connection and Celery worker logs
-
-**Issue: 500 error when going to the tool's URL**
-- Solution: Nginx is likely disconnected from the frontend. In some circumstances, this will be an SSL certificate issue. You will need to diagnose and resolve.
-
-### Logs
-
-View logs for debugging:
+**Viewing logs (Docker Compose production setup):**
 ```bash
-# Backend logs
-docker-compose logs backend
-
-# Celery worker logs
-docker-compose logs celery-worker
-
-# Database logs
-docker-compose logs postgres
+docker compose logs backend
+docker compose logs celery-worker
+docker compose logs postgres
 ```
+
+---
 
 ## Contributing
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+3. Commit your changes
+4. Push to the branch and open a Pull Request
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Support
-
-For issues, questions, or suggestions, please open an issue on GitHub.
-
-## Roadmap
-
-- [ ] Support for additional AI providers (OpenAI, Anthropic)
-- [ ] Batch processing for multiple versions
-- [ ] Custom DITA templates beyond release notes
-- [ ] Scheduled job execution
-- [ ] Team collaboration features
-- [ ] Advanced analytics dashboard
-- [ ] Integration with more CCMS platforms
-
-## Acknowledgments
-
-- Built with FastAPI, Angular, and Material Design
-- Powered by Google Gemini AI
-- DITA validation using lxml
-- Async task processing with Celery
+This project is licensed under the MIT License — see the LICENSE file for details.
