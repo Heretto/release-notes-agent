@@ -15,7 +15,7 @@ settings = get_settings()
 Base = declarative_base()
 
 # Create engine and session
-engine = create_engine(settings.database_url)
+engine = create_engine(settings.database_url, echo=settings.app_debug)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Enums

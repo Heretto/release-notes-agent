@@ -101,8 +101,7 @@ def _handle_sso_login(
 
     1. Existing SSO user (same provider + oauth_id) -> return them.
     2. Existing email user (no SSO link yet) -> link and return.
-    3. New user -> create user, then either join the default org (single_org_mode)
-       or create a personal organization (default multi-org behaviour).
+    3. New user -> create user + personal organization.
     """
     # 1. Look up by provider + oauth_id
     user = db.query(User).filter(
@@ -120,16 +119,7 @@ def _handle_sso_login(
         db.commit()
         return user
 
-    # 3. New user — check domain restriction before creating anything
-    allowed = settings.allowed_domains_list
-    if allowed:
-        domain = email.split("@")[-1].lower()
-        if domain not in allowed:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Registration is not allowed for your email domain.",
-            )
-
+    # 3. Create new user + organization
     user = User(
         email=email,
         password_hash=None,
@@ -140,46 +130,25 @@ def _handle_sso_login(
     db.add(user)
     db.flush()
 
-    if settings.single_org_mode:
-        if not settings.single_org_slug:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Server misconfiguration: SINGLE_ORG_SLUG is not set.",
-            )
-        org = db.query(Organization).filter(Organization.slug == settings.single_org_slug).first()
-        if not org:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Server misconfiguration: default organization not found.",
-            )
-        user.current_organization_id = org.id
-        membership = OrganizationMember(
-            user_id=user.id,
-            organization_id=org.id,
-            role=OrganizationRole.MEMBER,
-        )
-        db.add(membership)
-    else:
-        org_name = f"{name}'s Organization" if name else f"{email.split('@')[0]}'s Organization"
-        base_slug = _create_slug(org_name)
-        slug = base_slug
-        counter = 1
-        while db.query(Organization).filter(Organization.slug == slug).first():
-            slug = f"{base_slug}-{counter}"
-            counter += 1
+    org_name = f"{name}'s Organization" if name else f"{email.split('@')[0]}'s Organization"
+    base_slug = _create_slug(org_name)
+    slug = base_slug
+    counter = 1
+    while db.query(Organization).filter(Organization.slug == slug).first():
+        slug = f"{base_slug}-{counter}"
+        counter += 1
 
-        org = Organization(id=uuid.uuid4(), name=org_name, slug=slug)
-        db.add(org)
-        db.flush()
+    org = Organization(id=uuid.uuid4(), name=org_name, slug=slug)
+    db.add(org)
+    db.flush()
 
-        user.current_organization_id = org.id
-        membership = OrganizationMember(
-            user_id=user.id,
-            organization_id=org.id,
-            role=OrganizationRole.ADMIN,
-        )
-        db.add(membership)
-
+    user.current_organization_id = org.id
+    membership = OrganizationMember(
+        user_id=user.id,
+        organization_id=org.id,
+        role=OrganizationRole.ADMIN,
+    )
+    db.add(membership)
     db.commit()
     db.refresh(user)
     return user
@@ -217,7 +186,6 @@ async def get_sso_providers():
         "google": google_enabled,
         "microsoft": microsoft_enabled,
         "sso_only": settings.sso_only,
-        "single_org_mode": settings.single_org_mode,
     }
     # Frontend needs the client ID to render the Google Sign-In button
     if google_enabled:

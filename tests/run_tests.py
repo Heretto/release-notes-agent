@@ -78,34 +78,43 @@ class TestRunner:
             print(f" ({errors} failed)", end="")
         print()
         
-    def run_pytest_local(self, backend_test_path: str, description: str) -> bool:
-        """Run pytest tests using the backend's local venv.
+    def run_pytest_docker(self, container_test_path: str, description: str) -> bool:
+        """Run pytest tests inside the backend Docker container.
 
-        ``backend_test_path`` is the path relative to the ``backend/`` directory on the host.
+        ``container_test_path`` is the path relative to ``/app`` inside the
+        container (i.e. relative to the ``backend/`` directory on the host).
         """
         project_root = self.tests_dir.parent
-        backend_dir = project_root / "backend"
-        python = backend_dir / "venv" / "bin" / "python"
+        compose_file = project_root / "docker-compose.yml"
 
         print(f"\n{'='*60}")
-        print(f"Running: {description} (pytest)")
-        print(f"Path: {backend_test_path}")
+        print(f"Running: {description} (pytest / Docker)")
+        print(f"Path (container): {container_test_path}")
         print('='*60)
 
         try:
             result = subprocess.run(
-                [str(python), "-m", "pytest", backend_test_path, "-v", "--tb=short"],
+                [
+                    "docker", "compose",
+                    "-f", str(compose_file),
+                    "exec", "backend",
+                    "python", "-m", "pytest", container_test_path, "-v", "--tb=short",
+                ],
                 capture_output=True,
                 text=True,
                 timeout=300,
-                cwd=str(backend_dir),
             )
 
             if result.stdout:
                 print(result.stdout)
             if result.stderr:
-                if result.stderr.strip():
-                    print("STDERR:", result.stderr)
+                # docker compose writes its own warnings to stderr; suppress them
+                filtered = "\n".join(
+                    line for line in result.stderr.splitlines()
+                    if "level=warning" not in line and line.strip()
+                )
+                if filtered:
+                    print("STDERR:", filtered)
 
             success = result.returncode == 0
             self.test_results[description] = "✓ PASSED" if success else "✗ FAILED"
@@ -234,11 +243,10 @@ class TestRunner:
             ("test_rerun_job.py", "Job Rerun Functionality"),
         ]
 
-        # pytest tests — run locally via backend/venv.
-        # Paths are relative to backend/ on the host.
-        pytest_local_tests = [
+        # pytest tests that run inside the backend Docker container.
+        # Paths are relative to /app inside the container (= backend/ on the host).
+        pytest_docker_tests = [
             ("tests/unit/test_csrf_middleware.py", "CSRF Middleware"),
-            ("tests/unit/test_org_modes.py", "Org Modes (single-org & domain restriction)"),
             ("tests/unit/test_dita_validator.py", "DITA Validator (DTD/xmllint)"),
             ("tests/unit/test_dita_fixture_validation.py", "DITA Fixture Validation Cases"),
             ("tests/test_user_organization_registration.py", "User Organization Registration"),
@@ -248,9 +256,9 @@ class TestRunner:
         passed = 0
         failed = 0
 
-        # Run local pytest tests
-        for backend_path, description in pytest_local_tests:
-            if self.run_pytest_local(backend_path, description):
+        # Run pytest-in-Docker tests
+        for container_path, description in pytest_docker_tests:
+            if self.run_pytest_docker(container_path, description):
                 passed += 1
             else:
                 failed += 1

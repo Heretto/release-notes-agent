@@ -52,16 +52,6 @@ async def register(
             detail="Registration is disabled. Please sign in using SSO."
         )
 
-    # Domain restriction check
-    allowed = settings.allowed_domains_list
-    if allowed:
-        domain = user_data.email.split("@")[-1].lower()
-        if domain not in allowed:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Registration is not allowed for your email domain."
-            )
-
     # Check if user exists
     existing_user = db.query(User).filter(User.email == user_data.email).first()
     if existing_user:
@@ -70,68 +60,62 @@ async def register(
             detail="Email already registered"
         )
 
+    # Check if organization name is provided and unique
+    org_name = getattr(user_data, 'organization_name', None)
+    if not org_name:
+        # Default organization name from email
+        org_name = user_data.email.split('@')[0] + "'s Organization"
+
+    # Check if organization name already exists
+    existing_org = db.query(Organization).filter(Organization.name == org_name).first()
+    if existing_org:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Organization name already exists"
+        )
+
+    # Create slug for organization
+    base_slug = create_slug(org_name)
+    slug = base_slug
+    counter = 1
+
+    # Ensure unique slug
+    while db.query(Organization).filter(Organization.slug == slug).first():
+        slug = f"{base_slug}-{counter}"
+        counter += 1
+
     # Create new user
     new_user = User(
         email=user_data.email,
         password_hash=get_password_hash(user_data.password)
     )
+
     db.add(new_user)
-    db.flush()
+    db.flush()  # Flush to get the user ID
 
-    if settings.single_org_mode:
-        # Add user to the pre-configured default organization as a member.
-        if not settings.single_org_slug:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Server misconfiguration: SINGLE_ORG_SLUG is not set."
-            )
-        org = db.query(Organization).filter(Organization.slug == settings.single_org_slug).first()
-        if not org:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Server misconfiguration: default organization not found."
-            )
-        new_user.current_organization_id = org.id
-        membership = OrganizationMember(
-            user_id=new_user.id,
-            organization_id=org.id,
-            role=OrganizationRole.MEMBER,
-        )
-        db.add(membership)
-    else:
-        # Multi-org mode: create a personal organization for this user.
-        org_name = getattr(user_data, 'organization_name', None)
-        if not org_name:
-            org_name = user_data.email.split('@')[0] + "'s Organization"
+    # Create organization
+    new_organization = Organization(
+        id=uuid.uuid4(),
+        name=org_name,
+        slug=slug
+    )
 
-        existing_org = db.query(Organization).filter(Organization.name == org_name).first()
-        if existing_org:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Organization name already exists"
-            )
+    db.add(new_organization)
+    db.flush()  # Flush to get the organization ID
 
-        base_slug = create_slug(org_name)
-        slug = base_slug
-        counter = 1
-        while db.query(Organization).filter(Organization.slug == slug).first():
-            slug = f"{base_slug}-{counter}"
-            counter += 1
+    # Set user's current organization
+    new_user.current_organization_id = new_organization.id
 
-        new_organization = Organization(id=uuid.uuid4(), name=org_name, slug=slug)
-        db.add(new_organization)
-        db.flush()
-
-        new_user.current_organization_id = new_organization.id
-        membership = OrganizationMember(
-            user_id=new_user.id,
-            organization_id=new_organization.id,
-            role=OrganizationRole.ADMIN,
-        )
-        db.add(membership)
-
+    # Add user as admin of the organization
+    membership = OrganizationMember(
+        user_id=new_user.id,
+        organization_id=new_organization.id,
+        role=OrganizationRole.ADMIN
+    )
+    db.add(membership)
     db.commit()
     db.refresh(new_user)
+
     return new_user
 
 @router.post("/login")
