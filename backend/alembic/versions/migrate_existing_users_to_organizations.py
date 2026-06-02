@@ -1,6 +1,6 @@
 """Migrate existing users to organizations
 
-Revision ID: migrate_existing_users_to_organizations
+Revision ID: migrate_users_to_orgs
 Revises: add_organizations
 Create Date: 2026-01-02
 
@@ -17,7 +17,7 @@ import re
 
 
 # revision identifiers, used by Alembic.
-revision = 'migrate_existing_users_to_organizations'
+revision = 'migrate_users_to_orgs'
 down_revision = 'add_organizations'
 branch_labels = None
 depends_on = None
