@@ -39,23 +39,34 @@ An intelligent system for automating the creation of DITA-formatted release note
 
 ## Local Development
 
-The recommended way to run the application locally is `dev.sh`. It starts PostgreSQL, Redis, and Mailpit in Docker, then runs the backend and frontend directly on your machine (so you get hot-reload for both).
+### Quick install
 
-### 1. Clone and configure
+```bash
+git clone https://github.com/pboz/release-notes-agent.git
+cd release-notes-agent
+./install.sh
+```
+
+`install.sh` handles everything in one shot: checks prerequisites, generates secret keys, sets up the Python virtualenv, starts Docker infrastructure, initialises the database, and installs frontend dependencies. It offers to launch the app when finished.
+
+Safe to re-run — it skips steps that are already complete.
+
+### Manual setup
+
+If you prefer to run the steps yourself:
+
+**1. Clone and configure**
 
 ```bash
 git clone https://github.com/pboz/release-notes-agent.git
 cd release-notes-agent
 
-# Copy and fill in backend environment
 cp backend/.env.example backend/.env
-# Edit backend/.env — at minimum set:
-#   APP_SECRET_KEY, JWT_SECRET_KEY, ENCRYPTION_KEY (any random strings for dev)
-#   DATABASE_URL (already correct for the Docker Compose Postgres)
-#   GOOGLE_AI_API_KEY, ANTHROPIC_API_KEY, or similar AI key
+# Edit backend/.env — generate random values for APP_SECRET_KEY,
+# JWT_SECRET_KEY, and ENCRYPTION_KEY, then add at least one AI API key.
 ```
 
-### 2. Set up the backend virtualenv
+**2. Backend virtualenv**
 
 ```bash
 cd backend
@@ -63,23 +74,23 @@ python3 -m venv venv
 venv/bin/pip install -r requirements.txt
 ```
 
-### 3. Run database migrations
+**3. Database**
 
 ```bash
+docker compose up -d --wait postgres
 cd backend
-venv/bin/alembic upgrade head
+venv/bin/python -c "from app.models.database import Base, engine; Base.metadata.create_all(bind=engine)"
+venv/bin/alembic stamp head
 ```
 
-> Run this once after cloning, and again whenever new migrations are added.
-
-### 4. Set up the frontend
+**4. Frontend**
 
 ```bash
 cd frontend
 npm install
 ```
 
-### 5. Start everything
+**5. Start everything**
 
 ```bash
 # From the repo root:
@@ -411,8 +422,8 @@ SSL is provisioned automatically during the first deploy — the script requests
 
 ## Troubleshooting
 
-**Issue: `venv/bin/alembic upgrade head` fails with "connection refused"**
-- Make sure Postgres is running: `docker compose up -d postgres`
+**Issue: install.sh or database setup fails with "connection refused"**
+- Make sure Docker Desktop is running, then retry
 
 **Issue: Backend starts but login returns 500**
 - Postgres may not be running, or `DATABASE_URL` in `backend/.env` doesn't match the Docker Compose database config
