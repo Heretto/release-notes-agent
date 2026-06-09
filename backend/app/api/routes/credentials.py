@@ -865,7 +865,7 @@ async def test_credential(
                         "x-api-key": api_key[:10] + "..." + api_key[-4:] if len(api_key) > 14 else "***"
                     }
                     request_body = {
-                        "model": model or "claude-3-5-sonnet-20241022",
+                        "model": model or "claude-sonnet-4-20250514",
                         "max_tokens": 20,
                         "temperature": 0.1,
                         "system": "You are a helpful assistant.",
