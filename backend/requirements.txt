@@ -1,3 +1,6 @@
+# hop-core (sibling repo — clone https://github.com/heretto/hop-core next to this repo)
+-e ../hop-core
+
 # Core FastAPI and async support
 fastapi==0.104.1
 uvicorn[standard]==0.24.0

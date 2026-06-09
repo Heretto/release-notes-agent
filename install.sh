@@ -66,6 +66,14 @@ if [[ "$node_major" -lt 18 ]]; then
 fi
 green "  ✓ Node $(node --version)"
 
+# hop-core (sibling repo)
+HOP_CORE_DIR="$(dirname "$ROOT_DIR")/hop-core"
+if [[ ! -d "$HOP_CORE_DIR" ]]; then
+  fail "hop-core not found at $HOP_CORE_DIR
+  Clone it first: git clone https://github.com/heretto/hop-core.git \"$HOP_CORE_DIR\""
+fi
+green "  ✓ hop-core found at $HOP_CORE_DIR"
+
 # ── 2. backend/.env ───────────────────────────────────────────────────────────
 step "Configuring backend environment"
 
