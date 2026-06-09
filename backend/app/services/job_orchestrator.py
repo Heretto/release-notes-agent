@@ -126,7 +126,7 @@ class JobOrchestrator:
                 if not ai_cred:
                     raise Exception("No AI credentials found. Please add AI credentials in the Credentials page.")
 
-            provider = ai_cred.type.value
+            provider = ai_cred.type if isinstance(ai_cred.type, str) else ai_cred.type.value
             ai_service = AIServiceFactory.create(
                 provider=provider,
                 api_key=ai_config["api_key"],

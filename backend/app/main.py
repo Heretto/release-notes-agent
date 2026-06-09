@@ -43,4 +43,5 @@ app = create_hop_app(
     title="AI Release Notes Agent API",
     description="Automated DITA release notes generation from Jira tickets",
     version="1.0.0",
+    include_credentials_router=False,
 )

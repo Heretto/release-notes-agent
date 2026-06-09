@@ -17,7 +17,7 @@ from starlette.datastructures import Headers
 
 from app.models.database import User, Organization, OrganizationMember, OrganizationRole
 from app.models.schemas import UserCreate
-from app.api.routes.auth import register, create_slug
+from hop_core.api.routes.auth import register, create_slug
 
 
 def _fake_request() -> Request:
@@ -343,7 +343,7 @@ class TestRegisterIntegration:
         checks `organization_role === 'admin'` (lowercase). If the API returns
         uppercase, the admin panel is hidden even for admin users.
         """
-        from app.api.routes.account import get_account_info
+        from hop_core.api.routes.account import get_account_info
         from app.api.dependencies import CurrentUserContext
 
         user_data = UserCreate(
@@ -378,7 +378,7 @@ class TestRegisterIntegration:
     @pytest.mark.asyncio
     async def test_admin_role_lowercase_in_login_token(self):
         """Regression: JWT token org_role must be lowercase 'admin' for frontend compatibility."""
-        from app.api.routes.auth import login
+        from hop_core.api.routes.auth import login
         from app.models.schemas import LoginRequest
         from app.core.security import decode_token
         from fastapi import Response
