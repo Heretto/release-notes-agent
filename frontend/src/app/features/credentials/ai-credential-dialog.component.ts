@@ -489,26 +489,29 @@ export class AICredentialDialogComponent {
   onSave(): void {
     if (this.form.valid) {
       const formValue = this.form.value;
-      
-      // Prepare credential data for backend
+
       const credentialData: any = {
         name: formValue.name,
         provider: formValue.provider,
         model: formValue.model || ''
       };
 
-      // Only include api_key if a new one was provided
-      // Never send the masked API key back to the server
       if (formValue.api_key) {
         credentialData.api_key = formValue.api_key;
       }
 
-      // Include optional fields if provided
       if (formValue.base_url) {
         credentialData.base_url = formValue.base_url;
       }
       if (formValue.organization_id) {
         credentialData.organization_id = formValue.organization_id;
+      }
+
+      // If a credential was already created during "Test Connection", include its id
+      // so the parent updates it rather than attempting a duplicate create.
+      if (this.temporaryCredId) {
+        credentialData.id = this.temporaryCredId;
+        this.temporaryCredId = undefined;
       }
 
       this.dialogRef.close(credentialData);

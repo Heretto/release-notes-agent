@@ -167,6 +167,18 @@ else
   green "  ✓ Frontend dependencies installed"
 fi
 
+# Symlink hop-ui node_modules so Angular can resolve @angular/* packages from the
+# library source during development (source-level consumption, no build step needed).
+HOP_UI_DIR="$HOP_CORE_DIR/ui"
+if [[ -L "$HOP_UI_DIR/node_modules" ]]; then
+  yellow "  ↩ hop-ui node_modules symlink already exists — skipping"
+elif [[ -d "$HOP_UI_DIR/node_modules" ]]; then
+  yellow "  ↩ hop-ui has its own node_modules directory — skipping symlink"
+else
+  ln -sf "$FRONTEND_DIR/node_modules" "$HOP_UI_DIR/node_modules"
+  green "  ✓ hop-ui node_modules symlinked to frontend/node_modules"
+fi
+
 # ── Done ──────────────────────────────────────────────────────────────────────
 printf '\n'
 green "════════════════════════════════════════════════════"

@@ -1,5 +1,20 @@
+/* Hop design tokens */
+:root {
+  --hop-primary: #3f51b5;
+  --hop-accent: #667eea;
+  --hop-warn: #f44336;
+  --hop-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --hop-sidebar-width: 250px;
+  --hop-toolbar-height: 64px;
+  --hop-space-xs: 4px;
+  --hop-space-sm: 8px;
+  --hop-space-md: 16px;
+  --hop-space-lg: 24px;
+  --hop-space-xl: 48px;
+}
+
 /* Global Styles */
-html, body { 
+html, body {
   height: 100%; 
   margin: 0;
 }

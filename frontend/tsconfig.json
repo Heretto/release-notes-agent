@@ -24,7 +24,9 @@
       "@core/*": ["src/app/core/*"],
       "@features/*": ["src/app/features/*"],
       "@shared/*": ["src/app/shared/*"],
-      "@environments/*": ["src/environments/*"]
+      "@environments/*": ["src/environments/*"],
+      "@heretto/hop-ui": ["../../hop-core/ui/src/public-api"],
+      "@heretto/hop-ui/*": ["../../hop-core/ui/src/*"]
     }
   },
   "angularCompilerOptions": {
