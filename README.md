@@ -39,15 +39,24 @@ An intelligent system for automating the creation of DITA-formatted release note
 
 ## Local Development
 
+This project depends on **[hop-core](https://github.com/heretto/hop-core)**, the shared Heretto platform library. Both repos must be checked out as siblings in the same directory:
+
+```
+~/dev/
+  hop-core/               ← clone this first
+  release-notes-agent/    ← then this
+```
+
 ### Quick install
 
 ```bash
+git clone https://github.com/heretto/hop-core.git
 git clone https://github.com/pboz/release-notes-agent.git
 cd release-notes-agent
 ./install.sh
 ```
 
-`install.sh` handles everything in one shot: checks prerequisites, generates secret keys, sets up the Python virtualenv, starts Docker infrastructure, initialises the database, and installs frontend dependencies. It offers to launch the app when finished.
+`install.sh` handles everything in one shot: checks prerequisites (including hop-core), generates secret keys, sets up the Python virtualenv, starts Docker infrastructure, initialises the database, and installs frontend dependencies. It offers to launch the app when finished.
 
 Safe to re-run — it skips steps that are already complete.
 
@@ -58,6 +67,7 @@ If you prefer to run the steps yourself:
 **1. Clone and configure**
 
 ```bash
+git clone https://github.com/heretto/hop-core.git   # must be a sibling directory
 git clone https://github.com/pboz/release-notes-agent.git
 cd release-notes-agent
 

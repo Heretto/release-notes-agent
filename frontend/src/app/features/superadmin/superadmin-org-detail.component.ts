@@ -11,10 +11,9 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatDividerModule } from '@angular/material/divider';
-import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.component';
+import { HopConfirmDialogComponent, HopInviteSuccessDialogComponent } from '@heretto/hop-ui';
 import { SuperadminService, SuperadminOrgDetail } from '../../core/services/superadmin.service';
 import { SuperadminAddMemberDialogComponent, AddMemberDialogResult } from './superadmin-add-member-dialog.component';
-import { InviteSuccessDialogComponent } from '../../shared/components/invite-success-dialog.component';
 
 @Component({
   selector: 'app-superadmin-org-detail',
@@ -396,7 +395,7 @@ export class SuperadminOrgDetailComponent implements OnInit {
         this.superadminService.inviteUser(this.org.id, result.email, result.role).subscribe({
           next: (invitation) => {
             const inviteUrl = `${window.location.origin}/invite/${invitation.token}`;
-            this.dialog.open(InviteSuccessDialogComponent, {
+            this.dialog.open(HopInviteSuccessDialogComponent, {
               data: {
                 email: invitation.email,
                 role: invitation.role,
@@ -420,7 +419,7 @@ export class SuperadminOrgDetailComponent implements OnInit {
   confirmRemoveMember(member: { user_id: string; email: string }) {
     if (!this.org) return;
 
-    const dialogRef = this.dialog.open(ConfirmDialogComponent, {
+    const dialogRef = this.dialog.open(HopConfirmDialogComponent, {
       data: {
         title: 'Remove Member',
         message: `Remove "${member.email}" from "${this.org.name}"? They will lose access to this organization's resources.`,
@@ -450,7 +449,7 @@ export class SuperadminOrgDetailComponent implements OnInit {
   confirmDelete() {
     if (!this.org) return;
 
-    const dialogRef = this.dialog.open(ConfirmDialogComponent, {
+    const dialogRef = this.dialog.open(HopConfirmDialogComponent, {
       data: {
         title: 'Delete Organization',
         message: `Are you sure you want to delete "${this.org.name}"? This will remove all associated data including members, jobs, credentials, and instruction sets. This action cannot be undone.`,

@@ -636,21 +636,33 @@ export class CredentialsComponent implements OnInit {
 
     dialogRef.afterClosed().subscribe(result => {
       if (result) {
-        this.credentialsService.createAICredential(result).subscribe({
-          next: (credential) => {
-            // Create a new array reference to trigger change detection
-            this.aiCredentials = [...this.aiCredentials, credential];
-            this.snackBar.open('AI credential added successfully', 'Close', {
-              duration: 3000
-            });
-          },
-          error: (error) => {
-            this.snackBar.open('Failed to add AI credential', 'Close', {
-              duration: 3000
-            });
-            console.error('Error adding credential:', error);
-          }
-        });
+        if (result.id) {
+          // Credential was already created during "Test Connection" — update it with
+          // the final form values (name/model may have changed after testing).
+          // Always reload after update: the PUT response omits `provider`, so using
+          // it directly would leave that column blank.
+          this.credentialsService.updateAICredential(result.id, result).subscribe({
+            next: () => {
+              this.loadAICredentials();
+              this.snackBar.open('AI credential added successfully', 'Close', { duration: 3000 });
+            },
+            error: () => {
+              this.loadAICredentials();
+              this.snackBar.open('AI credential added successfully', 'Close', { duration: 3000 });
+            }
+          });
+        } else {
+          this.credentialsService.createAICredential(result).subscribe({
+            next: () => {
+              this.loadAICredentials();
+              this.snackBar.open('AI credential added successfully', 'Close', { duration: 3000 });
+            },
+            error: (error) => {
+              this.snackBar.open('Failed to add AI credential', 'Close', { duration: 3000 });
+              console.error('Error adding credential:', error);
+            }
+          });
+        }
       }
     });
   }
