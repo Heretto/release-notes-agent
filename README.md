@@ -48,7 +48,7 @@ This project depends on **[hop-core](https://github.com/Heretto/hop-core)**, Her
 ### Quick install
 
 ```bash
-git clone https://github.com/pboz/release-notes-agent.git
+git clone https://github.com/Heretto/release-notes-agent.git
 cd release-notes-agent
 ./install.sh
 ```
@@ -64,7 +64,7 @@ If you prefer to run the steps yourself:
 **1. Clone and configure**
 
 ```bash
-git clone https://github.com/pboz/release-notes-agent.git
+git clone https://github.com/Heretto/release-notes-agent.git
 cd release-notes-agent
 
 # hop-core must be a sibling directory; install.sh creates this automatically,
