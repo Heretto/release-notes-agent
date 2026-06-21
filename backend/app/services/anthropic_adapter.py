@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 class AnthropicAdapter(AIServiceInterface):
     """Anthropic Claude AI service implementation."""
 
-    def __init__(self, api_key: str, model_name: str = "claude-3-5-sonnet-20241022"):
+    def __init__(self, api_key: str, model_name: str = "claude-sonnet-4-20250514"):
         if not api_key:
             raise ValueError("API key is empty")
 

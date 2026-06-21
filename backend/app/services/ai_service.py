@@ -43,7 +43,7 @@ class AIServiceFactory:
             return GeminiAdapter(api_key=api_key, model_name=model or "gemini-2.5-pro")
         elif provider == "anthropic":
             from app.services.anthropic_adapter import AnthropicAdapter
-            return AnthropicAdapter(api_key=api_key, model_name=model or "claude-3-5-sonnet-20241022")
+            return AnthropicAdapter(api_key=api_key, model_name=model or "claude-sonnet-4-20250514")
         elif provider == "openai":
             from app.services.openai_adapter import OpenAIAdapter
             return OpenAIAdapter(api_key=api_key, model_name=model or "gpt-4-turbo-preview")

@@ -52,7 +52,7 @@ def debug_stored_credentials():
             try:
                 client = anthropic.Anthropic(api_key=api_key)
                 response = client.messages.create(
-                    model="claude-3-5-sonnet-20241022",
+                    model="claude-sonnet-4-20250514",
                     max_tokens=10,
                     messages=[{"role": "user", "content": "Say 'test'"}]
                 )
