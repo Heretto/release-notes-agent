@@ -22,7 +22,7 @@ from starlette.requests import Request
 
 from app.models.database import User, Organization, OrganizationMember, OrganizationRole
 from app.models.schemas import UserCreate
-from app.api.routes.auth import register
+from hop_core.api.routes.auth import register
 
 
 # ---------------------------------------------------------------------------
@@ -133,12 +133,18 @@ def _patch_settings(monkeypatch, **kwargs):
     raw_domains = defaults.get("allowed_email_domains") or ""
     domains_list = [d.strip().lower() for d in raw_domains.split(",") if d.strip()]
 
-    for module_path in ("app.api.routes.auth.settings", "app.api.routes.sso.settings"):
-        mock = MagicMock()
-        for k, v in defaults.items():
-            setattr(mock, k, v)
-        mock.allowed_domains_list = domains_list
-        monkeypatch.setattr(module_path, mock)
+    mock = MagicMock()
+    for k, v in defaults.items():
+        setattr(mock, k, v)
+    mock.allowed_domains_list = domains_list
+
+    # hop-core routes call get_settings() inline; patch the imported reference
+    # in each route module rather than a module-level settings variable.
+    for getter_path in (
+        "hop_core.api.routes.auth.get_settings",
+        "hop_core.api.routes.sso.get_settings",
+    ):
+        monkeypatch.setattr(getter_path, lambda _mock=mock: _mock)
 
 
 # ---------------------------------------------------------------------------
@@ -210,7 +216,7 @@ class TestDomainRestrictionSSO:
     """ALLOWED_EMAIL_DOMAINS also blocks new SSO users from non-listed domains."""
 
     def _call_sso(self):
-        from app.api.routes.sso import _handle_sso_login
+        from hop_core.api.routes.sso import _handle_sso_login
         return _handle_sso_login
 
     def _make_empty_db(self):
@@ -422,7 +428,7 @@ class TestSingleOrgModeSSO:
     DEFAULT_SLUG = "default-org"
 
     def _call_sso(self, db, email="new@example.com", name="New User"):
-        from app.api.routes.sso import _handle_sso_login
+        from hop_core.api.routes.sso import _handle_sso_login
         return _handle_sso_login(db, "google", f"g-{uuid4()}", email, name)
 
     def _db_for_new_sso_user(self, default_org):
@@ -522,7 +528,7 @@ class TestProvidersEndpointFlags:
     """GET /auth/sso/providers must return single_org_mode and sso_only."""
 
     def _build_app(self, monkeypatch, **settings_kwargs):
-        from app.api.routes.sso import router as sso_router
+        from hop_core.api.routes.sso import router as sso_router
         app = FastAPI()
         # The SSO router already carries prefix="/auth/sso"; mount without extra prefix.
         app.include_router(sso_router)

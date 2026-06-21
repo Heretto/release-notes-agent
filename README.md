@@ -21,33 +21,39 @@ An intelligent system for automating the creation of DITA-formatted release note
 │  Angular 17     │────▶│  FastAPI        │────▶│  PostgreSQL     │
 │  Frontend       │     │  Backend        │     │  Database       │
 └─────────────────┘     └─────────────────┘     └─────────────────┘
-                               │
-                               ├────▶ Redis (Queue)
-                               ├────▶ Celery (Async Tasks)
-                               ├────▶ Jira API
-                               ├────▶ Anthropic / OpenAI / Gemini
-                               └────▶ Heretto CCMS
+        │                      │
+        │ @heretto/hop-ui       ├────▶ Redis (Queue)
+        ▼                      ├────▶ Celery (Async Tasks)
+┌─────────────────┐            ├────▶ Jira API
+│  hop-core       │            ├────▶ Anthropic / OpenAI / Gemini
+│  (shared lib)   │            └────▶ Heretto CCMS
+└─────────────────┘
 ```
+
+The app is built on **[hop-core](https://github.com/Heretto/hop-core)**, Heretto's shared platform library. The Python backend imports `hop_core` for auth, multi-tenancy, and user management. The Angular frontend imports `@heretto/hop-ui` for the login, layout, admin, and account screens — these are consumed directly from source via a tsconfig path alias (no separate build step needed).
 
 ## Prerequisites
 
 - Docker and Docker Compose (for infrastructure)
 - Python 3.12+ (for local backend development)
 - Node.js 18+ and npm (for local frontend development)
+- git (used by install.sh to clone hop-core automatically)
 - At least one AI provider API key (Anthropic, OpenAI, or Google Gemini)
 - Jira instance with API access
 
 ## Local Development
 
+This project depends on **[hop-core](https://github.com/Heretto/hop-core)**, Heretto's shared platform library. Both repos live as siblings in the same directory — `install.sh` clones hop-core automatically if it isn't already present.
+
 ### Quick install
 
 ```bash
-git clone https://github.com/pboz/release-notes-agent.git
+git clone https://github.com/Heretto/release-notes-agent.git
 cd release-notes-agent
 ./install.sh
 ```
 
-`install.sh` handles everything in one shot: checks prerequisites, generates secret keys, sets up the Python virtualenv, starts Docker infrastructure, initialises the database, and installs frontend dependencies. It offers to launch the app when finished.
+`install.sh` handles everything in one shot: clones hop-core if needed, checks prerequisites, generates secret keys, sets up the Python virtualenv, starts Docker infrastructure, initialises the database, installs frontend dependencies, and symlinks hop-core's UI source for Angular's module resolver. It offers to launch the app when finished.
 
 Safe to re-run — it skips steps that are already complete.
 
@@ -58,8 +64,12 @@ If you prefer to run the steps yourself:
 **1. Clone and configure**
 
 ```bash
-git clone https://github.com/pboz/release-notes-agent.git
+git clone https://github.com/Heretto/release-notes-agent.git
 cd release-notes-agent
+
+# hop-core must be a sibling directory; install.sh creates this automatically,
+# or clone it yourself:
+git clone https://github.com/Heretto/hop-core.git ../hop-core
 
 cp backend/.env.example backend/.env
 # Edit backend/.env — generate random values for APP_SECRET_KEY,
@@ -88,6 +98,10 @@ venv/bin/alembic stamp head
 ```bash
 cd frontend
 npm install
+
+# Symlink hop-core's UI source so Angular can resolve @heretto/hop-ui
+# during compilation (no separate build step needed):
+ln -sf "$(pwd)/node_modules" ../hop-core/ui/node_modules
 ```
 
 **5. Start everything**
@@ -458,4 +472,4 @@ docker compose logs postgres
 
 ## License
 
-This project is licensed under the MIT License — see the LICENSE file for details.
+This project is licensed under the Apache License, Version 2.0 — see the [LICENSE](LICENSE) file for details.

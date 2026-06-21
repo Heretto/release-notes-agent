@@ -66,6 +66,19 @@ if [[ "$node_major" -lt 18 ]]; then
 fi
 green "  ✓ Node $(node --version)"
 
+# hop-core (sibling repo)
+HOP_CORE_DIR="$(dirname "$ROOT_DIR")/hop-core"
+if [[ ! -d "$HOP_CORE_DIR" ]]; then
+  if ! command -v git &>/dev/null; then
+    fail "git not found and hop-core is missing. Install git and re-run."
+  fi
+  yellow "  hop-core not found — cloning from GitHub..."
+  git clone https://github.com/Heretto/hop-core.git "$HOP_CORE_DIR"
+  green "  ✓ hop-core cloned to $HOP_CORE_DIR"
+else
+  green "  ✓ hop-core found at $HOP_CORE_DIR"
+fi
+
 # ── 2. backend/.env ───────────────────────────────────────────────────────────
 step "Configuring backend environment"
 
@@ -157,6 +170,18 @@ if [[ -d "$FRONTEND_DIR/node_modules" ]]; then
 else
   (cd "$FRONTEND_DIR" && npm install --silent)
   green "  ✓ Frontend dependencies installed"
+fi
+
+# Symlink hop-ui node_modules so Angular can resolve @angular/* packages from the
+# library source during development (source-level consumption, no build step needed).
+HOP_UI_DIR="$HOP_CORE_DIR/ui"
+if [[ -L "$HOP_UI_DIR/node_modules" ]]; then
+  yellow "  ↩ hop-ui node_modules symlink already exists — skipping"
+elif [[ -d "$HOP_UI_DIR/node_modules" ]]; then
+  yellow "  ↩ hop-ui has its own node_modules directory — skipping symlink"
+else
+  ln -sf "$FRONTEND_DIR/node_modules" "$HOP_UI_DIR/node_modules"
+  green "  ✓ hop-ui node_modules symlinked to frontend/node_modules"
 fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────

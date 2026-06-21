@@ -554,8 +554,8 @@ async def list_ai_credentials(
         
         result.append({
             "id": str(cred.id),
-            "type": cred.type.value,
-            "provider": provider_mapping.get(cred.type, cred.type.value),
+            "type": cred.type,
+            "provider": provider_mapping.get(cred.type, cred.type),
             "name": cred.name,
             "model": model if model else "Default",
             "created_at": cred.created_at.isoformat() if cred.created_at else None,
@@ -764,7 +764,7 @@ async def test_credential(
         )
 
     try:
-        if credential.type.value == "jira":
+        if credential.type == "jira":
             # Make a test request to Jira API
             server_url = decrypted["server_url"].rstrip('/')
             email = decrypted["email"]
@@ -832,7 +832,7 @@ async def test_credential(
                     "message": message,
                 }
             
-        elif credential.type.value == "heretto":
+        elif credential.type == "heretto":
             heretto_service = HerettoService(
                 base_url=decrypted["server_url"],
                 username=decrypted["username"],
@@ -846,7 +846,7 @@ async def test_credential(
                 "timestamp": datetime.utcnow().isoformat()
             }
                 
-        elif credential.type.value in ["gemini", "openai", "anthropic"]:
+        elif credential.type in ["gemini", "openai", "anthropic"]:
             # Test AI provider connection with full request/response capture
             import json
             import logging
@@ -854,7 +854,7 @@ async def test_credential(
             try:
                 api_key = decrypted.get("api_key", "")
                 model = decrypted.get("model")
-                provider = credential.type.value.lower()
+                provider = credential.type.lower()
                 
                 # Prepare test request details
                 if provider == "anthropic":
@@ -1033,10 +1033,10 @@ async def test_credential(
                 return {
                     "success": False,
                     "status_code": status_code,
-                    "message": f"{credential.type.value.capitalize()} {user_message}",
+                    "message": f"{credential.type.capitalize()} {user_message}",
                     "timestamp": datetime.utcnow().isoformat(),
                     "request": {
-                        "provider": credential.type.value.lower(),
+                        "provider": credential.type.lower(),
                         "model": decrypted.get("model", "default")
                     },
                 }

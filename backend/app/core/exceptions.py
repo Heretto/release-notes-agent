@@ -1,44 +1,38 @@
-from typing import Any, Optional, Dict
+"""Application exceptions.
 
-class ReleaseNotesException(Exception):
-    """Base exception for the application."""
-    def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
-        self.message = message
-        self.details = details or {}
-        super().__init__(self.message)
+Core exceptions are provided by hop-core. Domain-specific exceptions are defined here.
+"""
 
-class AuthenticationError(ReleaseNotesException):
-    """Authentication failed."""
-    pass
+# Re-export core exceptions
+from hop_core.core.exceptions import (
+    HopException as ReleaseNotesException,
+    AuthenticationError,
+    AuthorizationError,
+    CredentialError,
+    EmailNotConfiguredError,
+)
 
-class AuthorizationError(ReleaseNotesException):
-    """User not authorized for this action."""
-    pass
-
-class CredentialError(ReleaseNotesException):
-    """Credential-related error."""
-    pass
 
 class JiraIntegrationError(ReleaseNotesException):
     """Error interacting with Jira."""
     pass
 
+
 class HerettoIntegrationError(ReleaseNotesException):
     """Error interacting with Heretto."""
     pass
+
 
 class AIGenerationError(ReleaseNotesException):
     """Error during AI content generation."""
     pass
 
+
 class DITAValidationError(ReleaseNotesException):
     """DITA content validation failed."""
     pass
 
+
 class JobProcessingError(ReleaseNotesException):
     """Error during job processing."""
-    pass
-
-class EmailNotConfiguredError(ReleaseNotesException):
-    """Email/SMTP is not configured."""
     pass
