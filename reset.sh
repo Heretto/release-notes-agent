@@ -19,7 +19,11 @@ ALEMBIC="$BACKEND_DIR/venv/bin/alembic"
 
 # ── Postgres connection details (must match docker-compose.yml) ────────────────
 DB_USER="user"
+DB_PASS="password"
+DB_HOST="localhost"
+DB_PORT="5432"
 DB_NAME="release_notes_db"
+DATABASE_URL="postgresql://${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
 
 # ── Confirmation ─────────────────────────────────────────────────────────────
 if [[ "${1:-}" != "--yes" ]]; then
@@ -74,12 +78,14 @@ fi
 if [[ ! -x "$PYTHON" ]]; then
   echo "⚠️  backend venv not found at $BACKEND_DIR/venv — skipping schema creation."
   echo "   Run: cd backend && python3 -m venv venv && venv/bin/pip install -r requirements.txt"
-  echo "   Then: cd backend && venv/bin/python -c \"from app.models.database import Base, engine; Base.metadata.create_all(bind=engine)\""
+  echo "   Then: cd backend && venv/bin/python -c \"from app.models.database import Base, get_engine; Base.metadata.create_all(bind=get_engine())\""
 else
   echo "Creating database schema from models..."
   (cd "$BACKEND_DIR" && "$PYTHON" -c "
-from app.models.database import Base, engine
-Base.metadata.create_all(bind=engine)
+from hop_core.db import init_engine
+from app.models.database import Base, get_engine
+init_engine('$DATABASE_URL')
+Base.metadata.create_all(bind=get_engine())
 ")
   echo "  ✓ Schema created"
 
