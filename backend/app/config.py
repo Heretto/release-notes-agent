@@ -23,6 +23,11 @@ class Settings(HopCoreSettings):
     max_query_limit: int = 500
     max_tickets_per_job: int = 500
 
+    # DITA validation: max times invalid DITA is looped back through the LLM
+    # before giving up. A generous safety cap — in practice validation passes
+    # in the first 1-2 iterations.
+    dita_max_correction_iterations: int = 10
+
     # Override default SMTP from name
     smtp_from_name: str = "Release Notes Agent"
 

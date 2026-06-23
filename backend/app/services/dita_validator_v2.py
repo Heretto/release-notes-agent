@@ -27,6 +27,14 @@ class DITAValidatorV2:
         "glossentry": "dtd/technicalContent/dtd/glossentry.dtd",
         "glossgroup": "dtd/technicalContent/dtd/glossgroup.dtd"
     }
+
+    # Valid DITA 1.3 root (topic-type) elements. A conforming DITA document must
+    # have one of these as its root element — a <section> (or other body-level
+    # element) at the root is invalid.
+    VALID_ROOT_ELEMENTS = {
+        'topic', 'concept', 'task', 'reference', 'troubleshooting',
+        'glossentry', 'glossgroup', 'generalTask'
+    }
     
     def __init__(self, dtd_dir: Optional[str] = None):
         """Initialize validator with optional DTD directory."""
@@ -212,14 +220,12 @@ class DITAValidatorV2:
             # Determine topic type and validate accordingly
             topic_type = doc.tag
             
-            # Check root element - expanded list based on DITA 1.3
-            valid_root_elements = [
-                'topic', 'concept', 'task', 'reference', 'troubleshooting',
-                'glossentry', 'glossgroup', 'generalTask'
-            ]
-            
-            if topic_type not in valid_root_elements:
-                errors.append(f"Invalid root element '{topic_type}'. Must be one of: {', '.join(valid_root_elements)}")
+            # Check root element against the valid DITA 1.3 root elements
+            if topic_type not in self.VALID_ROOT_ELEMENTS:
+                errors.append(
+                    f"Invalid root element '{topic_type}'. Must be one of: "
+                    f"{', '.join(sorted(self.VALID_ROOT_ELEMENTS))}"
+                )
             
             # Check if we have DTDs available for enhanced validation context
             if self._dtd_available(topic_type):
@@ -486,5 +492,105 @@ Return ONLY the corrected DITA XML with no explanation or commentary."""
             r'\1topic_\2',
             content
         )
-        
+
         return content
+
+    # ------------------------------------------------------------------
+    # Root element enforcement
+    # ------------------------------------------------------------------
+
+    def get_root_tag(self, content: str) -> Optional[str]:
+        """Return the root element's local tag name.
+
+        Tries a strict parser first (so multiple top-level elements surface as a
+        parse error rather than silently returning the first one), then falls
+        back to a recovering parser so we can still report what a malformed
+        document's root looks like. Returns None when nothing parseable is found.
+        """
+        for recover in (False, True):
+            try:
+                parser = etree.XMLParser(
+                    recover=recover, no_network=True, resolve_entities=False
+                )
+                doc = etree.fromstring(content.encode('utf-8'), parser)
+            except etree.XMLSyntaxError:
+                continue
+            if doc is not None:
+                return etree.QName(doc.tag).localname
+        return None
+
+    def has_valid_root(self, content: str) -> bool:
+        """Return True only if the document's single root is a valid DITA root.
+
+        Content with multiple top-level elements (e.g. several stray <section>
+        elements with no <topic> wrapper) fails the strict parse and is reported
+        as invalid even if the first element happens to be a recognised tag.
+        """
+        try:
+            parser = etree.XMLParser(
+                recover=False, no_network=True, resolve_entities=False
+            )
+            doc = etree.fromstring(content.encode('utf-8'), parser)
+        except etree.XMLSyntaxError:
+            return False
+        if doc is None:
+            return False
+        return etree.QName(doc.tag).localname in self.VALID_ROOT_ELEMENTS
+
+    def ensure_topic_root(
+        self,
+        content: str,
+        topic_id: str = "release-notes",
+        title: str = "Release Notes",
+    ) -> str:
+        """Guarantee the content has a valid DITA topic-type root element.
+
+        If the content already parses to a single valid DITA root (topic,
+        concept, task, ...), it is returned unchanged. Otherwise — for example
+        when an AI correction step returns one or more bare <section> elements
+        with no <topic> wrapper, which is the failure mode that produced a
+        <section> root in generated output — the body-level content is wrapped
+        in a proper <topic> shell so the root element is always valid.
+        """
+        if self.has_valid_root(content):
+            return content
+
+        logger.warning(
+            "DITA content has no valid root element (root=%r); "
+            "re-wrapping body content in a <topic>",
+            self.get_root_tag(content),
+        )
+
+        body_content = self._extract_wrappable_body(content)
+
+        safe_id = re.sub(r'[^a-zA-Z0-9_\-]', '-', topic_id or "").strip('-')
+        if not safe_id or not safe_id[0].isalpha():
+            safe_id = f"topic-{safe_id}" if safe_id else "release-notes"
+
+        safe_title = title.strip() if title and title.strip() else "Release Notes"
+
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<!DOCTYPE topic PUBLIC "-//OASIS//DTD DITA Topic//EN" "topic.dtd">\n'
+            f'<topic id="{safe_id}">\n'
+            f'  <title>{safe_title}</title>\n'
+            f'  <body>\n{body_content}\n  </body>\n'
+            '</topic>\n'
+        )
+
+    def _extract_wrappable_body(self, content: str) -> str:
+        """Strip declarations / outer wrappers and return body-level content.
+
+        Used by ensure_topic_root to recover the inner content when the root
+        element is missing or invalid. Prefers the inner content of an existing
+        <body>; otherwise returns the remaining markup after removing the XML
+        declaration and DOCTYPE.
+        """
+        text = re.sub(r'<\?xml[^>]*\?>', '', content)
+        text = re.sub(r'<!DOCTYPE[^>]*>', '', text, flags=re.DOTALL)
+
+        body_match = re.search(r'<body[^>]*>(.*?)</body>', text, re.DOTALL)
+        if body_match:
+            return body_match.group(1).strip()
+
+        return text.strip()

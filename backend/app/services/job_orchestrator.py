@@ -248,11 +248,13 @@ Response Length: {len(ai_response.content)} characters
             # Store original for comparison
             original_dita = dita_content
             
-            # Validate and correct with AI if needed
+            # Validate and correct with AI if needed. Invalid DITA is recoverable:
+            # the content is looped back through the LLM until it validates, up to
+            # a configurable safety cap (which in practice is never reached).
             corrected_content, is_valid, validation_log = await correction_service.validate_and_correct_with_ai(
                 content=dita_content,
                 original_prompt=user_prompt,  # Pass original prompt for potential regeneration
-                max_cycles=2
+                max_iterations=settings.dita_max_correction_iterations,
             )
             
             # Save validation log as artifact
@@ -284,12 +286,23 @@ Response Length: {len(ai_response.content)} characters
                 )
                 self.db.add(error_artifact)
                 self.db.commit()
-                
-                # Log warning but continue with best effort
-                logger.warning(f"DITA validation failed for job {job.id} after correction attempts")
-                
-                # Use the best version we have
-                dita_content = corrected_content
+
+                # The correction loop exhausted its safety cap without producing
+                # valid DITA — an exceptional case that should not happen in
+                # practice. Do NOT emit invalid DITA (e.g. a <section> root
+                # instead of <topic>): fail the job so no malformed output is
+                # ever saved or published. The validation_error artifact above
+                # preserves the details for debugging.
+                logger.error(
+                    f"DITA validation failed for job {job.id}: correction loop reached its "
+                    f"safety cap ({settings.dita_max_correction_iterations} iterations) "
+                    "without producing valid DITA; no DITA artifact will be produced"
+                )
+                raise Exception(
+                    "DITA validation failed: the generated content could not be made "
+                    "valid within the maximum number of correction attempts, so no "
+                    "output was produced. See the validation error log for details."
+                )
             else:
                 # Validation successful
                 logger.info(f"DITA validation successful for job {job.id}")
@@ -587,6 +600,7 @@ _SAFE_ERROR_PREFIXES = (
     "Failed to get projects",
     "Failed to get versions",
     "Failed to get issue",
+    "DITA validation failed",
 )
 
 
