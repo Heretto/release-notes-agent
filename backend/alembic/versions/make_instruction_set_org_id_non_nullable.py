@@ -1,6 +1,6 @@
 """Make instruction_sets.organization_id non-nullable
 
-Revision ID: make_instruction_set_org_id_non_nullable
+Revision ID: make_instrset_orgid_not_null
 Revises: add_jql_to_instructions
 Create Date: 2026-03-23
 """
@@ -8,7 +8,7 @@ Create Date: 2026-03-23
 from alembic import op
 import sqlalchemy as sa
 
-revision = 'make_instruction_set_org_id_non_nullable'
+revision = 'make_instrset_orgid_not_null'
 down_revision = 'add_jql_to_instructions'
 branch_labels = None
 depends_on = None

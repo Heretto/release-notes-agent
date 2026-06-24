@@ -1,7 +1,7 @@
 """Add organization_id to webhook_configs
 
 Revision ID: add_org_id_to_webhook_configs
-Revises: make_instruction_set_org_id_non_nullable
+Revises: make_instrset_orgid_not_null
 Create Date: 2026-03-23
 """
 
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID
 
 revision = 'add_org_id_to_webhook_configs'
-down_revision = 'make_instruction_set_org_id_non_nullable'
+down_revision = 'make_instrset_orgid_not_null'
 branch_labels = None
 depends_on = None
 
