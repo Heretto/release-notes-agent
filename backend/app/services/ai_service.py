@@ -34,9 +34,9 @@ class AIServiceInterface(ABC):
 
 class AIServiceFactory:
     """Factory for creating AI service instances."""
-    
+
     @staticmethod
-    def create(provider: str, api_key: str, model: Optional[str] = None) -> AIServiceInterface:
+    def create(provider: str, api_key: str, model: Optional[str] = None, **kwargs) -> AIServiceInterface:
         """Create an AI service instance based on provider."""
         if provider == "gemini":
             from app.services.gemini_adapter import GeminiAdapter
@@ -47,5 +47,13 @@ class AIServiceFactory:
         elif provider == "openai":
             from app.services.openai_adapter import OpenAIAdapter
             return OpenAIAdapter(api_key=api_key, model_name=model or "gpt-4-turbo-preview")
+        elif provider == "azure":
+            from app.services.azure_adapter import AzureAdapter
+            return AzureAdapter(
+                api_key=api_key,
+                azure_endpoint=kwargs["azure_endpoint"],
+                deployment_name=kwargs.get("deployment_name") or model or "",
+                api_version=kwargs.get("api_version", "2024-05-01-preview"),
+            )
         else:
             raise ValueError(f"Unknown AI provider: {provider}")

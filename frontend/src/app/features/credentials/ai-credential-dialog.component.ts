@@ -21,6 +21,9 @@ export interface AICredential {
   model?: string;
   base_url?: string;
   organization_id?: string;
+  azure_endpoint?: string;
+  deployment_name?: string;
+  api_version?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -59,6 +62,12 @@ export interface AICredential {
           <div class="field-display">
             <strong>API Key:</strong> {{ maskApiKey(data.api_key) }}
           </div>
+          <div *ngIf="data.provider === 'azure'" class="field-display">
+            <strong>Endpoint:</strong> {{ data.azure_endpoint }}
+          </div>
+          <div *ngIf="data.provider === 'azure'" class="field-display">
+            <strong>Deployment:</strong> {{ data.deployment_name }}
+          </div>
         </div>
       </div>
 
@@ -88,6 +97,10 @@ export interface AICredential {
               <mat-icon>auto_awesome</mat-icon>
               Google AI Studio (Gemini)
             </mat-option>
+            <mat-option value="azure">
+              <mat-icon>cloud</mat-icon>
+              Azure OpenAI
+            </mat-option>
             <mat-option value="custom">
               <mat-icon>settings</mat-icon>
               Custom/Other
@@ -116,18 +129,48 @@ export interface AICredential {
           <mat-hint>{{ getModelHint() }}</mat-hint>
         </mat-form-field>
 
-        <mat-form-field appearance="fill" class="full-width" 
+        <mat-form-field appearance="fill" class="full-width"
+                        *ngIf="showAzureFields">
+          <mat-label>Azure Endpoint</mat-label>
+          <input matInput formControlName="azure_endpoint"
+                 placeholder="https://my-resource.openai.azure.com">
+          <mat-hint>Your Azure OpenAI resource endpoint URL</mat-hint>
+          <mat-error *ngIf="form.get('azure_endpoint')?.hasError('required')">
+            Azure endpoint is required
+          </mat-error>
+        </mat-form-field>
+
+        <mat-form-field appearance="fill" class="full-width"
+                        *ngIf="showAzureFields">
+          <mat-label>Deployment Name</mat-label>
+          <input matInput formControlName="deployment_name"
+                 placeholder="e.g., gpt-4o-deployment">
+          <mat-hint>The deployment name you gave the model in Azure AI Foundry</mat-hint>
+          <mat-error *ngIf="form.get('deployment_name')?.hasError('required')">
+            Deployment name is required
+          </mat-error>
+        </mat-form-field>
+
+        <mat-form-field appearance="fill" class="full-width"
+                        *ngIf="showAzureFields">
+          <mat-label>API Version (Optional)</mat-label>
+          <input matInput formControlName="api_version"
+                 placeholder="2024-05-01-preview">
+          <mat-hint>Azure OpenAI API version (defaults to 2024-05-01-preview)</mat-hint>
+        </mat-form-field>
+
+        <mat-form-field appearance="fill" class="full-width"
                         *ngIf="showBaseUrl">
           <mat-label>Base URL (Optional)</mat-label>
-          <input matInput formControlName="base_url" 
+          <input matInput formControlName="base_url"
                  placeholder="https://api.openai.com/v1">
           <mat-hint>Custom API endpoint (for self-hosted or alternative providers)</mat-hint>
         </mat-form-field>
 
-        <mat-form-field appearance="fill" class="full-width" 
+        <mat-form-field appearance="fill" class="full-width"
                         *ngIf="showOrganizationId">
           <mat-label>Organization ID (Optional)</mat-label>
-          <input matInput formControlName="organization_id" 
+          <input matInput formControlName="organization_id"
                  placeholder="org-...">
           <mat-hint>OpenAI organization ID if applicable</mat-hint>
         </mat-form-field>
@@ -317,61 +360,73 @@ export class AICredentialDialogComponent {
       api_key: ['', data ? [] : Validators.required],
       model: [data?.model || ''],
       base_url: [data?.base_url || ''],
-      organization_id: [data?.organization_id || '']
+      organization_id: [data?.organization_id || ''],
+      azure_endpoint: [data?.azure_endpoint || ''],
+      deployment_name: [data?.deployment_name || ''],
+      api_version: [data?.api_version || ''],
     });
 
-    // Watch provider changes to show/hide fields
+    // Watch provider changes to show/hide fields and update validators
     this.form.get('provider')?.valueChanges.subscribe(provider => {
       this.updateFieldVisibility(provider);
     });
+    // Apply validators for initial provider value
+    this.updateFieldVisibility(data?.provider || 'openai');
+  }
+
+  get showAzureFields(): boolean {
+    return this.form.get('provider')?.value === 'azure';
   }
 
   get showBaseUrl(): boolean {
-    const provider = this.form.get('provider')?.value;
-    return provider === 'custom';
+    return this.form.get('provider')?.value === 'custom';
   }
 
   get showOrganizationId(): boolean {
-    const provider = this.form.get('provider')?.value;
-    return provider === 'openai';
+    return this.form.get('provider')?.value === 'openai';
   }
   
   getModelPlaceholder(): string {
     const provider = this.form.get('provider')?.value;
-    switch(provider) {
-      case 'openai':
-        return 'e.g., gpt-4-turbo-preview, gpt-4, gpt-3.5-turbo';
-      case 'anthropic':
-        return 'e.g., claude-3-5-sonnet-20241022, claude-3-opus-20240229';
-      case 'gemini':
-        return 'e.g., gemini-2.5-pro, gemini-2.0-flash, gemini-pro-vision';
-      default:
-        return 'Enter the model identifier';
+    switch (provider) {
+      case 'openai': return 'e.g., gpt-4-turbo-preview, gpt-4, gpt-3.5-turbo';
+      case 'anthropic': return 'e.g., claude-sonnet-4-20250514, claude-3-opus-20240229';
+      case 'gemini': return 'e.g., gemini-2.5-pro, gemini-2.0-flash';
+      case 'azure': return 'Optional — leave empty to use deployment name';
+      default: return 'Enter the model identifier';
     }
   }
 
   getModelHint(): string {
     const provider = this.form.get('provider')?.value;
-    switch(provider) {
-      case 'openai':
-        return 'Specify the OpenAI model to use (leave empty for default)';
-      case 'anthropic':
-        return 'Specify the Claude model version to use (leave empty for default)';
-      case 'gemini':
-        return 'Specify the Gemini model to use (leave empty for default)';
-      default:
-        return 'Enter the specific model identifier for this provider';
+    switch (provider) {
+      case 'openai': return 'Specify the OpenAI model to use (leave empty for default)';
+      case 'anthropic': return 'Specify the Claude model version to use (leave empty for default)';
+      case 'gemini': return 'Specify the Gemini model to use (leave empty for default)';
+      case 'azure': return 'Optional — the deployment name is used by default';
+      default: return 'Enter the specific model identifier for this provider';
     }
   }
 
   updateFieldVisibility(provider: string) {
-    // Reset optional fields when provider changes
-    if (!this.showBaseUrl) {
-      this.form.get('base_url')?.setValue('');
+    const azureEndpoint = this.form.get('azure_endpoint');
+    const deploymentName = this.form.get('deployment_name');
+
+    if (provider === 'azure') {
+      azureEndpoint?.setValidators(Validators.required);
+      deploymentName?.setValidators(Validators.required);
+    } else {
+      azureEndpoint?.clearValidators();
+      azureEndpoint?.setValue('');
+      deploymentName?.clearValidators();
+      deploymentName?.setValue('');
+      this.form.get('api_version')?.setValue('');
     }
-    if (!this.showOrganizationId) {
-      this.form.get('organization_id')?.setValue('');
-    }
+    azureEndpoint?.updateValueAndValidity();
+    deploymentName?.updateValueAndValidity();
+
+    if (provider !== 'custom') this.form.get('base_url')?.setValue('');
+    if (provider !== 'openai') this.form.get('organization_id')?.setValue('');
   }
 
   maskApiKey(key: string): string {
@@ -395,13 +450,13 @@ export class AICredentialDialogComponent {
       // Test existing credential with updated values
       // Only update if a new API key is provided
       if (formValue.api_key) {
-        const updateData = {
-          name: formValue.name,
-          credentials: {
-            api_key: formValue.api_key,
-            model: formValue.model || ''
-          }
-        };
+        const credentials: any = { api_key: formValue.api_key, model: formValue.model || '' };
+        if (formValue.provider === 'azure') {
+          credentials['azure_endpoint'] = formValue.azure_endpoint;
+          credentials['deployment_name'] = formValue.deployment_name;
+          credentials['api_version'] = formValue.api_version || '';
+        }
+        const updateData = { name: formValue.name, credentials };
         
         this.credentialsService.updateAICredential(this.data.id, updateData).subscribe({
           next: () => {
@@ -422,12 +477,17 @@ export class AICredentialDialogComponent {
       }
     } else {
       // For new credentials, create temporarily and test
-      const newCredential = {
+      const newCredential: any = {
         name: formValue.name,
         provider: formValue.provider,
         api_key: formValue.api_key,
-        model: formValue.model || ''
+        model: formValue.model || '',
       };
+      if (formValue.provider === 'azure') {
+        newCredential['azure_endpoint'] = formValue.azure_endpoint;
+        newCredential['deployment_name'] = formValue.deployment_name;
+        newCredential['api_version'] = formValue.api_version || '';
+      }
       
       // Create the credential
       this.credentialsService.createAICredential(newCredential).subscribe({
@@ -505,6 +565,11 @@ export class AICredentialDialogComponent {
       }
       if (formValue.organization_id) {
         credentialData.organization_id = formValue.organization_id;
+      }
+      if (formValue.provider === 'azure') {
+        credentialData.azure_endpoint = formValue.azure_endpoint;
+        credentialData.deployment_name = formValue.deployment_name;
+        credentialData.api_version = formValue.api_version || '';
       }
 
       // If a credential was already created during "Test Connection", include its id

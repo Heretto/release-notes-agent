@@ -11,6 +11,7 @@ class CredentialTypeEnum(str, Enum):
     GEMINI = "gemini"
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
+    AZURE = "azure"
 
 class JobStatusEnum(str, Enum):
     PENDING = "pending"
@@ -114,9 +115,12 @@ class HerettoCredentialUpdate(BaseModel):
 
 class AICredentialCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
-    provider: str = Field(..., pattern=r'^(gemini|openai|anthropic)$')
+    provider: str = Field(..., pattern=r'^(gemini|openai|anthropic|azure)$')
     api_key: str = Field(..., min_length=1, max_length=1024)
     model: Optional[str] = Field(None, max_length=255)
+    azure_endpoint: Optional[str] = Field(None, max_length=2048)
+    deployment_name: Optional[str] = Field(None, max_length=255)
+    api_version: Optional[str] = Field(None, max_length=50)
 
 class CredentialCreate(BaseModel):
     type: CredentialTypeEnum

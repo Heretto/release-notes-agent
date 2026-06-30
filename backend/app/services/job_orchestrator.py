@@ -121,7 +121,7 @@ class JobOrchestrator:
                 # Fall back to any available AI credential
                 ai_cred, ai_config = self._get_decryptable_credential(
                     job.user_id, job.organization_id,
-                    [CredentialType.GEMINI, CredentialType.ANTHROPIC, CredentialType.OPENAI]
+                    [CredentialType.GEMINI, CredentialType.ANTHROPIC, CredentialType.OPENAI, CredentialType.AZURE]
                 )
                 if not ai_cred:
                     raise Exception("No AI credentials found. Please add AI credentials in the Credentials page.")
@@ -130,7 +130,10 @@ class JobOrchestrator:
             ai_service = AIServiceFactory.create(
                 provider=provider,
                 api_key=ai_config["api_key"],
-                model=ai_config.get("model")
+                model=ai_config.get("model"),
+                azure_endpoint=ai_config.get("azure_endpoint", ""),
+                deployment_name=ai_config.get("deployment_name", ""),
+                api_version=ai_config.get("api_version", "2024-05-01-preview"),
             )
             
             # Step 4: Generate prompts

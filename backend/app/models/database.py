@@ -26,6 +26,7 @@ class CredentialType(str, enum.Enum):
     GEMINI = "gemini"
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
+    AZURE = "azure"
 
 # Register credential types with hop-core
 CredentialTypeRegistry.register("jira", label="Jira")
@@ -33,6 +34,7 @@ CredentialTypeRegistry.register("heretto", label="Heretto")
 CredentialTypeRegistry.register("gemini", label="Gemini")
 CredentialTypeRegistry.register("openai", label="OpenAI")
 CredentialTypeRegistry.register("anthropic", label="Anthropic")
+CredentialTypeRegistry.register("azure", label="Azure OpenAI")
 
 # Domain enums
 class JobStatus(str, enum.Enum):

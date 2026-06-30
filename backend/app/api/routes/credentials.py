@@ -532,26 +532,24 @@ async def list_ai_credentials(
     
     credentials = db.query(Credential).filter(
         Credential.organization_id == current_user.current_organization_id,
-        Credential.type.in_([CredentialType.GEMINI, CredentialType.OPENAI, CredentialType.ANTHROPIC])
+        Credential.type.in_([CredentialType.GEMINI, CredentialType.OPENAI, CredentialType.ANTHROPIC, CredentialType.AZURE])
     ).all()
-    
-    # Map credential type to provider name
+
     provider_mapping = {
         CredentialType.GEMINI: "gemini",
-        CredentialType.OPENAI: "openai", 
-        CredentialType.ANTHROPIC: "anthropic"
+        CredentialType.OPENAI: "openai",
+        CredentialType.ANTHROPIC: "anthropic",
+        CredentialType.AZURE: "azure",
     }
-    
-    # Return with provider field added and model from decrypted data
+
     result = []
     for cred in credentials:
-        # Decrypt to get model information
         try:
             decrypted_data = decrypt_credentials(cred.encrypted_data)
-            model = decrypted_data.get("model", "")
+            model = decrypted_data.get("model", "") or decrypted_data.get("deployment_name", "")
         except:
             model = ""
-        
+
         result.append({
             "id": str(cred.id),
             "type": cred.type,
@@ -559,9 +557,9 @@ async def list_ai_credentials(
             "name": cred.name,
             "model": model if model else "Default",
             "created_at": cred.created_at.isoformat() if cred.created_at else None,
-            "updated_at": cred.updated_at.isoformat() if cred.updated_at else None
+            "updated_at": cred.updated_at.isoformat() if cred.updated_at else None,
         })
-    
+
     return result
 
 @router.post("/ai", response_model=CredentialResponse)
@@ -574,8 +572,21 @@ async def create_ai_credential(
     type_mapping = {
         "gemini": CredentialType.GEMINI,
         "openai": CredentialType.OPENAI,
-        "anthropic": CredentialType.ANTHROPIC
+        "anthropic": CredentialType.ANTHROPIC,
+        "azure": CredentialType.AZURE,
     }
+
+    if credential_data.provider == "azure":
+        if not credential_data.azure_endpoint:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="azure_endpoint is required for Azure OpenAI credentials"
+            )
+        if not credential_data.deployment_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="deployment_name is required for Azure OpenAI credentials"
+            )
 
     credential_type = type_mapping[credential_data.provider]
 
@@ -599,8 +610,12 @@ async def create_ai_credential(
 
     ai_creds = {
         "api_key": credential_data.api_key,
-        "model": credential_data.model or ""
+        "model": credential_data.model or "",
     }
+    if credential_data.provider == "azure":
+        ai_creds["azure_endpoint"] = credential_data.azure_endpoint.rstrip("/")
+        ai_creds["deployment_name"] = credential_data.deployment_name
+        ai_creds["api_version"] = credential_data.api_version or "2024-05-01-preview"
 
     encrypted_data = encrypt_credentials(ai_creds)
 
@@ -632,27 +647,26 @@ async def get_ai_credential(
     credential = db.query(Credential).filter(
         Credential.id == credential_id,
         Credential.organization_id == current_user.current_organization_id,
-        Credential.type.in_([CredentialType.GEMINI, CredentialType.OPENAI, CredentialType.ANTHROPIC])
+        Credential.type.in_([CredentialType.GEMINI, CredentialType.OPENAI, CredentialType.ANTHROPIC, CredentialType.AZURE])
     ).first()
-    
+
     if not credential:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="AI credential not found"
         )
-    
-    # Decrypt and return with masked API key
+
     decrypted = decrypt_credentials(credential.encrypted_data)
     api_key = decrypted.get("api_key", "")
-    
-    # Map credential type to provider name
+
     provider_mapping = {
         CredentialType.GEMINI: "gemini",
-        CredentialType.OPENAI: "openai", 
-        CredentialType.ANTHROPIC: "anthropic"
+        CredentialType.OPENAI: "openai",
+        CredentialType.ANTHROPIC: "anthropic",
+        CredentialType.AZURE: "azure",
     }
-    
-    return {
+
+    result = {
         "id": credential.id,
         "type": credential.type,
         "name": credential.name,
@@ -660,8 +674,13 @@ async def get_ai_credential(
         "api_key": _mask_secret(api_key),
         "model": decrypted.get("model", ""),
         "created_at": credential.created_at,
-        "updated_at": credential.updated_at
+        "updated_at": credential.updated_at,
     }
+    if credential.type == CredentialType.AZURE:
+        result["azure_endpoint"] = decrypted.get("azure_endpoint", "")
+        result["deployment_name"] = decrypted.get("deployment_name", "")
+        result["api_version"] = decrypted.get("api_version", "")
+    return result
 
 @router.put("/{credential_id}", response_model=CredentialResponse)
 async def update_credential(
@@ -846,7 +865,7 @@ async def test_credential(
                 "timestamp": datetime.utcnow().isoformat()
             }
                 
-        elif credential.type in ["gemini", "openai", "anthropic"]:
+        elif credential.type in ["gemini", "openai", "anthropic", "azure"]:
             # Test AI provider connection with full request/response capture
             import json
             import logging
@@ -903,20 +922,28 @@ async def test_credential(
                         "Content-Type": "application/json",
                         "Authorization": f"Bearer {api_key[:10] + '...' + api_key[-4:] if len(api_key) > 14 else '***'}"
                     }
-                    # Use max_completion_tokens for newer models, with max_tokens as fallback
                     request_body = {
                         "model": model or "gpt-4-turbo-preview",
                         "messages": [
-                            {
-                                "role": "system",
-                                "content": "You are a helpful assistant."
-                            },
-                            {
-                                "role": "user",
-                                "content": "Please respond with exactly: 'Connection successful'"
-                            }
+                            {"role": "system", "content": "You are a helpful assistant."},
+                            {"role": "user", "content": "Please respond with exactly: 'Connection successful'"}
                         ],
-                        "max_completion_tokens": 20  # Changed from max_tokens for compatibility with newer models
+                        "max_completion_tokens": 20
+                    }
+                elif provider == "azure":
+                    azure_endpoint = decrypted.get("azure_endpoint", "").rstrip("/")
+                    deployment_name = decrypted.get("deployment_name", "")
+                    api_version = decrypted.get("api_version", "2024-05-01-preview")
+                    api_url = f"{azure_endpoint}/openai/deployments/{deployment_name}/chat/completions?api-version={api_version}"
+                    headers = {
+                        "Content-Type": "application/json",
+                        "api-key": api_key[:10] + "..." + api_key[-4:] if len(api_key) > 14 else "***"
+                    }
+                    request_body = {
+                        "messages": [
+                            {"role": "user", "content": "Please respond with exactly: 'Connection successful'"}
+                        ],
+                        "max_tokens": 20
                     }
                 else:
                     api_url = "Unknown provider"
@@ -931,18 +958,28 @@ async def test_credential(
                         real_headers["x-api-key"] = api_key
                     elif provider == "gemini":
                         real_headers["x-goog-api-key"] = api_key
+                    elif provider == "azure":
+                        real_headers["api-key"] = api_key
                     elif provider == "openai":
                         real_headers["Authorization"] = f"Bearer {api_key}"
                     
                     # Make request
-                    response = await client.post(
-                        api_url if provider != "gemini" else api_url + f"?key={api_key}",
-                        headers=real_headers if provider != "gemini" else {"Content-Type": "application/json"},
-                        json=request_body,
-                        timeout=30.0
-                    )
+                    if provider == "gemini":
+                        response = await client.post(
+                            api_url + f"?key={api_key}",
+                            headers={"Content-Type": "application/json"},
+                            json=request_body,
+                            timeout=30.0,
+                        )
+                    else:
+                        response = await client.post(
+                            api_url,
+                            headers=real_headers,
+                            json=request_body,
+                            timeout=30.0,
+                        )
                     
-                    # Handle OpenAI parameter compatibility issue
+                    # Handle OpenAI max_tokens/max_completion_tokens compatibility
                     if provider == "openai" and response.status_code == 400:
                         error_text = response.text
                         if "max_tokens" in error_text and "max_completion_tokens" in error_text:

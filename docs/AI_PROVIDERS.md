@@ -1,24 +1,25 @@
 # Configuring AI Providers
 
-The Release Notes Agent supports three AI providers: **Anthropic Claude**, **OpenAI GPT**, and **Google Gemini**. You can configure providers through the application UI or via environment variables.
+The Release Notes Agent supports four AI providers: **Anthropic Claude**, **OpenAI GPT**, **Google Gemini**, and **Azure OpenAI**. You can configure providers through the application UI or via environment variables.
 
 ---
 
 ## Overview
 
-| Provider | Recommended Model | API Key Prefix | Env Var |
+| Provider | Recommended Model | API Key | Env Var |
 |---|---|---|---|
-| Anthropic Claude | `claude-3-5-sonnet-20241022` | `sk-ant-` | `ANTHROPIC_API_KEY` |
-| OpenAI GPT | `gpt-4o` | `sk-` | — (UI only) |
+| Anthropic Claude | `claude-3-5-sonnet-20241022` | Begins with `sk-ant-` | `ANTHROPIC_API_KEY` |
+| OpenAI GPT | `gpt-4o` | Begins with `sk-` | — (UI only) |
 | Google Gemini | `gemini-2.5-pro` | — | `GOOGLE_AI_API_KEY` |
+| Azure OpenAI | deployment name | Azure API key | — (UI only) |
 
-At least one provider must be configured. When a job does not specify a provider, the system falls back in this order: Gemini → Anthropic → OpenAI.
+At least one provider must be configured. When a job does not specify a provider, the system falls back in this order: Gemini → Anthropic → OpenAI → Azure.
 
 ---
 
 ## Configuring via the UI
 
-All three providers can be configured through **Settings > AI Credentials**.
+All providers can be configured through **Settings > AI Credentials**.
 
 1. Open the application and navigate to **Settings > AI Credentials**.
 2. Click **Add Credential**.
@@ -141,6 +142,56 @@ You can pass the model name with or without the `models/` prefix — the adapter
 
 ---
 
+## Azure OpenAI
+
+Azure OpenAI lets you use OpenAI models deployed through your own Azure subscription. It requires an endpoint URL and a deployment name in addition to an API key.
+
+### Prerequisites
+
+1. An Azure subscription with Azure OpenAI access (request access at [aka.ms/oai/access](https://aka.ms/oai/access) if needed).
+2. An Azure OpenAI resource created in the [Azure Portal](https://portal.azure.com).
+3. A model deployed in that resource via **Azure AI Foundry** (formerly Azure OpenAI Studio).
+
+### Getting your credentials
+
+| Field | Where to find it |
+|---|---|
+| **API Key** | Azure Portal → your resource → **Keys and Endpoint** → Key 1 or Key 2 |
+| **Endpoint** | Azure Portal → your resource → **Keys and Endpoint** → Endpoint (e.g. `https://my-resource.openai.azure.com`) |
+| **Deployment Name** | Azure AI Foundry → **Deployments** → the name you gave to the deployed model |
+
+### Environment variable configuration
+
+Azure OpenAI credentials are configured per-user through the UI only. There is no environment variable fallback for Azure.
+
+### Configuring in the UI
+
+When adding a credential, select **Azure OpenAI** from the provider dropdown. Three additional fields will appear:
+
+- **Azure Endpoint** (required) — your resource endpoint, e.g. `https://my-resource.openai.azure.com`
+- **Deployment Name** (required) — the name of the deployment in Azure AI Foundry
+- **API Version** (optional) — defaults to `2024-05-01-preview`
+
+The **Model** field is optional for Azure; if left empty the deployment name is used to route the request.
+
+### Supported models
+
+Any model you have deployed in your Azure OpenAI resource can be used. Common deployments:
+
+| Underlying Model | Notes |
+|---|---|
+| `gpt-4o` | Recommended. Fast and cost-efficient. |
+| `gpt-4-turbo` | Strong reasoning. |
+| `gpt-4` | High capability, higher cost. |
+| `gpt-35-turbo` | Fast and low cost. |
+
+### Notes
+
+- The connection test sends a request to `{endpoint}/openai/deployments/{deployment}/chat/completions?api-version={version}` using the `api-key` header.
+- Token usage (prompt, completion, and total) is tracked and returned with each generation.
+
+---
+
 ## Troubleshooting
 
 ### "API key has unexpected prefix"
@@ -162,8 +213,15 @@ This is a warning, not an error. Anthropic and OpenAI keys are expected to start
 - Confirm the key starts with `sk-` and is not expired.
 - For `o1` / `o1-mini` models, ensure your account has access — these models require additional enrollment.
 
+### Connection test fails for Azure OpenAI
+
+- Confirm the endpoint URL is in the form `https://{resource-name}.openai.azure.com` with no trailing path.
+- Confirm the deployment name matches exactly what is shown in Azure AI Foundry — it is case-sensitive.
+- Ensure the API version is supported; `2024-05-01-preview` works for all current models.
+- Check that your Azure subscription has not exceeded its quota for the deployed model.
+
 ### Job uses the wrong provider
 
 If a job runs with a different provider than expected, check:
 1. Whether an explicit **AI Credential** is selected in the job configuration.
-2. The fallback order (Gemini → Anthropic → OpenAI) — the first credential found in that order will be used when none is specified.
+2. The fallback order (Gemini → Anthropic → OpenAI → Azure) — the first credential found in that order will be used when none is specified.
