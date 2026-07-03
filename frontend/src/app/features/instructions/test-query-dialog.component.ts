@@ -81,7 +81,7 @@ interface TestResult {
           <p class="hint">Please add Jira credentials in the Credentials section first.</p>
         </div>
 
-        <mat-form-field *ngIf="!loadingCredentials && jiraCredentials.length > 0" class="full-width">
+        <mat-form-field *ngIf="!loadingCredentials && jiraCredentials.length > 0" appearance="outline" class="full-width">
           <mat-label>Jira Credential</mat-label>
           <mat-select [(ngModel)]="selectedCredentialId">
             <mat-option *ngFor="let cred of jiraCredentials" [value]="cred.id">

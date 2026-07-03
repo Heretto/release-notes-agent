@@ -37,7 +37,7 @@ import { InstructionSet } from '../../core/services/instructions.service';
       </div>
 
       <form [formGroup]="form">
-        <mat-form-field appearance="fill" class="full-width">
+        <mat-form-field appearance="outline" class="full-width">
           <mat-label>Output Filename</mat-label>
           <input matInput formControlName="output_filename" 
                  placeholder="release-notes-v2.0.xml" required>
@@ -47,7 +47,7 @@ import { InstructionSet } from '../../core/services/instructions.service';
           </mat-error>
         </mat-form-field>
 
-        <mat-form-field appearance="fill" class="full-width">
+        <mat-form-field appearance="outline" class="full-width">
           <mat-label>Additional Instructions (Optional)</mat-label>
           <textarea matInput formControlName="additional_instructions" 
                     rows="4"
@@ -55,7 +55,7 @@ import { InstructionSet } from '../../core/services/instructions.service';
           <mat-hint>Extra context or requirements for the AI</mat-hint>
         </mat-form-field>
 
-        <mat-form-field appearance="fill" class="full-width">
+        <mat-form-field appearance="outline" class="full-width">
           <mat-label>Custom JQL Query (Optional)</mat-label>
           <textarea matInput formControlName="jql_query" 
                     rows="2"
@@ -71,7 +71,7 @@ import { InstructionSet } from '../../core/services/instructions.service';
         </div>
 
         <mat-form-field *ngIf="form.get('publish_to_heretto')?.value" 
-                        appearance="fill" class="full-width">
+                        appearance="outline" class="full-width">
           <mat-label>Heretto Folder ID</mat-label>
           <input matInput formControlName="heretto_folder_id" 
                  placeholder="folder-id-in-heretto">

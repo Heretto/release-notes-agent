@@ -63,7 +63,7 @@ export interface AICredential {
       </div>
 
       <form [formGroup]="form">
-        <mat-form-field appearance="fill" class="full-width">
+        <mat-form-field appearance="outline" class="full-width">
           <mat-label>Name</mat-label>
           <input matInput formControlName="name" required 
                  placeholder="My OpenAI Credential">
@@ -73,7 +73,7 @@ export interface AICredential {
           </mat-error>
         </mat-form-field>
 
-        <mat-form-field appearance="fill" class="full-width">
+        <mat-form-field appearance="outline" class="full-width">
           <mat-label>AI Provider</mat-label>
           <mat-select formControlName="provider" required>
             <mat-option value="openai">
@@ -98,7 +98,7 @@ export interface AICredential {
           </mat-error>
         </mat-form-field>
 
-        <mat-form-field appearance="fill" class="full-width">
+        <mat-form-field appearance="outline" class="full-width">
           <mat-label>API Key</mat-label>
           <input matInput type="password" formControlName="api_key" 
                  [placeholder]="data ? 'Enter new key (leave empty to keep current)' : 'Enter API key'"
@@ -109,14 +109,14 @@ export interface AICredential {
           </mat-error>
         </mat-form-field>
 
-        <mat-form-field appearance="fill" class="full-width">
+        <mat-form-field appearance="outline" class="full-width">
           <mat-label>Model (Optional)</mat-label>
           <input matInput formControlName="model" 
                  [placeholder]="getModelPlaceholder()">
           <mat-hint>{{ getModelHint() }}</mat-hint>
         </mat-form-field>
 
-        <mat-form-field appearance="fill" class="full-width" 
+        <mat-form-field appearance="outline" class="full-width" 
                         *ngIf="showBaseUrl">
           <mat-label>Base URL (Optional)</mat-label>
           <input matInput formControlName="base_url" 
@@ -124,7 +124,7 @@ export interface AICredential {
           <mat-hint>Custom API endpoint (for self-hosted or alternative providers)</mat-hint>
         </mat-form-field>
 
-        <mat-form-field appearance="fill" class="full-width" 
+        <mat-form-field appearance="outline" class="full-width" 
                         *ngIf="showOrganizationId">
           <mat-label>Organization ID (Optional)</mat-label>
           <input matInput formControlName="organization_id" 

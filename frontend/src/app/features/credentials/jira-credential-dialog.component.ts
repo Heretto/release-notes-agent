@@ -42,7 +42,7 @@ import { JiraCredential } from '../../core/services/credentials.service';
       </div>
       
       <form [formGroup]="form">
-        <mat-form-field appearance="fill" class="full-width">
+        <mat-form-field appearance="outline" class="full-width">
           <mat-label>Name</mat-label>
           <input matInput formControlName="name" required>
           <mat-error *ngIf="form.get('name')?.hasError('required')">
@@ -50,7 +50,7 @@ import { JiraCredential } from '../../core/services/credentials.service';
           </mat-error>
         </mat-form-field>
 
-        <mat-form-field appearance="fill" class="full-width">
+        <mat-form-field appearance="outline" class="full-width">
           <mat-label>Server URL</mat-label>
           <input matInput formControlName="server_url" 
                  placeholder="https://your-domain.atlassian.net" required>
@@ -60,7 +60,7 @@ import { JiraCredential } from '../../core/services/credentials.service';
           </mat-error>
         </mat-form-field>
 
-        <mat-form-field appearance="fill" class="full-width">
+        <mat-form-field appearance="outline" class="full-width">
           <mat-label>Email</mat-label>
           <input matInput type="email" formControlName="email" required>
           <mat-hint *ngIf="data">Leave unchanged or enter new email</mat-hint>
@@ -72,7 +72,7 @@ import { JiraCredential } from '../../core/services/credentials.service';
           </mat-error>
         </mat-form-field>
 
-        <mat-form-field appearance="fill" class="full-width">
+        <mat-form-field appearance="outline" class="full-width">
           <mat-label>API Token</mat-label>
           <input matInput type="password" formControlName="api_token" 
                  [placeholder]="data ? 'Enter new token (leave empty to keep current)' : 'Enter API token'" 
