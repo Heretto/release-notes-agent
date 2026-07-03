@@ -372,75 +372,75 @@ interface JobArtifact {
     .header{display:flex;align-items:center;gap:20px;margin-bottom:30px}
     .header-content{flex:1}
     .header-content h1{margin:0}
-    .job-id{color:#666;font-size:14px;margin:5px 0 0 0;font-family:monospace}
+    .job-id{color:var(--text-secondary);font-size:14px;margin:5px 0 0 0;font-family:var(--font-mono)}
     .header-actions{display:flex;gap:10px}
     .loading-container{display:flex;flex-direction:column;align-items:center;padding:60px}
-    .loading-container p{margin-top:20px;color:#666}
+    .loading-container p{margin-top:20px;color:var(--text-secondary)}
     .job-content{display:flex;flex-direction:column;gap:20px}
-    .summary-card{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:white}
+    .summary-card{background:var(--hop-gradient);color:white}
     .summary-card mat-card-title{color:white}
     .summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:20px;margin-top:20px}
     .summary-item{display:flex;flex-direction:column;gap:8px}
     .summary-item.full-width{grid-column:1/-1}
     .summary-item .label{font-weight:500;opacity:0.9;font-size:14px}
     .ticket-count{background:rgba(255,255,255,0.2);padding:4px 12px;border-radius:12px;display:inline-block;font-weight:500}
-    .jql-query{background:rgba(0,0,0,0.1);padding:8px 12px;border-radius:4px;font-family:monospace;display:inline-block}
+    .jql-query{background:rgba(0,0,0,0.1);padding:8px 12px;border-radius:4px;font-family:var(--font-mono);display:inline-block}
     .heretto-link{color:white;display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,0.15);padding:6px 12px;border-radius:4px;text-decoration:none;font-size:14px;transition:background 0.2s}
     .heretto-link:hover{background:rgba(255,255,255,0.3)}
     .heretto-link-icon{font-size:16px;width:16px;height:16px}
-    .error-card{background:#fff3e0;border-left:4px solid #ff9800}
-    .error-card mat-card-title{display:flex;align-items:center;gap:10px;color:#ff6f00}
-    .error-message{background:#fff;padding:15px;border-radius:4px;border:1px solid #ffe0b2;white-space:pre-wrap;word-wrap:break-word;margin:0;font-family:monospace;font-size:13px}
+    .error-card{background:var(--color-warning-bg);border-left:4px solid var(--color-warning)}
+    .error-card mat-card-title{display:flex;align-items:center;gap:10px;color:var(--color-warning-text)}
+    .error-message{background:var(--bg-primary);padding:15px;border-radius:4px;border:1px solid var(--color-warning-border);white-space:pre-wrap;word-wrap:break-word;margin:0;font-family:var(--font-mono);font-size:13px}
     .details-card{min-height:500px}
     .tab-content{padding:20px;min-height:400px}
-    .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px;color:#999}
+    .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px;color:var(--text-tertiary)}
     .empty-state mat-icon{font-size:48px;width:48px;height:48px;margin-bottom:10px}
     mat-chip{font-size:12px}
-    mat-chip.pending{background-color:#ffc107!important;color:white}
-    mat-chip.running{background-color:#2196f3!important;color:white}
-    mat-chip.completed{background-color:#4caf50!important;color:white}
-    mat-chip.failed{background-color:#f44336!important;color:white}
+    mat-chip.pending{background-color:var(--color-warning)!important;color:white}
+    mat-chip.running{background-color:var(--color-info)!important;color:white}
+    mat-chip.completed{background-color:var(--color-success)!important;color:white}
+    mat-chip.failed{background-color:var(--color-error)!important;color:white}
     .status-icon{font-size:16px;width:16px;height:16px;margin-right:4px}
     .ai-chip{background:rgba(255,255,255,0.2)!important;color:white}
     .chip-icon{font-size:16px;width:16px;height:16px;margin-right:4px}
     .small-chip{height:20px;font-size:11px;margin-right:10px}
     .request-type{font-weight:500}
-    .duration{color:#666;font-size:12px;margin-left:10px}
+    .duration{color:var(--text-secondary);font-size:12px;margin-left:10px}
     .request-details{padding:20px}
     .request-section{margin:20px 0}
-    .request-section h4{color:#333;margin-bottom:10px}
-    .code-block{background:#f5f5f5;border:1px solid #ddd;border-radius:4px;padding:15px;font-family:monospace;font-size:12px;white-space:pre-wrap;word-wrap:break-word;max-height:400px;overflow-y:auto}
-    .error-block{background:#ffebee;border:1px solid #ffcdd2;border-radius:4px;padding:15px;color:#c62828;font-family:monospace;font-size:12px;white-space:pre-wrap}
+    .request-section h4{color:var(--text-primary);margin-bottom:10px}
+    .code-block{background:var(--bg-secondary);border:1px solid var(--border-default);border-radius:4px;padding:15px;font-family:var(--font-mono);font-size:12px;white-space:pre-wrap;word-wrap:break-word;max-height:400px;overflow-y:auto}
+    .error-block{background:var(--color-error-bg);border:1px solid var(--color-error-bg);border-radius:4px;padding:15px;color:var(--color-error-text);font-family:var(--font-mono);font-size:12px;white-space:pre-wrap}
     .logs-container{max-height:600px;overflow-y:auto}
-    .log-entry{padding:10px;border-bottom:1px solid #eee;display:flex;align-items:flex-start;gap:10px}
-    .log-entry.log-error{background:#ffebee}
-    .log-entry.log-warning{background:#fff8e1}
-    .log-timestamp{font-family:monospace;font-size:12px;color:#666;white-space:nowrap}
+    .log-entry{padding:10px;border-bottom:1px solid var(--border-light);display:flex;align-items:flex-start;gap:10px}
+    .log-entry.log-error{background:var(--color-error-bg)}
+    .log-entry.log-warning{background:var(--color-warning-bg)}
+    .log-timestamp{font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);white-space:nowrap}
     .log-level{height:18px;font-size:10px}
-    .level-info{background:#e3f2fd!important;color:#1976d2!important}
-    .level-warning{background:#fff3e0!important;color:#f57c00!important}
-    .level-error{background:#ffebee!important;color:#c62828!important}
-    .level-debug{background:#f5f5f5!important;color:#616161!important}
+    .level-info{background:var(--color-primary-bg)!important;color:var(--color-primary-text)!important}
+    .level-warning{background:var(--color-warning-bg)!important;color:var(--color-warning-text)!important}
+    .level-error{background:var(--color-error-bg)!important;color:var(--color-error-text)!important}
+    .level-debug{background:var(--bg-secondary)!important;color:var(--text-secondary)!important}
     .log-message{flex:1;font-size:14px}
-    .log-details{background:rgba(0,0,0,0.05);padding:10px;border-radius:4px;margin-top:10px;font-size:12px;font-family:monospace}
+    .log-details{background:rgba(0,0,0,0.05);padding:10px;border-radius:4px;margin-top:10px;font-size:12px;font-family:var(--font-mono)}
     .artifacts-list{display:flex;flex-direction:column;gap:10px;margin-bottom:30px}
-    .artifact-item{display:flex;align-items:center;gap:15px;padding:15px;background:#f5f5f5;border-radius:8px}
+    .artifact-item{display:flex;align-items:center;gap:15px;padding:15px;background:var(--bg-secondary);border-radius:8px}
     .artifact-info{flex:1;display:flex;flex-direction:column;gap:5px}
     .artifact-name{font-weight:500}
-    .artifact-meta{font-size:12px;color:#666}
+    .artifact-meta{font-size:12px;color:var(--text-secondary)}
     .content-preview{margin-top:30px}
     .metrics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:20px}
-    .metric-card{text-align:center;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:white}
+    .metric-card{text-align:center;background:var(--hop-gradient);color:white}
     .metric-card mat-icon{font-size:36px;width:36px;height:36px;margin:0 auto 10px;opacity:0.8}
     .metric-value{font-size:32px;font-weight:bold;margin:10px 0}
     .metric-label{font-size:14px;opacity:0.9}
-    .request-success{background:#4caf50!important;color:white}
-    .request-failed{background:#f44336!important;color:white}
-    .request-pending{background:#ff9800!important;color:white}
+    .request-success{background:var(--color-success)!important;color:white}
+    .request-failed{background:var(--color-error)!important;color:white}
+    .request-pending{background:var(--color-warning)!important;color:white}
     .artifacts-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
-    .artifacts-header h3{margin:0;color:#333}
+    .artifacts-header h3{margin:0;color:var(--text-primary)}
     .retry-progress-container{margin:20px 0;animation:slideDown 0.3s ease-out}
-    .retry-card{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:white}
+    .retry-card{background:var(--hop-gradient);color:white}
     .retry-card mat-card-title{color:white;display:flex;align-items:center;gap:10px}
     .retry-card .spinning{animation:spin 2s linear infinite}
     @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
@@ -448,8 +448,8 @@ interface JobArtifact {
     .retry-message{margin:10px 0;font-size:16px;font-weight:500}
     .retry-details{display:flex;gap:20px;margin-top:15px;font-size:14px;opacity:0.9}
     .retry-details strong{font-weight:600}
-    ::ng-deep .success-snackbar{background:#4caf50!important}
-    ::ng-deep .error-snackbar{background:#f44336!important}
+    ::ng-deep .success-snackbar{background:var(--color-success)!important}
+    ::ng-deep .error-snackbar{background:var(--color-error)!important}
   `]
 })
 export class JobDetailComponent implements OnInit, OnDestroy {

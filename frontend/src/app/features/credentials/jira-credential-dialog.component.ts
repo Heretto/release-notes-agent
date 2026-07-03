@@ -101,18 +101,18 @@ import { JiraCredential } from '../../core/services/credentials.service';
       margin-bottom: 15px;
     }
     .current-values {
-      background: #f5f5f5;
+      background: var(--bg-secondary);
       border-radius: 8px;
       padding: 16px;
       margin-bottom: 24px;
-      border: 1px solid #e0e0e0;
+      border: 1px solid var(--border-default);
     }
     .info-box {
       display: flex;
       align-items: center;
       gap: 8px;
       margin-bottom: 12px;
-      color: #1976d2;
+      color: var(--color-primary-text);
       font-weight: 500;
     }
     .credential-display {
@@ -129,7 +129,7 @@ import { JiraCredential } from '../../core/services/credentials.service';
     }
     .field-display strong {
       min-width: 100px;
-      color: #666;
+      color: var(--text-secondary);
     }
   `]
 })

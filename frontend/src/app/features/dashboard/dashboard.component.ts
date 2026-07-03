@@ -154,18 +154,18 @@ import { JobsService, Job } from '../../core/services/jobs.service';
     .stat-icon {
       font-size: 48px;
       margin-right: 20px;
-      color: #3f51b5;
+      color: var(--color-primary-text);
 
       &.success {
-        color: #4caf50;
+        color: var(--color-success);
       }
 
       &.warning {
-        color: #ff9800;
+        color: var(--color-warning);
       }
 
       &.error {
-        color: #f44336;
+        color: var(--color-error);
       }
 
       mat-icon {
@@ -178,7 +178,7 @@ import { JobsService, Job } from '../../core/services/jobs.service';
     .stat-content {
       h3 {
         margin: 0;
-        color: #666;
+        color: var(--text-secondary);
         font-size: 14px;
       }
 
@@ -211,7 +211,7 @@ import { JobsService, Job } from '../../core/services/jobs.service';
     .recent-jobs {
       .no-data {
         text-align: center;
-        color: #999;
+        color: var(--text-tertiary);
         padding: 40px 0;
       }
     }
@@ -223,11 +223,11 @@ import { JobsService, Job } from '../../core/services/jobs.service';
       th, td {
         text-align: left;
         padding: 10px 12px;
-        border-bottom: 1px solid #e0e0e0;
+        border-bottom: 1px solid var(--border-default);
       }
 
       th {
-        color: #666;
+        color: var(--text-secondary);
         font-weight: 500;
         font-size: 13px;
       }
@@ -242,23 +242,23 @@ import { JobsService, Job } from '../../core/services/jobs.service';
       text-transform: capitalize;
 
       &.completed {
-        background: #e8f5e9;
-        color: #2e7d32;
+        background: var(--color-success-bg);
+        color: var(--color-success-text);
       }
 
       &.running, &.pending {
-        background: #fff3e0;
-        color: #e65100;
+        background: var(--color-warning-bg);
+        color: var(--color-warning-text);
       }
 
       &.failed {
-        background: #fbe9e7;
-        color: #c62828;
+        background: var(--color-error-bg);
+        color: var(--color-error-text);
       }
 
       &.cancelled {
-        background: #f5f5f5;
-        color: #757575;
+        background: var(--bg-secondary);
+        color: var(--text-tertiary);
       }
     }
   `]

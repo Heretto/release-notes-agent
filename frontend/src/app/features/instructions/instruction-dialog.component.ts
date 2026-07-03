@@ -185,7 +185,7 @@ import { InstructionSet } from '../../core/services/instructions.service';
     }
 
     .form-section h3 {
-      color: #333;
+      color: var(--text-primary);
       margin-bottom: 15px;
       font-size: 16px;
       font-weight: 500;
@@ -209,13 +209,13 @@ import { InstructionSet } from '../../core/services/instructions.service';
 
     .info-icon {
       font-size: 18px;
-      color: #999;
+      color: var(--text-tertiary);
       cursor: help;
     }
 
     .jql-help, .prompt-tips {
       margin: 15px 0;
-      background: #f9f9f9;
+      background: var(--bg-secondary);
     }
 
     .jql-examples, .tips-content {
@@ -233,15 +233,15 @@ import { InstructionSet } from '../../core/services/instructions.service';
     }
 
     .jql-examples code {
-      background: #e8e8e8;
+      background: var(--bg-secondary);
       padding: 2px 6px;
       border-radius: 3px;
-      font-family: monospace;
+      font-family: var(--font-mono);
       font-size: 13px;
     }
 
     .example-prompt {
-      background: #f5f5f5;
+      background: var(--bg-secondary);
       padding: 12px;
       border-radius: 4px;
       font-size: 12px;
@@ -262,7 +262,7 @@ import { InstructionSet } from '../../core/services/instructions.service';
       display: flex;
       align-items: center;
       gap: 8px;
-      color: #666;
+      color: var(--text-secondary);
       font-size: 14px;
     }
 

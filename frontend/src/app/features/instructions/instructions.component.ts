@@ -190,7 +190,7 @@ import { JobCreateDialogComponent } from '../jobs/job-create-dialog.component';
     }
 
     .subtitle {
-      color: #666;
+      color: var(--text-secondary);
       margin: 5px 0 0 0;
     }
 
@@ -215,17 +215,17 @@ import { JobCreateDialogComponent } from '../jobs/job-create-dialog.component';
       font-size: 64px;
       width: 64px;
       height: 64px;
-      color: #ddd;
+      color: var(--border-default);
       margin: 0 auto 20px;
     }
 
     .empty-state h3 {
-      color: #333;
+      color: var(--text-primary);
       margin-bottom: 10px;
     }
 
     .empty-state p {
-      color: #666;
+      color: var(--text-secondary);
       margin-bottom: 20px;
     }
 
@@ -264,7 +264,7 @@ import { JobCreateDialogComponent } from '../jobs/job-create-dialog.component';
     mat-expansion-panel {
       margin: 10px 0;
       box-shadow: none !important;
-      border: 1px solid #e0e0e0;
+      border: 1px solid var(--border-default);
     }
 
     mat-expansion-panel:before {
@@ -283,10 +283,10 @@ import { JobCreateDialogComponent } from '../jobs/job-create-dialog.component';
     }
 
     .jql-query, .prompt-text {
-      background: #f5f5f5;
+      background: var(--bg-secondary);
       padding: 15px;
       border-radius: 4px;
-      font-family: monospace;
+      font-family: var(--font-mono);
       font-size: 13px;
       line-height: 1.5;
       white-space: pre-wrap;
@@ -299,10 +299,10 @@ import { JobCreateDialogComponent } from '../jobs/job-create-dialog.component';
       gap: 8px;
       margin-top: 12px;
       padding: 8px 12px;
-      background: #e8f5e9;
+      background: var(--color-success-bg);
       border-radius: 4px;
       font-size: 13px;
-      color: #2e7d32;
+      color: var(--color-success-text);
     }
 
     .heretto-folder-info mat-icon {
@@ -315,7 +315,7 @@ import { JobCreateDialogComponent } from '../jobs/job-create-dialog.component';
       background: rgba(0,0,0,0.06);
       padding: 2px 6px;
       border-radius: 3px;
-      font-family: monospace;
+      font-family: var(--font-mono);
     }
 
     .metadata {
@@ -323,9 +323,9 @@ import { JobCreateDialogComponent } from '../jobs/job-create-dialog.component';
       gap: 20px;
       margin-top: 15px;
       padding-top: 15px;
-      border-top: 1px solid #e0e0e0;
+      border-top: 1px solid var(--border-default);
       font-size: 12px;
-      color: #999;
+      color: var(--text-tertiary);
     }
 
     .meta-item {
@@ -342,7 +342,7 @@ import { JobCreateDialogComponent } from '../jobs/job-create-dialog.component';
 
     mat-card-actions {
       padding: 16px;
-      border-top: 1px solid #e0e0e0;
+      border-top: 1px solid var(--border-default);
     }
 
     mat-chip {

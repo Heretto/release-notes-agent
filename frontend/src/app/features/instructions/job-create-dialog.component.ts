@@ -106,7 +106,7 @@ import { InstructionSet } from '../../core/services/instructions.service';
     }
 
     .instruction-info {
-      background: #f5f5f5;
+      background: var(--bg-secondary);
       padding: 15px;
       border-radius: 8px;
       margin-bottom: 20px;
@@ -114,16 +114,16 @@ import { InstructionSet } from '../../core/services/instructions.service';
 
     .instruction-info h3 {
       margin: 0 0 10px 0;
-      color: #333;
+      color: var(--text-primary);
       font-size: 16px;
     }
 
     .jql-display {
-      background: white;
+      background: var(--bg-primary);
       padding: 10px;
-      border: 1px solid #e0e0e0;
+      border: 1px solid var(--border-default);
       border-radius: 4px;
-      font-family: monospace;
+      font-family: var(--font-mono);
       font-size: 12px;
       margin: 0;
       word-wrap: break-word;
@@ -137,7 +137,7 @@ import { InstructionSet } from '../../core/services/instructions.service';
     .checkbox-section {
       margin: 20px 0;
       padding: 15px;
-      background: #f9f9f9;
+      background: var(--bg-secondary);
       border-radius: 4px;
     }
 
@@ -156,7 +156,7 @@ import { InstructionSet } from '../../core/services/instructions.service';
 
     mat-dialog-actions {
       padding: 20px 24px;
-      border-top: 1px solid #e0e0e0;
+      border-top: 1px solid var(--border-default);
     }
 
     mat-dialog-actions button {

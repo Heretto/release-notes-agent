@@ -202,7 +202,7 @@ import { SuperadminAddMemberDialogComponent, AddMemberDialogResult } from './sup
       align-items: center;
       gap: 8px;
       padding: 16px;
-      color: #f44336;
+      color: var(--color-error);
     }
 
     .page-header {
@@ -220,7 +220,7 @@ import { SuperadminAddMemberDialogComponent, AddMemberDialogResult } from './sup
 
     .slug {
       font-size: 13px;
-      color: rgba(0, 0, 0, 0.54);
+      color: var(--text-secondary);
     }
 
     .spacer {
@@ -246,7 +246,7 @@ import { SuperadminAddMemberDialogComponent, AddMemberDialogResult } from './sup
 
     .stat-label {
       font-size: 13px;
-      color: rgba(0, 0, 0, 0.54);
+      color: var(--text-secondary);
       text-transform: uppercase;
       letter-spacing: 0.5px;
     }
@@ -270,7 +270,7 @@ import { SuperadminAddMemberDialogComponent, AddMemberDialogResult } from './sup
 
     .info-label {
       font-size: 12px;
-      color: rgba(0, 0, 0, 0.54);
+      color: var(--text-secondary);
       text-transform: uppercase;
       letter-spacing: 0.5px;
     }
@@ -280,7 +280,7 @@ import { SuperadminAddMemberDialogComponent, AddMemberDialogResult } from './sup
     }
 
     .mono {
-      font-family: monospace;
+      font-family: var(--font-mono);
       font-size: 13px;
     }
 
@@ -293,17 +293,17 @@ import { SuperadminAddMemberDialogComponent, AddMemberDialogResult } from './sup
     }
 
     .active-status {
-      color: #4caf50;
+      color: var(--color-success);
     }
 
     .inactive-status {
-      color: #f44336;
+      color: var(--color-error);
     }
 
     .empty-state {
       text-align: center;
       padding: 40px;
-      color: rgba(0, 0, 0, 0.38);
+      color: var(--text-tertiary);
     }
 
     .empty-state mat-icon {

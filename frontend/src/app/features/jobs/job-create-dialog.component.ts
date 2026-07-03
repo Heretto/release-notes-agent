@@ -137,8 +137,8 @@ import { CredentialsService, AICredential } from '../../core/services/credential
       display: flex;
       align-items: center;
       gap: 8px;
-      background: #e3f2fd;
-      color: #1565c0;
+      background: var(--color-primary-bg);
+      color: var(--color-primary-text);
       padding: 10px 14px;
       border-radius: 4px;
       margin-bottom: 20px;
@@ -146,11 +146,11 @@ import { CredentialsService, AICredential } from '../../core/services/credential
     }
 
     .jql-display {
-      background: #f5f5f5;
+      background: var(--bg-secondary);
       padding: 10px;
-      border: 1px solid #e0e0e0;
+      border: 1px solid var(--border-default);
       border-radius: 4px;
-      font-family: monospace;
+      font-family: var(--font-mono);
       font-size: 12px;
       margin: 0;
       word-wrap: break-word;
@@ -168,7 +168,7 @@ import { CredentialsService, AICredential } from '../../core/services/credential
 
     mat-dialog-actions {
       padding: 20px 24px;
-      border-top: 1px solid #e0e0e0;
+      border-top: 1px solid var(--border-default);
     }
 
     mat-dialog-actions button {
