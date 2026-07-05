@@ -9,7 +9,7 @@ _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(_project_root)
 sys.path.append(os.path.join(_project_root, 'backend'))
 
-from app.services.dita_validator_v2 import DITAValidatorV2
+from hop_core.dita import DitaValidator
 
 def test_dtd_validation():
     """Test that DTD validation works with local DITA 1.3 DTDs."""
@@ -18,7 +18,7 @@ def test_dtd_validation():
     print("DITA 1.3 DTD VALIDATION TEST")
     print("="*60)
 
-    validator = DITAValidatorV2()
+    validator = DitaValidator()
 
     print(f"\nDTD Directory: {validator.dtd_dir}")
     print(f"Directory exists: {os.path.exists(validator.dtd_dir)}")
@@ -50,7 +50,7 @@ def test_dtd_validation():
         return False
 
     # Verify xmllint is available
-    if not DITAValidatorV2._xmllint_available():
+    if not DitaValidator._xmllint_available():
         print("\n✗ FATAL: xmllint is not available on PATH")
         return False
 

@@ -9,7 +9,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append('/Users/patrickbosek/dev/release-notes-agent/backend')
 
-from app.services.dita_validator_v2 import DITAValidatorV2
+from hop_core.dita import DitaValidator
 import argparse
 
 def validate_job_dita(job_id=None, content=None, fix=False):
@@ -19,7 +19,7 @@ def validate_job_dita(job_id=None, content=None, fix=False):
     print("DITA CONTENT VALIDATOR")
     print("="*60)
     
-    validator = DITAValidatorV2()
+    validator = DitaValidator()
     
     if content:
         print(f"\nValidating provided DITA content...")

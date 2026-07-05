@@ -15,8 +15,7 @@ from datetime import datetime
 from uuid import uuid4
 
 # Import the production components
-from app.services.dita_validator_v2 import DITAValidatorV2
-from app.services.dita_correction_service import DITACorrectionService
+from hop_core.dita import DitaValidator, DitaCorrectionService
 from app.services.ai_service import AIServiceFactory, GenerationRequest
 
 def test_validation_catches_errors():
@@ -26,7 +25,7 @@ def test_validation_catches_errors():
     print("TEST 1: DITA Validation Error Detection")
     print("="*60)
     
-    validator = DITAValidatorV2()
+    validator = DitaValidator()
     
     # Test cases with known errors
     test_cases = [
@@ -139,7 +138,7 @@ def test_auto_fix_functionality():
     print("TEST 2: Automatic Fix Functionality")
     print("="*60)
     
-    validator = DITAValidatorV2()
+    validator = DitaValidator()
     
     test_cases = [
         {
@@ -210,7 +209,7 @@ async def test_ai_correction_mock():
     print("TEST 3: AI Correction Service (Mock)")
     print("="*60)
     
-    validator = DITAValidatorV2()
+    validator = DitaValidator()
     
     # Create a mock AI service
     class MockAIService:
@@ -241,7 +240,7 @@ async def test_ai_correction_mock():
             return MockResponse()
     
     mock_ai = MockAIService()
-    correction_service = DITACorrectionService(mock_ai, validator)
+    correction_service = DitaCorrectionService(mock_ai, validator)
     
     # Test with invalid content
     invalid_content = """# Release Notes
@@ -290,10 +289,9 @@ def test_orchestrator_integration():
             content = f.read()
         
         checks = {
-            "DITAValidatorV2 imported": "from app.services.dita_validator_v2 import DITAValidatorV2" in content,
-            "DITACorrectionService imported": "from app.services.dita_correction_service import DITACorrectionService" in content,
-            "DITAValidatorV2 instantiated": "DITAValidatorV2()" in content,
-            "DITACorrectionService used": "DITACorrectionService(" in content,
+            "hop_core.dita imported": "from hop_core.dita import DitaValidator, DitaCorrectionService" in content,
+            "DitaValidator instantiated": "DitaValidator()" in content,
+            "DitaCorrectionService used": "DitaCorrectionService(" in content,
             "validate_and_correct_with_ai called": "validate_and_correct_with_ai(" in content
         }
         
@@ -352,9 +350,9 @@ async def main():
     if all_passed:
         print("✅ ALL TESTS PASSED - DITA VALIDATION IS WORKING")
         print("\nThe enhanced DITA validation system is properly integrated:")
-        print("• DITAValidatorV2 catches structural errors")
+        print("• DitaValidator catches structural errors")
         print("• Auto-fix corrects common issues")
-        print("• DITACorrectionService provides AI-driven fixes")
+        print("• DitaCorrectionService provides AI-driven fixes")
         print("• Job orchestrator uses the enhanced validation")
         print("\nValidation errors reported in job 54773e19-5bc9-45ad-bd6a-ac5287c9031a")
         print("should now be caught and corrected automatically.")

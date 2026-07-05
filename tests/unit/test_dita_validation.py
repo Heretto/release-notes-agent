@@ -9,7 +9,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'backend'))
 
 import unittest
-from app.services.dita_validator_v2 import DITAValidatorV2
+from hop_core.dita import DitaValidator
 
 
 class TestDITAValidation(unittest.TestCase):
@@ -17,7 +17,7 @@ class TestDITAValidation(unittest.TestCase):
     
     def setUp(self):
         """Set up test validator."""
-        self.validator = DITAValidatorV2()
+        self.validator = DitaValidator()
     
     def test_valid_dita_topic(self):
         """Test validation of a valid DITA topic."""
@@ -255,7 +255,7 @@ class TestDITAValidationIntegration(unittest.TestCase):
     
     def setUp(self):
         """Set up test validator."""
-        self.validator = DITAValidatorV2()
+        self.validator = DitaValidator()
     
     def test_release_notes_example(self):
         """Test validation of a typical release notes DITA document."""
