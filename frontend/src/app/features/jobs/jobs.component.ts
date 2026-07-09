@@ -268,22 +268,22 @@ import { switchMap, startWith } from 'rxjs/operators';
 
     mat-chip.pending {
       background-color: var(--color-warning) !important;
-      color: white;
+      color: white !important;
     }
 
     mat-chip.running {
       background-color: var(--color-info) !important;
-      color: white;
+      color: white !important;
     }
 
     mat-chip.completed {
       background-color: var(--color-success) !important;
-      color: white;
+      color: white !important;
     }
 
     mat-chip.failed {
       background-color: var(--color-error) !important;
-      color: white;
+      color: white !important;
     }
 
     .status-icon {

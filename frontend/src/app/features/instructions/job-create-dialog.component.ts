@@ -86,10 +86,8 @@ import { InstructionSet } from '../../core/services/instructions.service';
               [disabled]="!form.valid || creating"
               (click)="onCreate()">
         <mat-spinner *ngIf="creating" diameter="20" class="inline-spinner"></mat-spinner>
-        <span *ngIf="!creating">
-          <mat-icon>play_arrow</mat-icon>
-          Generate Release Notes
-        </span>
+        <mat-icon *ngIf="!creating">play_arrow</mat-icon>
+        <span *ngIf="!creating">Generate Release Notes</span>
       </button>
     </mat-dialog-actions>
   `,
