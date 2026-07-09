@@ -1,5 +1,12 @@
 # hop-core (sibling repo — clone https://github.com/heretto/hop-core next to this repo
-# and keep it on a main that includes hop_core.dita; the [dita] extra pulls lxml)
+# and keep it on a main that includes hop_core.dita; the [dita] extra pulls lxml).
+#
+# SINGLE SOURCE OF TRUTH POLICY:
+# hop-core owns the versions of its own dependencies — auth, crypto, oauth, rate-limiting,
+# lxml, pydantic-settings, email-validator, python-multipart, itsdangerous. Those are NOT
+# re-pinned here; they resolve transitively from hop-core so there is exactly one version
+# constraint for each and no drift/conflict. Only packages this app imports directly are
+# listed below. CI runs `pip check` to catch any incompatibility.
 -e ../hop-core[dita]
 
 # Core FastAPI and async support
@@ -16,37 +23,18 @@ alembic==1.13.3
 redis==5.0.1
 celery==5.3.4
 
-# Authentication and Security
-PyJWT==2.11.0
-bcrypt>=4.0
-python-multipart==0.0.22
-cryptography==46.0.5
-
 # AI and API integrations
 google-generativeai==0.3.2
 anthropic==0.39.0
+openai==2.26.0
 httpx==0.25.1
-jira==3.5.2
 
-# DITA and XML processing
-lxml==6.0.2
+# XML processing (defusedxml used directly; lxml provided transitively by hop-core[dita])
 defusedxml==0.7.1
 
 # Environment and config
 python-dotenv==1.0.0
 pydantic==2.9.2
-pydantic-settings==2.5.2
-email-validator==2.2.0
-
-# OAuth / SSO
-authlib==1.4.1
-itsdangerous==2.2.0
-
-# Rate limiting
-slowapi==0.1.9
 
 # Email
 aiosmtplib==3.0.2
-
-# Utilities
-python-dateutil==2.8.2

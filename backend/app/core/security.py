@@ -4,7 +4,6 @@
 from hop_core.core.security import (  # noqa: F401
     verify_password,
     get_password_hash,
-    needs_rehash,
     create_access_token,
     create_refresh_token,
     decode_token,
