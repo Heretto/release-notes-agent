@@ -384,7 +384,7 @@ interface JobArtifact {
     .summary-item.full-width{grid-column:1/-1}
     .summary-item .label{font-weight:500;opacity:0.9;font-size:14px}
     .ticket-count{background:rgba(255,255,255,0.2);padding:4px 12px;border-radius:12px;display:inline-block;font-weight:500}
-    .jql-query{background:rgba(0,0,0,0.1);padding:8px 12px;border-radius:4px;font-family:var(--font-mono);display:inline-block}
+    .jql-query{background:#fff;color:#1a1a1a;padding:8px 12px;border-radius:4px;font-family:var(--font-mono);display:inline-block}
     .heretto-link{color:white;display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,0.15);padding:6px 12px;border-radius:4px;text-decoration:none;font-size:14px;transition:background 0.2s}
     .heretto-link:hover{background:rgba(255,255,255,0.3)}
     .heretto-link-icon{font-size:16px;width:16px;height:16px}
@@ -396,12 +396,12 @@ interface JobArtifact {
     .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px;color:var(--text-tertiary)}
     .empty-state mat-icon{font-size:48px;width:48px;height:48px;margin-bottom:10px}
     mat-chip{font-size:12px}
-    mat-chip.pending{background-color:var(--color-warning)!important;color:white}
-    mat-chip.running{background-color:var(--color-info)!important;color:white}
-    mat-chip.completed{background-color:var(--color-success)!important;color:white}
-    mat-chip.failed{background-color:var(--color-error)!important;color:white}
+    mat-chip.pending{background-color:var(--color-warning)!important;color:white!important}
+    mat-chip.running{background-color:var(--color-info)!important;color:white!important}
+    mat-chip.completed{background-color:var(--color-success)!important;color:white!important}
+    mat-chip.failed{background-color:var(--color-error)!important;color:white!important}
     .status-icon{font-size:16px;width:16px;height:16px;margin-right:4px}
-    .ai-chip{background:rgba(255,255,255,0.2)!important;color:white}
+    .ai-chip{background:rgba(255,255,255,0.2)!important;color:white!important}
     .chip-icon{font-size:16px;width:16px;height:16px;margin-right:4px}
     .small-chip{height:20px;font-size:11px;margin-right:10px}
     .request-type{font-weight:500}
@@ -434,9 +434,9 @@ interface JobArtifact {
     .metric-card mat-icon{font-size:36px;width:36px;height:36px;margin:0 auto 10px;opacity:0.8}
     .metric-value{font-size:32px;font-weight:bold;margin:10px 0}
     .metric-label{font-size:14px;opacity:0.9}
-    .request-success{background:var(--color-success)!important;color:white}
-    .request-failed{background:var(--color-error)!important;color:white}
-    .request-pending{background:var(--color-warning)!important;color:white}
+    .request-success{background:var(--color-success)!important;color:white!important}
+    .request-failed{background:var(--color-error)!important;color:white!important}
+    .request-pending{background:var(--color-warning)!important;color:white!important}
     .artifacts-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
     .artifacts-header h3{margin:0;color:var(--text-primary)}
     .retry-progress-container{margin:20px 0;animation:slideDown 0.3s ease-out}
