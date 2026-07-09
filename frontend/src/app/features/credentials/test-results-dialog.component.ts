@@ -215,11 +215,11 @@ import { MatDividerModule } from '@angular/material/divider';
     }
 
     .success-icon {
-      color: #4caf50;
+      color: var(--color-success);
     }
 
     .error-icon {
-      color: #f44336;
+      color: var(--color-error);
     }
 
     .result-section {
@@ -228,7 +228,7 @@ import { MatDividerModule } from '@angular/material/divider';
 
     .result-section h3 {
       margin-bottom: 10px;
-      color: #666;
+      color: var(--text-secondary);
       font-size: 14px;
       font-weight: 500;
       text-transform: uppercase;
@@ -256,7 +256,7 @@ import { MatDividerModule } from '@angular/material/divider';
     }
 
     .detail-row code {
-      background: #f5f5f5;
+      background: var(--bg-secondary);
       padding: 4px 8px;
       border-radius: 4px;
       font-size: 12px;
@@ -264,17 +264,17 @@ import { MatDividerModule } from '@angular/material/divider';
     }
 
     .issues-summary {
-      background: #f9f9f9;
+      background: var(--bg-secondary);
       padding: 15px;
       border-radius: 8px;
     }
 
     .issue-card {
-      background: white;
+      background: var(--bg-primary);
       padding: 12px;
       margin: 10px 0;
       border-radius: 6px;
-      border-left: 4px solid #2196f3;
+      border-left: 4px solid var(--color-info);
       box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     }
 
@@ -286,13 +286,13 @@ import { MatDividerModule } from '@angular/material/divider';
     }
 
     .issue-summary {
-      color: #333;
+      color: var(--text-primary);
       margin-bottom: 8px;
     }
 
     .issue-created {
       font-size: 12px;
-      color: #999;
+      color: var(--text-tertiary);
     }
 
     .json-response {
@@ -307,13 +307,13 @@ import { MatDividerModule } from '@angular/material/divider';
     }
 
     .error-section {
-      background: #ffebee;
+      background: var(--color-error-bg);
       padding: 15px;
       border-radius: 8px;
     }
 
     .error-text {
-      color: #c62828;
+      color: var(--color-error-text);
       font-size: 12px;
       white-space: pre-wrap;
     }
@@ -323,17 +323,17 @@ import { MatDividerModule } from '@angular/material/divider';
     }
 
     mat-chip.success {
-      background-color: #4caf50 !important;
+      background-color: var(--color-success) !important;
       color: white !important;
     }
 
     mat-chip.warning {
-      background-color: #ff9800 !important;
+      background-color: var(--color-warning) !important;
       color: white !important;
     }
 
     mat-chip.error {
-      background-color: #f44336 !important;
+      background-color: var(--color-error) !important;
       color: white !important;
     }
 
@@ -346,7 +346,7 @@ import { MatDividerModule } from '@angular/material/divider';
     }
     
     .url-code {
-      background: #f5f5f5;
+      background: var(--bg-secondary);
       padding: 4px 8px;
       border-radius: 4px;
       font-size: 12px;
@@ -356,7 +356,7 @@ import { MatDividerModule } from '@angular/material/divider';
     }
     
     .method-badge {
-      background: #2196f3;
+      background: var(--color-info);
       color: white;
       padding: 2px 8px;
       border-radius: 4px;
@@ -373,7 +373,7 @@ import { MatDividerModule } from '@angular/material/divider';
     .headers-section strong, .body-section strong {
       display: block;
       margin-bottom: 8px;
-      color: #666;
+      color: var(--text-secondary);
     }
     
     .request-content, .response-content {
@@ -387,22 +387,22 @@ import { MatDividerModule } from '@angular/material/divider';
     .available-models-section strong {
       display: block;
       margin-bottom: 10px;
-      color: #666;
+      color: var(--text-secondary);
     }
     
     .models-list {
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
-      background: #f5f5f5;
+      background: var(--bg-secondary);
       padding: 12px;
       border-radius: 4px;
     }
     
     .models-list mat-chip {
-      background: #2196f3 !important;
+      background: var(--color-info) !important;
       color: white !important;
-      font-family: 'Courier New', monospace;
+      font-family: var(--font-mono);
       font-size: 12px;
     }
   `]

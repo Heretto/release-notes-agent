@@ -127,7 +127,7 @@ import { SuperadminService, SuperadminOrgListItem } from '../../core/services/su
 
     .subtitle {
       margin: 4px 0 0;
-      color: rgba(0, 0, 0, 0.54);
+      color: var(--text-secondary);
     }
 
     .loading-container {
@@ -141,7 +141,7 @@ import { SuperadminService, SuperadminOrgListItem } from '../../core/services/su
       align-items: center;
       gap: 8px;
       padding: 16px;
-      color: #f44336;
+      color: var(--color-error);
     }
 
     .org-table {
@@ -163,18 +163,18 @@ import { SuperadminService, SuperadminOrgListItem } from '../../core/services/su
 
     .slug {
       font-size: 12px;
-      color: rgba(0, 0, 0, 0.54);
+      color: var(--text-secondary);
     }
 
     .no-activity {
-      color: rgba(0, 0, 0, 0.38);
+      color: var(--text-tertiary);
       font-style: italic;
     }
 
     .empty-state {
       text-align: center;
       padding: 40px;
-      color: rgba(0, 0, 0, 0.38);
+      color: var(--text-tertiary);
     }
 
     .empty-state mat-icon {

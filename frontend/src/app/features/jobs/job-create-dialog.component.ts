@@ -36,7 +36,7 @@ import { CredentialsService, AICredential } from '../../core/services/credential
 
     <mat-dialog-content>
       <form [formGroup]="form">
-        <mat-form-field appearance="fill" class="full-width">
+        <mat-form-field appearance="outline" class="full-width">
           <mat-label>Instruction Set</mat-label>
           <mat-select formControlName="instruction_set_id" required>
             <mat-option *ngFor="let ins of instructionSets" [value]="ins.id">
@@ -56,7 +56,7 @@ import { CredentialsService, AICredential } from '../../core/services/credential
           <span>Output will be published to Heretto CCMS</span>
         </div>
 
-        <mat-form-field appearance="fill" class="full-width">
+        <mat-form-field appearance="outline" class="full-width">
           <mat-label>AI Model (Optional)</mat-label>
           <mat-select formControlName="ai_credential_id">
             <mat-option value="">Use Default</mat-option>
@@ -67,7 +67,7 @@ import { CredentialsService, AICredential } from '../../core/services/credential
           <mat-hint>Select which AI model to use for generation</mat-hint>
         </mat-form-field>
 
-        <mat-form-field appearance="fill" class="full-width">
+        <mat-form-field appearance="outline" class="full-width">
           <mat-label>Output Filename</mat-label>
           <input matInput formControlName="output_filename"
                  placeholder="release-notes-v2.0.xml" required>
@@ -77,7 +77,7 @@ import { CredentialsService, AICredential } from '../../core/services/credential
           </mat-error>
         </mat-form-field>
 
-        <mat-form-field appearance="fill" class="full-width">
+        <mat-form-field appearance="outline" class="full-width">
           <mat-label>Additional Instructions (Optional)</mat-label>
           <textarea matInput formControlName="additional_instructions"
                     rows="4"
@@ -85,7 +85,7 @@ import { CredentialsService, AICredential } from '../../core/services/credential
           <mat-hint>Extra context or requirements for the AI</mat-hint>
         </mat-form-field>
 
-        <mat-form-field appearance="fill" class="full-width">
+        <mat-form-field appearance="outline" class="full-width">
           <mat-label>Custom JQL Query (Optional)</mat-label>
           <textarea matInput formControlName="jql_query"
                     rows="2"
@@ -93,7 +93,7 @@ import { CredentialsService, AICredential } from '../../core/services/credential
           <mat-hint>Override the instruction set's JQL query for this job</mat-hint>
         </mat-form-field>
 
-        <mat-form-field appearance="fill" class="full-width">
+        <mat-form-field appearance="outline" class="full-width">
           <mat-label>Maximum Tickets to Process (Optional)</mat-label>
           <input matInput formControlName="max_tickets"
                  type="number" min="1" max="1000"
@@ -137,8 +137,8 @@ import { CredentialsService, AICredential } from '../../core/services/credential
       display: flex;
       align-items: center;
       gap: 8px;
-      background: #e3f2fd;
-      color: #1565c0;
+      background: var(--color-primary-bg);
+      color: var(--color-primary-text);
       padding: 10px 14px;
       border-radius: 4px;
       margin-bottom: 20px;
@@ -146,11 +146,11 @@ import { CredentialsService, AICredential } from '../../core/services/credential
     }
 
     .jql-display {
-      background: #f5f5f5;
+      background: var(--bg-secondary);
       padding: 10px;
-      border: 1px solid #e0e0e0;
+      border: 1px solid var(--border-default);
       border-radius: 4px;
-      font-family: monospace;
+      font-family: var(--font-mono);
       font-size: 12px;
       margin: 0;
       word-wrap: break-word;
@@ -168,7 +168,7 @@ import { CredentialsService, AICredential } from '../../core/services/credential
 
     mat-dialog-actions {
       padding: 20px 24px;
-      border-top: 1px solid #e0e0e0;
+      border-top: 1px solid var(--border-default);
     }
 
     mat-dialog-actions button {

@@ -63,7 +63,7 @@ export interface AICredential {
       </div>
 
       <form [formGroup]="form">
-        <mat-form-field appearance="fill" class="full-width">
+        <mat-form-field appearance="outline" class="full-width">
           <mat-label>Name</mat-label>
           <input matInput formControlName="name" required 
                  placeholder="My OpenAI Credential">
@@ -73,7 +73,7 @@ export interface AICredential {
           </mat-error>
         </mat-form-field>
 
-        <mat-form-field appearance="fill" class="full-width">
+        <mat-form-field appearance="outline" class="full-width">
           <mat-label>AI Provider</mat-label>
           <mat-select formControlName="provider" required>
             <mat-option value="openai">
@@ -98,7 +98,7 @@ export interface AICredential {
           </mat-error>
         </mat-form-field>
 
-        <mat-form-field appearance="fill" class="full-width">
+        <mat-form-field appearance="outline" class="full-width">
           <mat-label>API Key</mat-label>
           <input matInput type="password" formControlName="api_key" 
                  [placeholder]="data ? 'Enter new key (leave empty to keep current)' : 'Enter API key'"
@@ -109,14 +109,14 @@ export interface AICredential {
           </mat-error>
         </mat-form-field>
 
-        <mat-form-field appearance="fill" class="full-width">
+        <mat-form-field appearance="outline" class="full-width">
           <mat-label>Model (Optional)</mat-label>
           <input matInput formControlName="model" 
                  [placeholder]="getModelPlaceholder()">
           <mat-hint>{{ getModelHint() }}</mat-hint>
         </mat-form-field>
 
-        <mat-form-field appearance="fill" class="full-width" 
+        <mat-form-field appearance="outline" class="full-width" 
                         *ngIf="showBaseUrl">
           <mat-label>Base URL (Optional)</mat-label>
           <input matInput formControlName="base_url" 
@@ -124,7 +124,7 @@ export interface AICredential {
           <mat-hint>Custom API endpoint (for self-hosted or alternative providers)</mat-hint>
         </mat-form-field>
 
-        <mat-form-field appearance="fill" class="full-width" 
+        <mat-form-field appearance="outline" class="full-width" 
                         *ngIf="showOrganizationId">
           <mat-label>Organization ID (Optional)</mat-label>
           <input matInput formControlName="organization_id" 
@@ -192,11 +192,11 @@ export interface AICredential {
     }
 
     .current-values {
-      background: #f5f5f5;
+      background: var(--bg-secondary);
       border-radius: 8px;
       padding: 16px;
       margin-bottom: 24px;
-      border: 1px solid #e0e0e0;
+      border: 1px solid var(--border-default);
     }
 
     .info-box {
@@ -204,7 +204,7 @@ export interface AICredential {
       align-items: center;
       gap: 8px;
       margin-bottom: 12px;
-      color: #1976d2;
+      color: var(--color-primary-text);
       font-weight: 500;
     }
 
@@ -223,13 +223,13 @@ export interface AICredential {
 
     .field-display strong {
       min-width: 100px;
-      color: #666;
+      color: var(--text-secondary);
     }
 
     .test-section {
       margin: 20px 0;
       padding: 15px;
-      background: #f9f9f9;
+      background: var(--bg-secondary);
       border-radius: 4px;
       display: flex;
       align-items: center;
@@ -241,11 +241,11 @@ export interface AICredential {
     }
 
     .test-result.success {
-      color: #4caf50;
+      color: var(--color-success);
     }
 
     .test-result.error {
-      color: #f44336;
+      color: var(--color-error);
     }
 
     mat-option mat-icon {
@@ -255,7 +255,7 @@ export interface AICredential {
 
     .test-details {
       margin-top: 20px;
-      background: #f9f9f9;
+      background: var(--bg-secondary);
     }
 
     .test-details-content {
@@ -268,19 +268,19 @@ export interface AICredential {
 
     .detail-section h4 {
       margin-bottom: 8px;
-      color: #666;
+      color: var(--text-secondary);
       font-size: 14px;
       font-weight: 500;
     }
 
     .detail-section pre {
-      background: #fff;
-      border: 1px solid #e0e0e0;
+      background: var(--bg-primary);
+      border: 1px solid var(--border-default);
       border-radius: 4px;
       padding: 12px;
       overflow-x: auto;
       font-size: 12px;
-      font-family: 'Courier New', monospace;
+      font-family: var(--font-mono);
       margin: 0;
     }
 
@@ -289,9 +289,9 @@ export interface AICredential {
     }
 
     .model-id {
-      color: #666;
+      color: var(--text-secondary);
       font-size: 0.9em;
-      font-family: 'Courier New', monospace;
+      font-family: var(--font-mono);
       margin-left: 4px;
     }
   `]

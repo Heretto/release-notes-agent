@@ -81,7 +81,7 @@ interface TestResult {
           <p class="hint">Please add Jira credentials in the Credentials section first.</p>
         </div>
 
-        <mat-form-field *ngIf="!loadingCredentials && jiraCredentials.length > 0" class="full-width">
+        <mat-form-field *ngIf="!loadingCredentials && jiraCredentials.length > 0" appearance="outline" class="full-width">
           <mat-label>Jira Credential</mat-label>
           <mat-select [(ngModel)]="selectedCredentialId">
             <mat-option *ngFor="let cred of jiraCredentials" [value]="cred.id">
@@ -269,7 +269,7 @@ interface TestResult {
 
     .credential-section h3 {
       margin-bottom: 15px;
-      color: #333;
+      color: var(--text-primary);
     }
 
     .full-width {
@@ -288,7 +288,7 @@ interface TestResult {
     .no-credentials {
       text-align: center;
       padding: 30px;
-      background: #f5f5f5;
+      background: var(--bg-secondary);
       border-radius: 8px;
     }
 
@@ -296,12 +296,12 @@ interface TestResult {
       font-size: 48px;
       width: 48px;
       height: 48px;
-      color: #ff9800;
+      color: var(--color-warning);
       margin: 0 auto 10px;
     }
 
     .hint {
-      color: #666;
+      color: var(--text-secondary);
       font-size: 14px;
       margin-top: 5px;
     }
@@ -309,22 +309,22 @@ interface TestResult {
     .query-info {
       margin-top: 20px;
       padding: 15px;
-      background: #f9f9f9;
+      background: var(--bg-secondary);
       border-radius: 8px;
     }
 
     .query-info h4 {
       margin: 0 0 10px 0;
-      color: #666;
+      color: var(--text-secondary);
       font-size: 14px;
     }
 
     .jql-query {
-      background: white;
+      background: var(--bg-primary);
       padding: 12px;
-      border: 1px solid #e0e0e0;
+      border: 1px solid var(--border-default);
       border-radius: 4px;
-      font-family: monospace;
+      font-family: var(--font-mono);
       font-size: 13px;
       margin: 0;
       white-space: pre-wrap;
@@ -340,13 +340,13 @@ interface TestResult {
     }
 
     .result-header.success {
-      background: #e8f5e9;
-      color: #2e7d32;
+      background: var(--color-success-bg);
+      color: var(--color-success-text);
     }
 
     .result-header.error {
-      background: #ffebee;
-      color: #c62828;
+      background: var(--color-error-bg);
+      color: var(--color-error-text);
     }
 
     .result-header mat-icon {
@@ -367,7 +367,7 @@ interface TestResult {
 
     .connection-info {
       padding: 10px 20px;
-      background: #f5f5f5;
+      background: var(--bg-secondary);
       border-radius: 4px;
       margin-bottom: 20px;
     }
@@ -379,23 +379,23 @@ interface TestResult {
 
     .error-details {
       padding: 20px;
-      background: #fff3e0;
+      background: var(--color-warning-bg);
       border-radius: 8px;
       margin: 20px 0;
     }
 
     .error-details h4 {
       margin: 0 0 10px 0;
-      color: #e65100;
+      color: var(--color-warning-text);
     }
 
     .error-message {
-      background: white;
+      background: var(--bg-primary);
       padding: 15px;
-      border: 1px solid #ffcc80;
+      border: 1px solid var(--color-warning-border);
       border-radius: 4px;
       font-size: 13px;
-      color: #d84315;
+      color: var(--color-error-text);
       white-space: pre-wrap;
       margin: 0;
     }
@@ -406,13 +406,13 @@ interface TestResult {
 
     .issues-section h4 {
       margin-bottom: 20px;
-      color: #333;
+      color: var(--text-primary);
     }
 
     .no-issues {
       text-align: center;
       padding: 40px;
-      background: #f5f5f5;
+      background: var(--bg-secondary);
       border-radius: 8px;
     }
 
@@ -420,7 +420,7 @@ interface TestResult {
       font-size: 48px;
       width: 48px;
       height: 48px;
-      color: #999;
+      color: var(--text-tertiary);
       margin: 0 auto 10px;
     }
 
@@ -443,37 +443,37 @@ interface TestResult {
     }
 
     mat-chip.done {
-      background-color: #4caf50 !important;
+      background-color: var(--color-success) !important;
       color: white !important;
     }
 
     mat-chip.in-progress {
-      background-color: #2196f3 !important;
+      background-color: var(--color-info) !important;
       color: white !important;
     }
 
     mat-chip.todo {
-      background-color: #9e9e9e !important;
+      background-color: var(--text-tertiary) !important;
       color: white !important;
     }
 
     mat-chip.critical, mat-chip.highest {
-      background-color: #f44336 !important;
+      background-color: var(--color-error) !important;
       color: white !important;
     }
 
     mat-chip.high {
-      background-color: #ff9800 !important;
+      background-color: var(--color-warning) !important;
       color: white !important;
     }
 
     mat-chip.medium {
-      background-color: #ffc107 !important;
+      background-color: var(--color-warning) !important;
       color: black !important;
     }
 
     mat-chip.low, mat-chip.lowest {
-      background-color: #4caf50 !important;
+      background-color: var(--color-success) !important;
       color: white !important;
     }
 
@@ -487,7 +487,7 @@ interface TestResult {
 
     .issue-details h5 {
       margin: 0 0 15px 0;
-      color: #333;
+      color: var(--text-primary);
     }
 
     .detail-row {
@@ -499,7 +499,7 @@ interface TestResult {
 
     .detail-row strong {
       min-width: 100px;
-      color: #666;
+      color: var(--text-secondary);
     }
 
     .chip-list {

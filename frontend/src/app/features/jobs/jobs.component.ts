@@ -189,7 +189,7 @@ import { switchMap, startWith } from 'rxjs/operators';
     }
 
     .subtitle {
-      color: #666;
+      color: var(--text-secondary);
       margin: 5px 0 0 0;
     }
 
@@ -202,7 +202,7 @@ import { switchMap, startWith } from 'rxjs/operators';
 
     .loading-container p {
       margin-top: 20px;
-      color: #666;
+      color: var(--text-secondary);
     }
 
     .empty-state {
@@ -220,17 +220,17 @@ import { switchMap, startWith } from 'rxjs/operators';
       font-size: 64px;
       width: 64px;
       height: 64px;
-      color: #ddd;
+      color: var(--border-default);
       margin: 0 auto 20px;
     }
 
     .empty-state h3 {
-      color: #333;
+      color: var(--text-primary);
       margin-bottom: 10px;
     }
 
     .empty-state p {
-      color: #666;
+      color: var(--text-secondary);
       margin-bottom: 20px;
     }
 
@@ -248,12 +248,12 @@ import { switchMap, startWith } from 'rxjs/operators';
 
     .query-cell {
       max-width: 300px;
-      font-family: monospace;
+      font-family: var(--font-mono);
       font-size: 12px;
     }
 
     .ticket-count {
-      background: #e3f2fd;
+      background: var(--color-primary-bg);
       padding: 4px 8px;
       border-radius: 12px;
       font-weight: 500;
@@ -267,22 +267,22 @@ import { switchMap, startWith } from 'rxjs/operators';
     }
 
     mat-chip.pending {
-      background-color: #ffc107 !important;
+      background-color: var(--color-warning) !important;
       color: white;
     }
 
     mat-chip.running {
-      background-color: #2196f3 !important;
+      background-color: var(--color-info) !important;
       color: white;
     }
 
     mat-chip.completed {
-      background-color: #4caf50 !important;
+      background-color: var(--color-success) !important;
       color: white;
     }
 
     mat-chip.failed {
-      background-color: #f44336 !important;
+      background-color: var(--color-error) !important;
       color: white;
     }
 
@@ -295,9 +295,9 @@ import { switchMap, startWith } from 'rxjs/operators';
 
     .running-job {
       background: linear-gradient(90deg, 
-        rgba(33, 150, 243, 0.05) 0%, 
-        rgba(33, 150, 243, 0.1) 50%, 
-        rgba(33, 150, 243, 0.05) 100%);
+        rgba(22, 185, 168, 0.05) 0%, 
+        rgba(22, 185, 168, 0.1) 50%, 
+        rgba(22, 185, 168, 0.05) 100%);
       animation: pulse 2s ease-in-out infinite;
     }
 

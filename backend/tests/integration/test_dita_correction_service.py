@@ -22,8 +22,7 @@ import os
 import re
 import pytest
 
-from app.services.dita_validator_v2 import DITAValidatorV2
-from app.services.dita_correction_service import DITACorrectionService
+from hop_core.dita import DitaValidator, DitaCorrectionService
 from app.services.ai_service import AIServiceFactory
 
 
@@ -118,7 +117,7 @@ def _first_available_ai_service():
 
 @pytest.fixture(scope="module")
 def validator():
-    return DITAValidatorV2()
+    return DitaValidator()
 
 
 @pytest.fixture(scope="module")
@@ -153,7 +152,7 @@ def ai_service():
 
 @pytest.fixture(scope="module")
 def correction_service(ai_service, validator):
-    return DITACorrectionService(ai_service=ai_service, validator=validator)
+    return DitaCorrectionService(ai_service=ai_service, validator=validator)
 
 
 # ---------------------------------------------------------------------------
@@ -168,7 +167,7 @@ class TestDetectTopicType:
         class _Stub:
             async def generate(self, req):
                 raise AssertionError("should not be called")
-        return DITACorrectionService(ai_service=_Stub())
+        return DitaCorrectionService(ai_service=_Stub())
 
     def test_detects_concept(self):
         svc = self._service()
@@ -262,7 +261,7 @@ class TestRegenerationPromptDoctype:
 
     def _build_enhanced_prompt(self, content: str) -> str:
         """Mirror the logic in validate_and_correct_with_ai to extract the prompt."""
-        svc = DITACorrectionService(ai_service=None)  # ai_service not called here
+        svc = DitaCorrectionService(ai_service=None)  # ai_service not called here
         topic_type = svc._detect_topic_type(content)
         doctype_map = {
             "concept": ('<!DOCTYPE concept', "<concept ", "<conbody>", "</concept>"),

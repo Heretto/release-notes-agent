@@ -197,8 +197,8 @@ def test_dita_validation_integration():
         print("⚠️ DITA VALIDATION MAY NOT BE FULLY INTEGRATED")
         print("\nTroubleshooting:")
         print("1. Check backend logs: docker logs release-notes-backend")
-        print("2. Ensure job_orchestrator.py is using DITAValidatorV2")
-        print("3. Verify DITACorrectionService is imported")
+        print("2. Ensure job_orchestrator.py is using DitaValidator")
+        print("3. Verify DitaCorrectionService is imported")
         return False
 
 if __name__ == "__main__":

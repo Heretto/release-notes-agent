@@ -239,8 +239,8 @@ class TestRunner:
         pytest_local_tests = [
             ("tests/unit/test_csrf_middleware.py", "CSRF Middleware"),
             ("tests/unit/test_org_modes.py", "Org Modes (single-org & domain restriction)"),
-            ("tests/unit/test_dita_validator.py", "DITA Validator (DTD/xmllint)"),
-            ("tests/unit/test_dita_fixture_validation.py", "DITA Fixture Validation Cases"),
+            # DITA validator unit/fixture suites moved to hop-core (hop_core.dita)
+            ("tests/unit/test_job_orchestrator_errors.py", "Job Orchestrator Error Sanitization"),
             ("tests/test_user_organization_registration.py", "User Organization Registration"),
             ("tests/integration/test_dita_correction_service.py", "DITA Correction Loop"),
         ]

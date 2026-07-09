@@ -10,8 +10,7 @@ from app.services.jira_service import JiraService
 from app.services.heretto_service import HerettoService
 from app.services.ai_service import AIServiceFactory, GenerationRequest
 from app.services.dita_generator import DITAGenerator
-from app.services.dita_validator_v2 import DITAValidatorV2
-from app.services.dita_correction_service import DITACorrectionService
+from hop_core.dita import DitaValidator, DitaCorrectionService
 from app.core.security import decrypt_credentials
 from app.config import get_settings
 
@@ -24,7 +23,7 @@ class JobOrchestrator:
     def __init__(self, db: Session):
         self.db = db
         self.dita_generator = DITAGenerator()
-        self.dita_validator = DITAValidatorV2()
+        self.dita_validator = DitaValidator()
         self.logger = logger
     
     async def process_job(self, job_id: UUID) -> None:
@@ -243,7 +242,7 @@ Response Length: {len(ai_response.content)} characters
             logger.info(f"Starting DITA validation for job {job_id}")
             
             # Initialize correction service with the AI service
-            correction_service = DITACorrectionService(ai_service, self.dita_validator)
+            correction_service = DitaCorrectionService(ai_service, self.dita_validator)
             
             # Store original for comparison
             original_dita = dita_content

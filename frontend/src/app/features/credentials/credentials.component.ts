@@ -273,9 +273,9 @@ import { TestResultsDialogComponent } from './test-results-dialog.component';
 
     .no-data {
       text-align: center;
-      color: #666;
+      color: var(--text-secondary);
       padding: 40px;
-      background: #f5f5f5;
+      background: var(--bg-secondary);
       border-radius: 4px;
     }
 
@@ -288,8 +288,8 @@ import { TestResultsDialogComponent } from './test-results-dialog.component';
     .provider-badge {
       padding: 4px 8px;
       border-radius: 4px;
-      background: #e3f2fd;
-      color: #1976d2;
+      background: var(--color-primary-bg);
+      color: var(--color-primary-text);
       font-size: 12px;
       text-transform: uppercase;
       font-weight: 500;

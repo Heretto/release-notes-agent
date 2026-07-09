@@ -99,7 +99,7 @@ export interface AddMemberDialogResult {
     }
     .hint {
       font-size: 13px;
-      color: rgba(0, 0, 0, 0.54);
+      color: var(--text-secondary);
       margin-bottom: 16px;
     }
   `]

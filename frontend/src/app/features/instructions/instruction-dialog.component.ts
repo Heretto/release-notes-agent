@@ -38,7 +38,7 @@ import { InstructionSet } from '../../core/services/instructions.service';
         <div class="form-section">
           <h3>Basic Information</h3>
           
-          <mat-form-field appearance="fill" class="full-width">
+          <mat-form-field appearance="outline" class="full-width">
             <mat-label>Name</mat-label>
             <input matInput formControlName="name" required>
             <mat-error *ngIf="form.get('name')?.hasError('required')">
@@ -46,7 +46,7 @@ import { InstructionSet } from '../../core/services/instructions.service';
             </mat-error>
           </mat-form-field>
 
-          <mat-form-field appearance="fill" class="full-width">
+          <mat-form-field appearance="outline" class="full-width">
             <mat-label>Description</mat-label>
             <textarea matInput formControlName="description" rows="2"></textarea>
             <mat-hint>Brief description of what this instruction set does</mat-hint>
@@ -67,7 +67,7 @@ import { InstructionSet } from '../../core/services/instructions.service';
         <div class="form-section">
           <h3>Jira Configuration</h3>
           
-          <mat-form-field appearance="fill" class="full-width">
+          <mat-form-field appearance="outline" class="full-width">
             <mat-label>JQL Query</mat-label>
             <textarea matInput formControlName="jql_query" rows="3" required
                       placeholder="e.g., project = MYPROJECT AND fixVersion = '1.0' ORDER BY created DESC"></textarea>
@@ -102,7 +102,7 @@ import { InstructionSet } from '../../core/services/instructions.service';
         <div class="form-section">
           <h3>LLM Instructions</h3>
           
-          <mat-form-field appearance="fill" class="full-width">
+          <mat-form-field appearance="outline" class="full-width">
             <mat-label>System Prompt</mat-label>
             <textarea matInput formControlName="system_prompt" rows="6" required
                       placeholder="You are a technical writer creating release notes from Jira tickets..."></textarea>
@@ -112,7 +112,7 @@ import { InstructionSet } from '../../core/services/instructions.service';
             <mat-hint>Instructions for the AI on how to process and format the release notes</mat-hint>
           </mat-form-field>
 
-          <mat-form-field appearance="fill" class="full-width">
+          <mat-form-field appearance="outline" class="full-width">
             <mat-label>Additional User Instructions (Optional)</mat-label>
             <textarea matInput formControlName="user_instructions" rows="4"
                       placeholder="Focus on user-facing changes, group by feature area..."></textarea>
@@ -153,7 +153,7 @@ import { InstructionSet } from '../../core/services/instructions.service';
           </div>
 
           <mat-form-field *ngIf="form.get('publish_to_heretto')?.value"
-                          appearance="fill" class="full-width">
+                          appearance="outline" class="full-width">
             <mat-label>Heretto Folder ID</mat-label>
             <input matInput formControlName="heretto_folder_id"
                    placeholder="e.g., 12345-abcde-67890">
@@ -185,7 +185,7 @@ import { InstructionSet } from '../../core/services/instructions.service';
     }
 
     .form-section h3 {
-      color: #333;
+      color: var(--text-primary);
       margin-bottom: 15px;
       font-size: 16px;
       font-weight: 500;
@@ -209,13 +209,13 @@ import { InstructionSet } from '../../core/services/instructions.service';
 
     .info-icon {
       font-size: 18px;
-      color: #999;
+      color: var(--text-tertiary);
       cursor: help;
     }
 
     .jql-help, .prompt-tips {
       margin: 15px 0;
-      background: #f9f9f9;
+      background: var(--bg-secondary);
     }
 
     .jql-examples, .tips-content {
@@ -233,15 +233,15 @@ import { InstructionSet } from '../../core/services/instructions.service';
     }
 
     .jql-examples code {
-      background: #e8e8e8;
+      background: var(--bg-secondary);
       padding: 2px 6px;
       border-radius: 3px;
-      font-family: monospace;
+      font-family: var(--font-mono);
       font-size: 13px;
     }
 
     .example-prompt {
-      background: #f5f5f5;
+      background: var(--bg-secondary);
       padding: 12px;
       border-radius: 4px;
       font-size: 12px;
@@ -262,7 +262,7 @@ import { InstructionSet } from '../../core/services/instructions.service';
       display: flex;
       align-items: center;
       gap: 8px;
-      color: #666;
+      color: var(--text-secondary);
       font-size: 14px;
     }
 

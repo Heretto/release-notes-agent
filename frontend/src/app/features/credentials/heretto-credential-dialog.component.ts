@@ -42,7 +42,7 @@ import { HerettoCredential } from '../../core/services/credentials.service';
       </div>
 
       <form [formGroup]="form">
-        <mat-form-field appearance="fill" class="full-width">
+        <mat-form-field appearance="outline" class="full-width">
           <mat-label>Name</mat-label>
           <input matInput formControlName="name" required>
           <mat-error *ngIf="form.get('name')?.hasError('required')">
@@ -50,7 +50,7 @@ import { HerettoCredential } from '../../core/services/credentials.service';
           </mat-error>
         </mat-form-field>
 
-        <mat-form-field appearance="fill" class="full-width">
+        <mat-form-field appearance="outline" class="full-width">
           <mat-label>Server URL</mat-label>
           <input matInput formControlName="server_url"
                  placeholder="https://your-heretto-instance.com" required>
@@ -60,7 +60,7 @@ import { HerettoCredential } from '../../core/services/credentials.service';
           </mat-error>
         </mat-form-field>
 
-        <mat-form-field appearance="fill" class="full-width">
+        <mat-form-field appearance="outline" class="full-width">
           <mat-label>Username</mat-label>
           <input matInput formControlName="username" required>
           <mat-hint *ngIf="data">Leave unchanged or enter new username</mat-hint>
@@ -69,7 +69,7 @@ import { HerettoCredential } from '../../core/services/credentials.service';
           </mat-error>
         </mat-form-field>
 
-        <mat-form-field appearance="fill" class="full-width">
+        <mat-form-field appearance="outline" class="full-width">
           <mat-label>Token</mat-label>
           <input matInput type="password" formControlName="token"
                  [placeholder]="data ? 'Enter new token (leave empty to keep current)' : 'Enter token'"
@@ -98,18 +98,18 @@ import { HerettoCredential } from '../../core/services/credentials.service';
       margin-bottom: 15px;
     }
     .current-values {
-      background: #f5f5f5;
+      background: var(--bg-secondary);
       border-radius: 8px;
       padding: 16px;
       margin-bottom: 24px;
-      border: 1px solid #e0e0e0;
+      border: 1px solid var(--border-default);
     }
     .info-box {
       display: flex;
       align-items: center;
       gap: 8px;
       margin-bottom: 12px;
-      color: #1976d2;
+      color: var(--color-primary-text);
       font-weight: 500;
     }
     .credential-display {
@@ -126,7 +126,7 @@ import { HerettoCredential } from '../../core/services/credentials.service';
     }
     .field-display strong {
       min-width: 100px;
-      color: #666;
+      color: var(--text-secondary);
     }
   `]
 })
