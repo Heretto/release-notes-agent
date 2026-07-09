@@ -1,0 +1,61 @@
+name: Dependency Consistency
+
+# Prevents version conflicts between this app and hop-core.
+# hop-core is the single source of truth for the versions of its own dependencies
+# (auth, crypto, oauth, rate-limiting, lxml, pydantic-settings, etc.). This workflow
+# installs the backend against a fresh sibling checkout of hop-core and runs `pip check`,
+# which fails the build if any installed package violates another's version constraint.
+
+on:
+  pull_request:
+    paths:
+      - 'backend/requirements.txt'
+      - 'backend/requirements-dev.txt'
+      - '.github/workflows/deps-check.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'backend/requirements.txt'
+      - 'backend/requirements-dev.txt'
+      - '.github/workflows/deps-check.yml'
+  # Run on demand, and daily so a change pushed to hop-core's main that breaks this
+  # app's pins is caught even without a commit here.
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * 1'  # Monday 06:00 UTC
+
+jobs:
+  pip-check:
+    runs-on: ubuntu-latest
+    steps:
+      # Check out both repos as SIBLINGS so `-e ../hop-core[dita]` in requirements.txt
+      # resolves the same way it does locally (pip is run from the app repo root).
+      - name: Check out release-notes-agent
+        uses: actions/checkout@v4
+        with:
+          path: release-notes-agent
+
+      - name: Check out hop-core (sibling)
+        uses: actions/checkout@v4
+        with:
+          repository: Heretto/hop-core
+          ref: main
+          path: hop-core
+          # If hop-core is private, add a repo-scoped PAT as the HOP_CORE_TOKEN secret.
+          # For a public hop-core, this line can be removed.
+          token: ${{ secrets.HOP_CORE_TOKEN || github.token }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install backend dependencies
+        working-directory: release-notes-agent
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - name: Verify dependency consistency
+        working-directory: release-notes-agent
+        run: pip check

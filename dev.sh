@@ -41,6 +41,12 @@ fi
 echo "Syncing backend dependencies..."
 "$BACKEND_DIR/venv/bin/pip" install -q -r "$BACKEND_DIR/requirements.txt"
 
+# Guard against version conflicts between this app and hop-core. hop-core owns the versions
+# of its own dependencies; this warns loudly if an app pin ever violates a hop-core range.
+if ! "$BACKEND_DIR/venv/bin/pip" check; then
+  echo "⚠️  pip check found dependency conflicts (see above) — likely an app/hop-core version mismatch"
+fi
+
 echo "Starting backend..."
 (
   cd "$BACKEND_DIR"
