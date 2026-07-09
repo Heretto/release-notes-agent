@@ -241,6 +241,7 @@ class TestRunner:
             ("tests/unit/test_org_modes.py", "Org Modes (single-org & domain restriction)"),
             # DITA validator unit/fixture suites moved to hop-core (hop_core.dita)
             ("tests/unit/test_job_orchestrator_errors.py", "Job Orchestrator Error Sanitization"),
+            ("tests/unit/services/test_anthropic_temperature.py", "Anthropic Temperature Fallback"),
             ("tests/test_user_organization_registration.py", "User Organization Registration"),
             ("tests/integration/test_dita_correction_service.py", "DITA Correction Loop"),
         ]

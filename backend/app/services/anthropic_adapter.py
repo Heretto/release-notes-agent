@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 class AnthropicAdapter(AIServiceInterface):
     """Anthropic Claude AI service implementation."""
 
-    def __init__(self, api_key: str, model_name: str = "claude-sonnet-4-20250514"):
+    def __init__(self, api_key: str, model_name: str = "claude-sonnet-4-5-20250929"):
         if not api_key:
             raise ValueError("API key is empty")
 
@@ -35,26 +35,39 @@ class AnthropicAdapter(AIServiceInterface):
         try:
             logger.debug("AnthropicAdapter generating with model: %s", self._model_name)
 
-            # Create message with system and user prompts
-            response = await self.client.messages.create(
-                model=self._model_name,
-                max_tokens=request.max_tokens or 4096,
-                temperature=request.temperature or 0.7,
-                system=request.system_prompt,
-                messages=[
+            # Create message with system and user prompts.
+            create_kwargs = {
+                "model": self._model_name,
+                "max_tokens": request.max_tokens or 4096,
+                "temperature": request.temperature if request.temperature is not None else 0.7,
+                "system": request.system_prompt,
+                "messages": [
                     {
                         "role": "user",
                         "content": request.user_prompt
                     }
-                ]
-            )
+                ],
+            }
+            try:
+                response = await self.client.messages.create(**create_kwargs)
+            except Exception as e:
+                # Newer models (e.g. claude-sonnet-5) reject temperature as deprecated.
+                # Retry once without it rather than failing the whole generation.
+                if "temperature" in str(e).lower() and "temperature" in create_kwargs:
+                    create_kwargs.pop("temperature", None)
+                    response = await self.client.messages.create(**create_kwargs)
+                else:
+                    raise
             
-            # Extract text content from the response
+            # Extract text content from the response. Some models (e.g. claude-sonnet-5)
+            # return TextBlocks whose `.text` is None alongside the real content block,
+            # so guard against None rather than concatenating it.
             content = ""
             if response.content:
                 for block in response.content:
-                    if hasattr(block, 'text'):
-                        content += block.text
+                    text = getattr(block, 'text', None)
+                    if text:
+                        content += text
             
             return GenerationResponse(
                 content=content,
@@ -73,20 +86,32 @@ class AnthropicAdapter(AIServiceInterface):
         """Generate content with streaming."""
         try:
             # Create streaming message
-            async with self.client.messages.stream(
-                model=self._model_name,
-                max_tokens=request.max_tokens or 4096,
-                temperature=request.temperature or 0.7,
-                system=request.system_prompt,
-                messages=[
+            create_kwargs = {
+                "model": self._model_name,
+                "max_tokens": request.max_tokens or 4096,
+                "temperature": request.temperature if request.temperature is not None else 0.7,
+                "system": request.system_prompt,
+                "messages": [
                     {
                         "role": "user",
                         "content": request.user_prompt
                     }
-                ]
-            ) as stream:
-                async for chunk in stream.text_stream:
-                    yield chunk
+                ],
+            }
+            try:
+                async with self.client.messages.stream(**create_kwargs) as stream:
+                    async for chunk in stream.text_stream:
+                        yield chunk
+            except Exception as e:
+                # Newer models (e.g. claude-sonnet-5) reject temperature as deprecated.
+                # The validation error is raised before any chunk streams, so retry cleanly.
+                if "temperature" in str(e).lower() and "temperature" in create_kwargs:
+                    create_kwargs.pop("temperature", None)
+                    async with self.client.messages.stream(**create_kwargs) as stream:
+                        async for chunk in stream.text_stream:
+                            yield chunk
+                else:
+                    raise
                     
         except Exception as e:
             raise Exception(f"Anthropic streaming error: {str(e)}")
