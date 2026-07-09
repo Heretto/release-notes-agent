@@ -865,9 +865,10 @@ async def test_credential(
                         "x-api-key": api_key[:10] + "..." + api_key[-4:] if len(api_key) > 14 else "***"
                     }
                     request_body = {
-                        "model": model or "claude-sonnet-4-20250514",
+                        "model": model or "claude-sonnet-4-5-20250929",
                         "max_tokens": 20,
-                        "temperature": 0.1,
+                        # temperature intentionally omitted — newer models (e.g. claude-sonnet-5)
+                        # reject it as deprecated, and it serves no purpose for a connectivity test.
                         "system": "You are a helpful assistant.",
                         "messages": [
                             {
@@ -1000,6 +1001,12 @@ async def test_credential(
                             user_message = "Authentication failed — check your API key"
                         elif status_code == 403:
                             user_message = "Access denied — check your API key permissions"
+                        elif status_code == 404:
+                            # The key authenticated (else we'd get 401/403) but the model is unavailable.
+                            user_message = (
+                                f"API key is valid, but model '{model or 'default'}' is unavailable "
+                                "for this account — check the model name"
+                            )
                         elif status_code == 429:
                             user_message = "Rate limited — try again later"
                         else:
