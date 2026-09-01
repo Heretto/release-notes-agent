@@ -1,5 +1,10 @@
-# hop-core (sibling repo — clone https://github.com/heretto/hop-core next to this repo
-# and keep it on a main that includes hop_core.dita; the [dita] extra pulls lxml).
+# hop-core — consumed as a versioned artifact, never by filesystem path. A path like
+# `-e ../hop-core` only resolves on one machine and breaks the Docker build, because the
+# compose build context is ./backend and ../hop-core sits outside it. The [dita] extra
+# pulls lxml for hop_core.dita.
+#
+# To move to a new hop-core, bump the tag below and rebuild the venv (pip will not swap a
+# git URL in place on an existing install).
 #
 # SINGLE SOURCE OF TRUTH POLICY:
 # hop-core owns the versions of its own dependencies — auth, crypto, oauth, rate-limiting,
@@ -7,7 +12,7 @@
 # re-pinned here; they resolve transitively from hop-core so there is exactly one version
 # constraint for each and no drift/conflict. Only packages this app imports directly are
 # listed below. CI runs `pip check` to catch any incompatibility.
--e ../hop-core[dita]
+hop-core[dita] @ git+https://github.com/Heretto/hop-core.git@v0.1.3
 
 # Core FastAPI and async support
 fastapi==0.104.1

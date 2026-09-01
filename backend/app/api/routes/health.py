@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response, status
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from typing import Dict
 import logging
@@ -18,12 +19,17 @@ async def health_check() -> Dict[str, str]:
     }
 
 @router.get("/health/db")
-async def database_health(db: Session = Depends(get_db)) -> Dict[str, str]:
-    """Check database connectivity."""
+async def database_health(response: Response, db: Session = Depends(get_db)) -> Dict[str, str]:
+    """Check database connectivity.
+
+    Answers 503 when the probe fails — a 200 carrying "unhealthy" reads as healthy to
+    every orchestrator and load balancer that only looks at the status code.
+    """
     try:
-        # Simple query to test database connection
-        db.execute("SELECT 1")
+        # SQLAlchemy 2.0 rejects raw strings — the probe must be wrapped in text().
+        db.execute(text("SELECT 1"))
         return {"status": "healthy", "database": "connected"}
     except Exception as e:
         logger.error("Database health check failed: %s", e)
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
         return {"status": "unhealthy", "database": "disconnected"}
