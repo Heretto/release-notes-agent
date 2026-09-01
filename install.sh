@@ -69,29 +69,41 @@ green "  ✓ Node $(node --version)"
 
 # hop-core is installed from a versioned release by pip and npm — no sibling clone needed.
 
-# ── 2. backend/.env ───────────────────────────────────────────────────────────
-step "Configuring backend environment"
+# ── 2. Environment files ──────────────────────────────────────────────────────
+step "Configuring environment"
 
+# Generate secrets once; shared across both env files so values stay consistent.
+APP_SECRET=$("$PYTHON" -c "import secrets; print(secrets.token_urlsafe(32))")
+JWT_SECRET=$("$PYTHON" -c "import secrets; print(secrets.token_urlsafe(32))")
+ENC_KEY=$("$PYTHON" -c "import secrets; print(secrets.token_urlsafe(32))")
+
+# Root .env — read by docker compose for variable substitution
+ROOT_ENV_FILE="$ROOT_DIR/.env"
+if [[ -f "$ROOT_ENV_FILE" ]]; then
+  yellow "  ↩ .env already exists — skipping"
+else
+  cp "$ROOT_DIR/.env.example" "$ROOT_ENV_FILE"
+  sed -i.bak \
+    -e "s|^APP_SECRET_KEY=$|APP_SECRET_KEY=$APP_SECRET|" \
+    -e "s|^JWT_SECRET_KEY=$|JWT_SECRET_KEY=$JWT_SECRET|" \
+    -e "s|^ENCRYPTION_KEY=$|ENCRYPTION_KEY=$ENC_KEY|" \
+    "$ROOT_ENV_FILE"
+  rm -f "$ROOT_ENV_FILE.bak"
+  green "  ✓ .env created with generated secret keys"
+fi
+
+# backend/.env — read by uvicorn/celery/alembic for local (non-Docker) runs
 ENV_FILE="$BACKEND_DIR/.env"
-
 if [[ -f "$ENV_FILE" ]]; then
   yellow "  ↩ backend/.env already exists — skipping"
 else
   cp "$BACKEND_DIR/.env.example" "$ENV_FILE"
-
-  # Generate secure random keys
-  APP_SECRET=$("$PYTHON" -c "import secrets; print(secrets.token_urlsafe(32))")
-  JWT_SECRET=$("$PYTHON" -c "import secrets; print(secrets.token_urlsafe(32))")
-  ENC_KEY=$("$PYTHON" -c "import secrets; print(secrets.token_urlsafe(32))")
-
-  # Replace placeholder values in .env
   sed -i.bak \
     -e "s|your-secret-key-change-in-production|$APP_SECRET|" \
     -e "s|your-jwt-secret-key-change-in-production|$JWT_SECRET|" \
     -e "s|your-encryption-key-change-in-production|$ENC_KEY|" \
     "$ENV_FILE"
   rm -f "$ENV_FILE.bak"
-
   green "  ✓ backend/.env created with generated secret keys"
   yellow ""
   yellow "  ┌─────────────────────────────────────────────────────────────┐"
@@ -142,8 +154,8 @@ if [[ "$TABLE_COUNT" -gt 0 ]]; then
   yellow "    (run ./reset.sh to wipe and start fresh)"
 else
   (cd "$BACKEND_DIR" && "$VENV_PYTHON" -c "
-from app.models.database import Base, engine
-Base.metadata.create_all(bind=engine)
+from app.models.database import Base, get_engine
+Base.metadata.create_all(bind=get_engine())
 print('  ✓ Schema created')
 ")
 
