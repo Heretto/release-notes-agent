@@ -30,7 +30,12 @@ server {
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-XSS-Protection "1; mode=block" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' wss:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'" always;
+    # script-src deliberately has no 'unsafe-inline'. Angular's inlineCritical optimisation is
+    # disabled in angular.json, so the build emits no inline onload handler for the stylesheet.
+    # Re-adding 'unsafe-inline' here to "fix" unstyled pages would disable real XSS protection —
+    # check for media="print" on the stylesheet link instead.
+    # style-src keeps 'unsafe-inline' because Angular still emits component styles inline.
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' wss:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'" always;
 
     # Gzip compression
     gzip on;
@@ -95,11 +100,24 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # Health check
-    location /health {
+    # Edge liveness — answers even when the backend is down. Use this to probe nginx itself.
+    location = /nginx-health {
         access_log off;
         return 200 "OK\n";
         add_header Content-Type text/plain always;
+    }
+
+    # Application health — proxied to the backend, which serves /health and /health/db outside
+    # api_prefix so they stay reachable without authentication. This reports the truth: if the
+    # backend or its database is down, this endpoint says so.
+    location /health {
+        access_log off;
+        proxy_pass http://backend/health;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 
     # Frontend application

@@ -1,4 +1,4 @@
-@use '../../../../hop-core/ui/src/lib/theme/index' as hop;
+@use '@heretto/hop-ui/theme' as hop;
 
 @include hop.hop-core-theme();
 

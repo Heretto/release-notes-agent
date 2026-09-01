@@ -14,7 +14,9 @@ _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 load_dotenv(os.path.join(_project_root, ".env"))
 
 # API Configuration
-API_BASE_URL = "http://localhost:8000/api/v1"
+API_ROOT_URL = "http://localhost:8000"
+# Application routes live under api_prefix; health checks are mounted outside it.
+API_BASE_URL = f"{API_ROOT_URL}/api/v1"
 
 # Default test credentials
 TEST_EMAIL = "admin@example.com"

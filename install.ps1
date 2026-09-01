@@ -72,12 +72,7 @@ if ([int]($nodeVer.Split('.')[0]) -lt 18) {
 }
 Write-Ok "✓ Node v$nodeVer"
 
-# hop-core (sibling repo)
-$HopCoreDir = Join-Path (Split-Path $RootDir -Parent) 'hop-core'
-if (-not (Test-Path $HopCoreDir)) {
-    Write-Fail "hop-core not found at $HopCoreDir`n  Clone it first: git clone https://github.com/heretto/hop-core.git `"$HopCoreDir`""
-}
-Write-Ok "✓ hop-core found at $HopCoreDir"
+# hop-core is installed from a versioned release by pip and npm — no sibling clone needed.
 
 # ── 2. backend\.env ───────────────────────────────────────────────────────────
 Write-Step 'Configuring backend environment'

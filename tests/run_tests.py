@@ -15,7 +15,7 @@ import requests
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from config import (
-    API_BASE_URL, TEST_EMAIL, TEST_PASSWORD, ensure_test_account,
+    API_BASE_URL, API_ROOT_URL, TEST_EMAIL, TEST_PASSWORD, ensure_test_account,
     HAS_JIRA_CREDS, HAS_AI_CREDS, HAS_HERETTO_CREDS,
 )
 
@@ -160,14 +160,15 @@ class TestRunner:
         
         # Check API
         try:
-            resp = requests.get(f"{API_BASE_URL}/health", timeout=5)
+            # /health is mounted outside api_prefix, so it does not use API_BASE_URL.
+            resp = requests.get(f"{API_ROOT_URL}/health", timeout=5)
             if resp.status_code == 200:
                 print("✓ API is running")
             else:
                 print(f"✗ API returned status {resp.status_code}")
                 return False
         except requests.exceptions.ConnectionError:
-            print("✗ API is not running at", API_BASE_URL)
+            print("✗ API is not running at", API_ROOT_URL)
             print("  Please ensure Docker services are running:")
             print("  docker-compose up -d")
             return False

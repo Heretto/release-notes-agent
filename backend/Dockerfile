@@ -3,9 +3,11 @@ FROM python:3.11-slim
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies. git is needed at build time because requirements.txt pins
+# hop-core to a git tag (git+https://...); pip shells out to git to fetch it.
 RUN apt-get update && apt-get install -y \
     gcc \
+    git \
     postgresql-client \
     libxml2-dev \
     libxslt-dev \

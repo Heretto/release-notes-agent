@@ -1,39 +1,19 @@
 import { Routes } from '@angular/router';
-import {
-  HopLoginComponent,
-  HopForgotPasswordComponent,
-  HopResetPasswordComponent,
-  HopSSOCallbackComponent,
-  HopAcceptInvitationComponent,
-  HopAccountComponent,
-  HopAdminComponent,
-  HopMainLayoutComponent,
-  hopAuthGuard,
-  hopAdminGuard,
-  hopSuperuserGuard,
-} from '@heretto/hop-ui';
-
-const NAV_ITEMS = [
-  { label: 'Dashboard', icon: 'dashboard', route: '/dashboard' },
-  { label: 'Jobs', icon: 'work', route: '/jobs' },
-  { label: 'Instructions', icon: 'description', route: '/instructions' },
-  { label: 'Credentials', icon: 'vpn_key', route: '/credentials' },
-];
+import { hopAuthGuard, hopAdminGuard, hopSuperuserGuard } from '@heretto/hop-ui';
 
 export const routes: Routes = [
   // Public routes (no layout)
-  { path: 'login', component: HopLoginComponent },
-  { path: 'invite/:token', component: HopAcceptInvitationComponent },
-  { path: 'forgot-password', component: HopForgotPasswordComponent },
-  { path: 'reset-password', component: HopResetPasswordComponent },
-  { path: 'auth/sso/complete', component: HopSSOCallbackComponent },
+  { path: 'login', loadComponent: () => import('@heretto/hop-ui').then(m => m.HopLoginComponent) },
+  { path: 'invite/:token', loadComponent: () => import('@heretto/hop-ui').then(m => m.HopAcceptInvitationComponent) },
+  { path: 'forgot-password', loadComponent: () => import('@heretto/hop-ui').then(m => m.HopForgotPasswordComponent) },
+  { path: 'reset-password', loadComponent: () => import('@heretto/hop-ui').then(m => m.HopResetPasswordComponent) },
+  { path: 'auth/sso/complete', loadComponent: () => import('@heretto/hop-ui').then(m => m.HopSSOCallbackComponent) },
 
   // Protected routes (with layout)
   {
     path: '',
-    component: HopMainLayoutComponent,
     canActivate: [hopAuthGuard],
-    data: { appTitle: 'AI Release Notes Agent', navItems: NAV_ITEMS },
+    loadComponent: () => import('./shell/shell.component').then(m => m.ShellComponent),
     children: [
       {
         path: 'dashboard',
@@ -59,8 +39,8 @@ export const routes: Routes = [
         path: 'settings',
         loadComponent: () => import('./features/settings/settings.component').then(m => m.SettingsComponent),
       },
-      { path: 'account', component: HopAccountComponent },
-      { path: 'admin', canActivate: [hopAdminGuard], component: HopAdminComponent },
+      { path: 'account', loadComponent: () => import('@heretto/hop-ui').then(m => m.HopAccountComponent) },
+      { path: 'admin', canActivate: [hopAdminGuard], loadComponent: () => import('@heretto/hop-ui').then(m => m.HopAdminComponent) },
       {
         path: 'superadmin',
         canActivate: [hopSuperuserGuard],

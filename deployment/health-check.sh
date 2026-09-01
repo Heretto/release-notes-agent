@@ -154,7 +154,7 @@ echo ""
 
 # Check services
 echo -e "${YELLOW}Service Health:${NC}"
-check_service "Backend API" "$BACKEND_URL/api/v1/health"
+check_service "Backend API" "$BACKEND_URL/health"
 check_service "Frontend" "$FRONTEND_URL"
 
 echo ""

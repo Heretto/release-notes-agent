@@ -55,9 +55,9 @@ services:
       DATABASE_URL: postgresql://user:password@postgres:5432/release_notes_db
       REDIS_URL: redis://:devpassword@redis:6379/0
       APP_ENV: development
-      APP_SECRET_KEY: ${APP_SECRET_KEY:-development-secret-key}
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-development-jwt-key}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-development-encryption-key}
+      APP_SECRET_KEY: ${APP_SECRET_KEY:?not set — see .env.example}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?not set — see .env.example}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?not set — see .env.example}
       GOOGLE_AI_API_KEY: ${GOOGLE_AI_API_KEY}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       TEST_CLAUDE_API_KEY: ${TEST_CLAUDE_API_KEY}
@@ -100,8 +100,9 @@ services:
       DATABASE_URL: postgresql://user:password@postgres:5432/release_notes_db
       REDIS_URL: redis://:devpassword@redis:6379/0
       APP_ENV: development
-      APP_SECRET_KEY: ${APP_SECRET_KEY:-development-secret-key}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-development-encryption-key}
+      APP_SECRET_KEY: ${APP_SECRET_KEY:?not set — see .env.example}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?not set — see .env.example}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?not set — see .env.example}
       GOOGLE_AI_API_KEY: ${GOOGLE_AI_API_KEY}
       HERETTO_BASE_URL: ${HERETTO_BASE_URL:-https://api.heretto.com}
     volumes:

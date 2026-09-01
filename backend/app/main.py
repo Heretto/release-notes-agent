@@ -34,7 +34,6 @@ register_org_stats_hook(_org_stats)
 app = create_hop_app(
     settings_factory=get_settings,
     extra_routers=[
-        health.router,
         credentials.router,
         instructions.router,
         jobs.router,
@@ -45,3 +44,8 @@ app = create_hop_app(
     version="1.0.0",
     include_credentials_router=False,
 )
+
+# Health checks are mounted outside api_prefix. create_hop_app puts every extra_router under
+# the prefix, and everything under the prefix expects authentication — but a health probe has
+# no credentials to offer, so /health and /health/db live at the app root instead.
+app.include_router(health.router, tags=["health"])
