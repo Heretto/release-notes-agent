@@ -1,6 +1,6 @@
 # release-notes-agent — agent notes
 
-Built on [hop-core](https://github.com/Heretto/hop-core), pinned at **v0.1.3**.
+Built on [hop-core](https://github.com/Heretto/hop-core), pinned at **v0.1.4**.
 
 Automated DITA release-notes generation from Jira tickets: FastAPI backend, Angular 19
 frontend, Celery workers, Postgres, Redis.
