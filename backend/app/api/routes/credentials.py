@@ -166,9 +166,9 @@ async def create_jira_credential(
         )
 
     jira_creds = {
-        "server_url": credential_data.server_url,
-        "email": credential_data.email,
-        "api_token": credential_data.api_token
+        "server_url": credential_data.server_url.strip(),
+        "email": credential_data.email.strip(),
+        "api_token": credential_data.api_token.strip()
     }
 
     encrypted_data = encrypt_credentials(jira_creds)
@@ -220,7 +220,13 @@ async def update_jira_credential(
     if credential_data.name:
         credential.name = credential_data.name
 
-    existing_creds = decrypt_credentials(credential.encrypted_data)
+    try:
+        existing_creds = decrypt_credentials(credential.encrypted_data)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to decrypt credential. The encryption key may have changed — delete and re-create this credential."
+        )
 
     jira_creds = {}
     if credential_data.server_url:
@@ -453,7 +459,13 @@ async def update_heretto_credential(
     if credential_data.name:
         credential.name = credential_data.name
 
-    existing_creds = decrypt_credentials(credential.encrypted_data)
+    try:
+        existing_creds = decrypt_credentials(credential.encrypted_data)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to decrypt credential. The encryption key may have changed — delete and re-create this credential."
+        )
 
     heretto_creds = {}
     if credential_data.server_url:
@@ -597,9 +609,11 @@ async def create_ai_credential(
             detail=f"{credential_data.provider.capitalize()} credential with this name already exists"
         )
 
+    # Strip whitespace — a trailing newline from a copy/paste is invisible in the UI
+    # but makes the provider reject the key with a 401.
     ai_creds = {
-        "api_key": credential_data.api_key,
-        "model": credential_data.model or ""
+        "api_key": credential_data.api_key.strip(),
+        "model": (credential_data.model or "").strip()
     }
 
     encrypted_data = encrypt_credentials(ai_creds)
@@ -642,7 +656,13 @@ async def get_ai_credential(
         )
     
     # Decrypt and return with masked API key
-    decrypted = decrypt_credentials(credential.encrypted_data)
+    try:
+        decrypted = decrypt_credentials(credential.encrypted_data)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to decrypt credential. The encryption key may have changed — delete and re-create this credential."
+        )
     api_key = decrypted.get("api_key", "")
     
     # Map credential type to provider name
@@ -687,14 +707,22 @@ async def update_credential(
     
     if credential_data.credentials:
         # Get existing credentials and merge with updates
-        existing_creds = decrypt_credentials(credential.encrypted_data)
+        try:
+            existing_creds = decrypt_credentials(credential.encrypted_data)
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Failed to decrypt credential. The encryption key may have changed — delete and re-create this credential."
+            )
         
         # Only update provided fields, keep existing values for others
         for key, value in credential_data.credentials.items():
             # Skip masked API keys (containing asterisks)
             if key == "api_key" and value and "*" in value:
                 continue  # Don't update with masked keys
-            existing_creds[key] = value
+            # Strip whitespace on secrets/identifiers — an invisible trailing newline
+            # from a paste otherwise gets stored and rejected by the provider with a 401.
+            existing_creds[key] = value.strip() if isinstance(value, str) else value
         
         # Re-encrypt the merged credentials
         encrypted_data = encrypt_credentials(existing_creds)
@@ -865,7 +893,7 @@ async def test_credential(
                         "x-api-key": api_key[:10] + "..." + api_key[-4:] if len(api_key) > 14 else "***"
                     }
                     request_body = {
-                        "model": model or "claude-sonnet-4-5-20250929",
+                        "model": model or "claude-haiku-4-5-20251001",
                         "max_tokens": 20,
                         # temperature intentionally omitted — newer models (e.g. claude-sonnet-5)
                         # reject it as deprecated, and it serves no purpose for a connectivity test.

@@ -11,7 +11,7 @@ class Settings(HopCoreSettings):
 
     # Anthropic
     anthropic_api_key: Optional[str] = None
-    anthropic_model: str = "claude-sonnet-4-5-20250929"
+    anthropic_model: str = "claude-sonnet-5"
     
     # Jira
     jira_webhook_secret: Optional[str] = None

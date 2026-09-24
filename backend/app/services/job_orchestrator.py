@@ -5,12 +5,14 @@ import logging
 from typing import Optional, Dict, Any
 
 from sqlalchemy import or_
-from app.models.database import Job, JobArtifact, JobRequest, InstructionSet, Credential, CredentialType, WebhookConfig
+from app.models.database import Job, JobArtifact, JobRequest, InstructionSet, InstructionSetAgent, Credential, CredentialType, WebhookConfig
 from app.services.jira_service import JiraService
 from app.services.heretto_service import HerettoService
-from app.services.ai_service import AIServiceFactory, GenerationRequest
+from app.services.ai_service import AIServiceFactory
 from app.services.dita_generator import DITAGenerator
 from hop_core.dita import DitaValidator, DitaCorrectionService
+from hop_core.agents import AgentDefinition, AgentRequest, AgentRunner
+from hop_core.agents.providers import CredentialAiService
 from app.core.security import decrypt_credentials
 from app.config import get_settings
 
@@ -39,12 +41,37 @@ class JobOrchestrator:
             job.started_at = datetime.utcnow()
             self.db.commit()
             
-            # Step 1: Get Jira credentials (check user's own or organization-shared)
-            jira_cred, jira_config = self._get_decryptable_credential(
-                job.user_id, job.organization_id, CredentialType.JIRA
-            )
-            if not jira_cred:
-                raise Exception("No Jira credentials found. Please add Jira credentials in the Credentials page.")
+            # Step 1: Get Jira credentials (instruction set's choice, else user's own or org-shared)
+            instruction_set = self.db.query(InstructionSet).filter(
+                InstructionSet.id == job.instruction_set_id
+            ).first()
+
+            if instruction_set and instruction_set.jira_credential_id:
+                jira_cred = self.db.query(Credential).filter(
+                    Credential.id == instruction_set.jira_credential_id,
+                    or_(
+                        Credential.user_id == job.user_id,
+                        Credential.organization_id == job.organization_id
+                    )
+                ).first()
+                if not jira_cred:
+                    raise Exception(
+                        f"The instruction set's selected Jira credential "
+                        f"{instruction_set.jira_credential_id} was not found"
+                    )
+                try:
+                    jira_config = decrypt_credentials(jira_cred.encrypted_data)
+                except Exception:
+                    raise Exception(
+                        f"Failed to decrypt Jira credential '{jira_cred.name}'. "
+                        "It may need to be re-created."
+                    )
+            else:
+                jira_cred, jira_config = self._get_decryptable_credential(
+                    job.user_id, job.organization_id, CredentialType.JIRA
+                )
+                if not jira_cred:
+                    raise Exception("No Jira credentials found. Please add Jira credentials in the Credentials page.")
 
             jira_service = JiraService(
                 server=jira_config["server_url"],
@@ -132,77 +159,109 @@ class JobOrchestrator:
                 model=ai_config.get("model")
             )
             
-            # Step 4: Generate prompts
-            instruction_set = self.db.query(InstructionSet).filter(
-                InstructionSet.id == job.instruction_set_id
-            ).first()
-            
-            system_prompt, user_prompt = self.dita_generator.create_prompt(
+            # Step 4: Load the instruction set's ordered agent chain
+            agent_links = []
+            if instruction_set:
+                agent_links = self.db.query(InstructionSetAgent).filter(
+                    InstructionSetAgent.instruction_set_id == instruction_set.id
+                ).order_by(InstructionSetAgent.position).all()
+
+            if not agent_links:
+                raise Exception(
+                    "Instruction set has no agents configured. Add at least one agent "
+                    "to its chain before running a job."
+                )
+
+            # dita_format_instructions carries the fixed DITA-output structural rules that
+            # every agent in the chain must honor, regardless of each agent's own configured
+            # system prompt; seed_prompt is the ticket-data payload that seeds the first agent.
+            dita_format_instructions, seed_prompt = self.dita_generator.create_prompt(
                 tickets=tickets,
                 product="Product",  # TODO: Make this configurable
                 version=self._extract_version(job.jql_query),
-                user_instructions=instruction_set.user_instructions if instruction_set else None
             )
-            
-            if instruction_set and instruction_set.system_prompt:
-                system_prompt = instruction_set.system_prompt
-            
-            if job.additional_instructions:
-                user_prompt += f"\n\nAdditional Instructions:\n{job.additional_instructions}"
-            
-            # Step 5: Generate content with AI
-            logger.info(f"Generating content with AI for job {job_id}")
-            logger.debug(f"System prompt: {system_prompt[:200]}...")
-            logger.debug(f"User prompt: {user_prompt[:500]}...")
-            
-            # Log the AI request
-            ai_request = JobRequest(
-                job_id=job.id,
-                request_type="ai_generation",
-                request_data=json.dumps({
-                    "provider": provider,
-                    "model": ai_config.get("model", "default"),
-                    "system_prompt_preview": system_prompt[:500],
-                    "user_prompt_preview": user_prompt[:500],
-                    "max_tokens": 4096,
-                    "temperature": 0.7,
-                    "ticket_count": len(tickets)
-                }),
-                status="pending"
-            )
-            self.db.add(ai_request)
-            self.db.commit()
-            
-            generation_request = GenerationRequest(
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
-                max_tokens=4096,
-                temperature=0.7
-            )
-            
-            start_time = time.time()
-            try:
-                ai_response = await ai_service.generate(generation_request)
-                logger.info(f"AI response received, content length: {len(ai_response.content)} chars")
-                logger.debug(f"AI content preview: {ai_response.content[:500]}...")
-                
-                # Update request status
-                ai_request.status = "success"
-                ai_request.response_data = json.dumps({
-                    "content_length": len(ai_response.content),
-                    "content_preview": ai_response.content[:500],
-                    "usage": getattr(ai_response, 'usage', None)
-                })
-                ai_request.duration_ms = int((time.time() - start_time) * 1000)
+
+            # Step 5: Run the agent chain in series, piping each agent's output into the next
+            logger.info(f"Running {len(agent_links)}-agent chain for job {job_id}")
+
+            current_output = seed_prompt
+            last_result = None
+            for index, link in enumerate(agent_links):
+                agent_row = link.agent
+                definition = AgentDefinition.from_model(agent_row)
+
+                credential = agent_row.ai_configuration
+                if credential is None:
+                    raise Exception(
+                        f"Agent '{agent_row.name}' has no AI configuration selected. "
+                        "Configure one in the Agents page before running this job."
+                    )
+                try:
+                    agent_ai_config = decrypt_credentials(credential.encrypted_data)
+                except Exception:
+                    raise Exception(
+                        f"Failed to decrypt the AI configuration for agent '{agent_row.name}'. "
+                        "It may need to be re-created."
+                    )
+                agent_ai_service = CredentialAiService.from_credential(
+                    credential,
+                    api_key=agent_ai_config["api_key"],
+                    model=agent_ai_config.get("model") or "",
+                )
+
+                task = (
+                    "Generate the release notes body content from the Jira ticket data below."
+                    if index == 0 else
+                    "Refine the previous step's output according to your configured role, "
+                    "preserving valid DITA structure."
+                )
+                agent_request = AgentRequest(
+                    instructions=f"{dita_format_instructions}\n\n## Task\n{task}",
+                    input=current_output,
+                    max_tokens=4096,
+                )
+
+                agent_job_request = JobRequest(
+                    job_id=job.id,
+                    request_type="agent_run",
+                    request_data=json.dumps({
+                        "agent_id": str(agent_row.id),
+                        "agent_name": agent_row.name,
+                        "position": index,
+                        "input_preview": current_output[:500],
+                    }),
+                    status="pending"
+                )
+                self.db.add(agent_job_request)
                 self.db.commit()
-            except Exception as e:
-                ai_request.status = "failed"
-                ai_request.error_message = str(e)
-                ai_request.duration_ms = int((time.time() - start_time) * 1000)
-                self.db.commit()
-                raise
-            
-            # Save AI raw response as a separate log artifact for debugging
+
+                start_time = time.time()
+                try:
+                    last_result = await AgentRunner(agent_ai_service).run(definition, agent_request)
+                    logger.info(
+                        f"Agent '{agent_row.name}' produced {len(last_result.output)} chars"
+                    )
+                    agent_job_request.status = "success"
+                    agent_job_request.response_data = json.dumps({
+                        "content_length": len(last_result.output),
+                        "content_preview": last_result.output[:500],
+                        "provider": last_result.provider,
+                        "model": last_result.model,
+                    })
+                    agent_job_request.duration_ms = int((time.time() - start_time) * 1000)
+                    self.db.commit()
+                except Exception as e:
+                    agent_job_request.status = "failed"
+                    agent_job_request.error_message = str(e)
+                    agent_job_request.duration_ms = int((time.time() - start_time) * 1000)
+                    self.db.commit()
+                    raise
+
+                current_output = last_result.output
+
+            generated_content = current_output
+
+            # Save the full chain output as a log artifact for debugging
             ai_log_artifact = JobArtifact(
                 job_id=job.id,
                 artifact_type="ai_log",
@@ -210,30 +269,27 @@ class JobOrchestrator:
                 content=f"""AI Response Log
 ================
 Job ID: {job.id}
-Provider: {provider}
-Model: {ai_config.get('model', 'unknown')}
+Agents run (in order): {', '.join(link.agent.name for link in agent_links)}
+Final provider/model: {last_result.provider}/{last_result.model}
 Timestamp: {datetime.utcnow().isoformat()}
 Tickets Processed: {len(tickets)}
-Response Length: {len(ai_response.content)} characters
+Response Length: {len(generated_content)} characters
 
---- SYSTEM PROMPT ---
-{system_prompt}
+--- SEED INPUT (ticket data) ---
+{seed_prompt}
 
---- USER PROMPT ---
-{user_prompt}
-
---- AI RESPONSE ---
-{ai_response.content}
+--- FINAL AGENT OUTPUT ---
+{generated_content}
 """
             )
             self.db.add(ai_log_artifact)
             self.db.commit()
             logger.info(f"Saved AI response log for job {job.id}")
-            
+
             # Step 6: Generate complete DITA document
             dita_content = self.dita_generator.generate_release_notes(
                 tickets=tickets,
-                ai_content=ai_response.content,
+                ai_content=generated_content,
                 version=self._extract_version(job.jql_query),
                 product="Product"
             )
@@ -252,7 +308,7 @@ Response Length: {len(ai_response.content)} characters
             # a configurable safety cap (which in practice is never reached).
             corrected_content, is_valid, validation_log = await correction_service.validate_and_correct_with_ai(
                 content=dita_content,
-                original_prompt=user_prompt,  # Pass original prompt for potential regeneration
+                original_prompt=seed_prompt,  # Pass original prompt for potential regeneration
                 max_iterations=settings.dita_max_correction_iterations,
             )
             
@@ -278,7 +334,7 @@ Response Length: {len(ai_response.content)} characters
                     content=self._format_validation_error(
                         job.id,
                         error_details,
-                        ai_response.content[:2000],
+                        generated_content[:2000],
                         corrected_content[:2000],
                         validation_log
                     )
@@ -600,6 +656,14 @@ _SAFE_ERROR_PREFIXES = (
     "Failed to get versions",
     "Failed to get issue",
     "DITA validation failed",
+    "Instruction set has no agents configured",
+    "Agent '",
+    "Failed to decrypt the AI configuration",
+    "The instruction set's selected Jira credential",
+    "Failed to decrypt Jira credential",
+    "Anthropic returned HTTP",
+    "OpenAI returned HTTP",
+    "Gemini returned HTTP",
 )
 
 
