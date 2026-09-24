@@ -7,7 +7,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-from app.models.database import get_db, User, InstructionSet
+from app.models.database import get_db, User, InstructionSet, InstructionSetAgent, Agent, Credential, CredentialType
 from app.models.schemas import (
     InstructionSetCreate,
     InstructionSetUpdate,
@@ -16,6 +16,72 @@ from app.models.schemas import (
 from app.api.dependencies import get_current_active_user, get_current_active_user_with_org, CurrentUserContext
 
 router = APIRouter(prefix="/instructions")
+
+
+def _to_response(instruction_set: InstructionSet) -> InstructionSetResponse:
+    """Build the response shape, reading agent_ids off the ordered agent_links relationship."""
+    return InstructionSetResponse(
+        id=instruction_set.id,
+        user_id=instruction_set.user_id,
+        name=instruction_set.name,
+        description=instruction_set.description,
+        jql_query=instruction_set.jql_query,
+        jira_credential_id=instruction_set.jira_credential_id,
+        dita_template_id=instruction_set.dita_template_id,
+        heretto_folder_id=instruction_set.heretto_folder_id,
+        publish_to_heretto=instruction_set.publish_to_heretto,
+        is_default=instruction_set.is_default,
+        agent_ids=[link.agent_id for link in instruction_set.agent_links],
+        created_at=instruction_set.created_at,
+        updated_at=instruction_set.updated_at,
+    )
+
+
+def _validate_agent_ids(agent_ids: List[UUID], organization_id: UUID, db: Session) -> None:
+    """Raise 404 if any agent_id doesn't belong to this organization."""
+    if not agent_ids:
+        return
+    found = db.query(Agent.id).filter(
+        Agent.id.in_(agent_ids),
+        Agent.organization_id == organization_id,
+    ).all()
+    found_ids = {row[0] for row in found}
+    missing = [str(a) for a in agent_ids if a not in found_ids]
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Agent(s) not found in organization: {', '.join(missing)}"
+        )
+
+
+def _validate_jira_credential_id(jira_credential_id, organization_id: UUID, db: Session) -> None:
+    """Raise 404 if the Jira credential doesn't belong to this organization."""
+    if jira_credential_id is None:
+        return
+    found = db.query(Credential.id).filter(
+        Credential.id == jira_credential_id,
+        Credential.organization_id == organization_id,
+        Credential.type == CredentialType.JIRA,
+    ).first()
+    if not found:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Jira credential not found in organization: {jira_credential_id}"
+        )
+
+
+def _set_agent_links(instruction_set: InstructionSet, agent_ids: List[UUID], db: Session) -> None:
+    """Replace the instruction set's agent chain wholesale, in the given order."""
+    db.query(InstructionSetAgent).filter(
+        InstructionSetAgent.instruction_set_id == instruction_set.id
+    ).delete()
+    for position, agent_id in enumerate(agent_ids):
+        db.add(InstructionSetAgent(
+            instruction_set_id=instruction_set.id,
+            agent_id=agent_id,
+            position=position,
+        ))
+
 
 @router.get("", response_model=List[InstructionSetResponse])
 async def list_instruction_sets(
@@ -26,7 +92,7 @@ async def list_instruction_sets(
     instruction_sets = db.query(InstructionSet).filter(
         InstructionSet.organization_id == context.organization_id
     ).all()
-    return instruction_sets
+    return [_to_response(i) for i in instruction_sets]
 
 @router.post("", response_model=InstructionSetResponse)
 async def create_instruction_set(
@@ -35,24 +101,31 @@ async def create_instruction_set(
     db: Session = Depends(get_db)
 ):
     """Create new instruction set."""
+    _validate_agent_ids(instruction_data.agent_ids, context.organization_id, db)
+    _validate_jira_credential_id(instruction_data.jira_credential_id, context.organization_id, db)
+
     # If setting as default, unset other defaults in organization
     if instruction_data.is_default:
         db.query(InstructionSet).filter(
             InstructionSet.organization_id == context.organization_id,
             InstructionSet.is_default == True
         ).update({"is_default": False})
-    
+
+    fields = instruction_data.model_dump(exclude={"agent_ids"})
     new_instruction = InstructionSet(
         user_id=context.user.id,
         organization_id=context.organization_id,
-        **instruction_data.model_dump()
+        **fields
     )
-    
+
     db.add(new_instruction)
+    db.flush()
+    _set_agent_links(new_instruction, instruction_data.agent_ids, db)
+
     db.commit()
     db.refresh(new_instruction)
-    
-    return new_instruction
+
+    return _to_response(new_instruction)
 
 @router.get("/{instruction_id}", response_model=InstructionSetResponse)
 async def get_instruction_set(
@@ -65,14 +138,14 @@ async def get_instruction_set(
         InstructionSet.id == instruction_id,
         InstructionSet.organization_id == context.organization_id
     ).first()
-    
+
     if not instruction_set:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Instruction set not found"
         )
-    
-    return instruction_set
+
+    return _to_response(instruction_set)
 
 @router.put("/{instruction_id}", response_model=InstructionSetResponse)
 async def update_instruction_set(
@@ -86,34 +159,42 @@ async def update_instruction_set(
         InstructionSet.id == instruction_id,
         InstructionSet.organization_id == context.organization_id
     ).first()
-    
+
     if not instruction_set:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Instruction set not found"
         )
-    
+
     # If setting as default, unset other defaults in organization
     if instruction_data.is_default and not instruction_set.is_default:
         db.query(InstructionSet).filter(
             InstructionSet.organization_id == context.organization_id,
             InstructionSet.is_default == True
         ).update({"is_default": False})
-    
+
     # Update fields — whitelist to prevent overwriting sensitive attributes
     _INSTRUCTION_UPDATABLE_FIELDS = {
-        "name", "description", "jql_query", "system_prompt",
-        "user_instructions", "dita_template_id", "heretto_folder_id",
+        "name", "description", "jql_query", "jira_credential_id",
+        "dita_template_id", "heretto_folder_id",
         "publish_to_heretto", "is_default",
     }
-    for field, value in instruction_data.model_dump(exclude_unset=True).items():
+    update_data = instruction_data.model_dump(exclude_unset=True)
+    if "jira_credential_id" in update_data:
+        _validate_jira_credential_id(update_data["jira_credential_id"], context.organization_id, db)
+    for field, value in update_data.items():
         if field in _INSTRUCTION_UPDATABLE_FIELDS:
             setattr(instruction_set, field, value)
-    
+
+    if "agent_ids" in update_data:
+        agent_ids = update_data["agent_ids"] or []
+        _validate_agent_ids(agent_ids, context.organization_id, db)
+        _set_agent_links(instruction_set, agent_ids, db)
+
     db.commit()
     db.refresh(instruction_set)
-    
-    return instruction_set
+
+    return _to_response(instruction_set)
 
 @router.delete("/{instruction_id}")
 async def delete_instruction_set(

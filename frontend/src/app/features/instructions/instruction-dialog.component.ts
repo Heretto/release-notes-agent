@@ -1,5 +1,6 @@
-import { Component, Inject } from '@angular/core';
+import { Component, Inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { RouterLink } from '@angular/router';
 import { FormBuilder, FormGroup, Validators, ReactiveFormsModule } from '@angular/forms';
 import { MatDialogModule, MatDialogRef, MAT_DIALOG_DATA } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -10,13 +11,17 @@ import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatExpansionModule } from '@angular/material/expansion';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatSelectModule } from '@angular/material/select';
+import { HopAgentService, AgentSummary } from '@heretto/hop-ui';
 import { InstructionSet } from '../../core/services/instructions.service';
+import { CredentialsService, JiraCredential } from '../../core/services/credentials.service';
 
 @Component({
   selector: 'app-instruction-dialog',
   standalone: true,
   imports: [
     CommonModule,
+    RouterLink,
     ReactiveFormsModule,
     MatDialogModule,
     MatFormFieldModule,
@@ -26,7 +31,8 @@ import { InstructionSet } from '../../core/services/instructions.service';
     MatCheckboxModule,
     MatExpansionModule,
     MatIconModule,
-    MatTooltipModule
+    MatTooltipModule,
+    MatSelectModule
   ],
   template: `
     <h2 mat-dialog-title>
@@ -66,7 +72,23 @@ import { InstructionSet } from '../../core/services/instructions.service';
 
         <div class="form-section">
           <h3>Jira Configuration</h3>
-          
+
+          <div *ngIf="jiraCredentials.length === 0" class="no-agents-hint">
+            <mat-icon>info</mat-icon>
+            <span>No Jira credentials yet. Add one in the Credentials page first.</span>
+          </div>
+
+          <mat-form-field appearance="outline" class="full-width" *ngIf="jiraCredentials.length > 0">
+            <mat-label>Jira Credential</mat-label>
+            <mat-select formControlName="jira_credential_id">
+              <mat-option [value]="null">Use any available (org default)</mat-option>
+              <mat-option *ngFor="let cred of jiraCredentials" [value]="cred.id">
+                {{ cred.name }} ({{ cred.server_url }})
+              </mat-option>
+            </mat-select>
+            <mat-hint>Which Jira connection this instruction set's query runs against</mat-hint>
+          </mat-form-field>
+
           <mat-form-field appearance="outline" class="full-width">
             <mat-label>JQL Query</mat-label>
             <textarea matInput formControlName="jql_query" rows="3" required
@@ -100,47 +122,51 @@ import { InstructionSet } from '../../core/services/instructions.service';
         </div>
 
         <div class="form-section">
-          <h3>LLM Instructions</h3>
-          
-          <mat-form-field appearance="outline" class="full-width">
-            <mat-label>System Prompt</mat-label>
-            <textarea matInput formControlName="system_prompt" rows="6" required
-                      placeholder="You are a technical writer creating release notes from Jira tickets..."></textarea>
-            <mat-error *ngIf="form.get('system_prompt')?.hasError('required')">
-              System prompt is required
-            </mat-error>
-            <mat-hint>Instructions for the AI on how to process and format the release notes</mat-hint>
+          <h3>Agents</h3>
+          <p class="section-hint">
+            Add agents to run in series to generate this release note's content. Each
+            agent's output becomes the next agent's input.
+          </p>
+
+          <div *ngIf="availableAgents.length === 0" class="no-agents-hint">
+            <mat-icon>info</mat-icon>
+            <span>No agents yet. <a routerLink="/agents">Create one</a> to get started.</span>
+          </div>
+
+          <mat-form-field appearance="outline" class="full-width" *ngIf="unselectedAgents.length > 0">
+            <mat-label>Add Agent</mat-label>
+            <mat-select (selectionChange)="addAgent($event.value)" [value]="null">
+              <mat-option *ngFor="let agent of unselectedAgents" [value]="agent.id">
+                {{ agent.name }}
+              </mat-option>
+            </mat-select>
           </mat-form-field>
 
-          <mat-form-field appearance="outline" class="full-width">
-            <mat-label>Additional User Instructions (Optional)</mat-label>
-            <textarea matInput formControlName="user_instructions" rows="4"
-                      placeholder="Focus on user-facing changes, group by feature area..."></textarea>
-            <mat-hint>Additional context or specific requirements for this instruction set</mat-hint>
-          </mat-form-field>
-
-          <mat-expansion-panel class="prompt-tips">
-            <mat-expansion-panel-header>
-              <mat-panel-title>
-                <mat-icon>tips_and_updates</mat-icon>
-                Prompt Writing Tips
-              </mat-panel-title>
-            </mat-expansion-panel-header>
-
-            <div class="tips-content">
-              <p><strong>Effective System Prompts Should Include:</strong></p>
-              <ul>
-                <li>The role/persona (e.g., "You are a technical writer...")</li>
-                <li>The task (e.g., "Create release notes from Jira tickets...")</li>
-                <li>Output format (e.g., "Format as DITA XML topics...")</li>
-                <li>Tone and style (e.g., "Use professional, concise language...")</li>
-                <li>Specific requirements (e.g., "Group by feature area, prioritize user impact...")</li>
-              </ul>
-
-              <p><strong>Example System Prompt:</strong></p>
-              <pre class="example-prompt">{{ examplePrompt }}</pre>
+          <div class="agent-chain" *ngIf="selectedAgents.length > 0">
+            <div class="agent-chain-item" *ngFor="let agent of selectedAgents; let i = index">
+              <span class="agent-position">{{ i + 1 }}</span>
+              <span class="agent-name">{{ agent.name }}</span>
+              <span class="agent-arrow" *ngIf="i < selectedAgents.length - 1">&rarr;</span>
+              <span class="agent-controls">
+                <button mat-icon-button type="button" [disabled]="i === 0"
+                        matTooltip="Move up" (click)="moveAgent(i, -1)">
+                  <mat-icon>arrow_upward</mat-icon>
+                </button>
+                <button mat-icon-button type="button" [disabled]="i === selectedAgents.length - 1"
+                        matTooltip="Move down" (click)="moveAgent(i, 1)">
+                  <mat-icon>arrow_downward</mat-icon>
+                </button>
+                <button mat-icon-button type="button" color="warn"
+                        matTooltip="Remove" (click)="removeAgent(i)">
+                  <mat-icon>close</mat-icon>
+                </button>
+              </span>
             </div>
-          </mat-expansion-panel>
+          </div>
+
+          <p class="agent-chain-empty" *ngIf="availableAgents.length > 0 && selectedAgents.length === 0">
+            No agents added yet. At least one agent is required to generate content.
+          </p>
         </div>
 
         <div class="form-section">
@@ -165,8 +191,8 @@ import { InstructionSet } from '../../core/services/instructions.service';
 
     <mat-dialog-actions align="end">
       <button mat-button (click)="onCancel()">Cancel</button>
-      <button mat-raised-button color="primary" 
-              [disabled]="!form.valid"
+      <button mat-raised-button color="primary"
+              [disabled]="!form.valid || selectedAgents.length === 0"
               (click)="onSave()">
         {{ data ? 'Update' : 'Create' }}
       </button>
@@ -213,22 +239,22 @@ import { InstructionSet } from '../../core/services/instructions.service';
       cursor: help;
     }
 
-    .jql-help, .prompt-tips {
+    .jql-help {
       margin: 15px 0;
       background: var(--bg-secondary);
     }
 
-    .jql-examples, .tips-content {
+    .jql-examples {
       padding: 15px;
       font-size: 14px;
     }
 
-    .jql-examples ul, .tips-content ul {
+    .jql-examples ul {
       margin: 10px 0;
       padding-left: 20px;
     }
 
-    .jql-examples li, .tips-content li {
+    .jql-examples li {
       margin: 8px 0;
     }
 
@@ -240,14 +266,71 @@ import { InstructionSet } from '../../core/services/instructions.service';
       font-size: 13px;
     }
 
-    .example-prompt {
+    .section-hint {
+      color: var(--text-secondary);
+      font-size: 13px;
+      margin: 0 0 15px 0;
+    }
+
+    .no-agents-hint {
+      display: flex;
+      align-items: center;
+      gap: 8px;
       background: var(--bg-secondary);
-      padding: 12px;
+      padding: 10px 14px;
       border-radius: 4px;
+      font-size: 14px;
+      margin-bottom: 15px;
+    }
+
+    .agent-chain {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 15px;
+    }
+
+    .agent-chain-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-default);
+      border-radius: 4px;
+      padding: 8px 12px;
+    }
+
+    .agent-position {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--color-primary-bg);
+      color: var(--color-primary-text);
       font-size: 12px;
-      line-height: 1.5;
-      white-space: pre-wrap;
-      margin-top: 10px;
+      font-weight: 600;
+    }
+
+    .agent-name {
+      flex: 1;
+      font-size: 14px;
+    }
+
+    .agent-arrow {
+      color: var(--text-tertiary);
+    }
+
+    .agent-controls {
+      display: flex;
+      gap: 2px;
+    }
+
+    .agent-chain-empty {
+      color: var(--text-tertiary);
+      font-size: 13px;
+      font-style: italic;
     }
 
     mat-expansion-panel {
@@ -271,48 +354,70 @@ import { InstructionSet } from '../../core/services/instructions.service';
     }
   `]
 })
-export class InstructionDialogComponent {
+export class InstructionDialogComponent implements OnInit {
   form: FormGroup;
-  
-  examplePrompt = `You are a technical writer creating professional release notes for a software product.
 
-Your task is to analyze the provided Jira tickets and create clear, concise release notes that:
-1. Summarize the changes in user-friendly language
-2. Group related changes by feature area or component
-3. Highlight breaking changes, new features, improvements, and bug fixes
-4. Use consistent terminology and formatting
-5. Focus on the impact to end users rather than technical implementation details
+  availableAgents: AgentSummary[] = [];
+  selectedAgents: AgentSummary[] = [];
+  jiraCredentials: JiraCredential[] = [];
 
-Format the output as structured DITA XML topics following the standard release notes template.
-Prioritize the most impactful changes first and ensure all content is accurate and complete.`;
+  private initialAgentIds: string[];
 
   constructor(
     private fb: FormBuilder,
     private dialogRef: MatDialogRef<InstructionDialogComponent>,
+    private agentService: HopAgentService,
+    private credentialsService: CredentialsService,
     @Inject(MAT_DIALOG_DATA) public data: InstructionSet | null
   ) {
+    this.initialAgentIds = data?.agent_ids || [];
+
     this.form = this.fb.group({
       name: [data?.name || '', Validators.required],
       description: [data?.description || ''],
       jql_query: [data?.jql_query || '', Validators.required],
-      system_prompt: [data?.system_prompt || this.getDefaultSystemPrompt(), Validators.required],
-      user_instructions: [data?.user_instructions || ''],
+      jira_credential_id: [data?.jira_credential_id || null],
       heretto_folder_id: [data?.heretto_folder_id || ''],
       publish_to_heretto: [data?.publish_to_heretto || false],
       is_default: [data?.is_default || false]
     });
   }
 
-  getDefaultSystemPrompt(): string {
-    return `You are a technical writer creating professional release notes from Jira tickets.
+  ngOnInit(): void {
+    this.agentService.listAgents().subscribe(agents => {
+      this.availableAgents = agents;
+      this.selectedAgents = this.initialAgentIds
+        .map(id => agents.find(a => a.id === id))
+        .filter((a): a is AgentSummary => !!a);
+    });
 
-Analyze the provided tickets and create clear, user-focused release notes that:
-- Summarize changes in user-friendly language
-- Group by feature area
-- Highlight new features, improvements, and fixes
-- Use consistent formatting
+    this.credentialsService.getJiraCredentials().subscribe(credentials => {
+      this.jiraCredentials = credentials;
+    });
+  }
 
-Format as DITA XML topics suitable for technical documentation.`;
+  get unselectedAgents(): AgentSummary[] {
+    const selectedIds = new Set(this.selectedAgents.map(a => a.id));
+    return this.availableAgents.filter(a => !selectedIds.has(a.id));
+  }
+
+  addAgent(agentId: string): void {
+    const agent = this.availableAgents.find(a => a.id === agentId);
+    if (agent) {
+      this.selectedAgents = [...this.selectedAgents, agent];
+    }
+  }
+
+  removeAgent(index: number): void {
+    this.selectedAgents = this.selectedAgents.filter((_, i) => i !== index);
+  }
+
+  moveAgent(index: number, delta: number): void {
+    const target = index + delta;
+    if (target < 0 || target >= this.selectedAgents.length) return;
+    const reordered = [...this.selectedAgents];
+    [reordered[index], reordered[target]] = [reordered[target], reordered[index]];
+    this.selectedAgents = reordered;
   }
 
   onCancel(): void {
@@ -320,8 +425,11 @@ Format as DITA XML topics suitable for technical documentation.`;
   }
 
   onSave(): void {
-    if (this.form.valid) {
-      this.dialogRef.close(this.form.value);
+    if (this.form.valid && this.selectedAgents.length > 0) {
+      this.dialogRef.close({
+        ...this.form.value,
+        agent_ids: this.selectedAgents.map(a => a.id)
+      });
     }
   }
 }

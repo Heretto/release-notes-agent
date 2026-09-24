@@ -90,7 +90,8 @@
       "Bash(gh pr *)",
       "Bash(cd /Users/patrickbosek/dev && grep -rn \"\\\\-\\\\-text-primary\\\\|\\\\-\\\\-bg-secondary\\\\|\\\\-\\\\-color-error\\\\b\\\\|\\\\-\\\\-color-error:\" hop-core/ui/src/lib/theme/ 2>/dev/null | grep -v node_modules | head -20)",
       "Bash(awk 'NR>=240 && NR<=270 {printf \"%d: %s\\\\n\", NR, $0}' hop-core/ui/src/lib/theme/_material.scss)",
-      "Bash(rm -f /Users/patrickbosek/dev/release-notes-agent/.claude/launch.json /private/tmp/claude-501/-Users-patrickbosek-dev-release-notes-agent/77317fb1-5342-40bf-be63-fcbafc8350d5/scratchpad/chip-test.html; rm -rf /private/tmp/claude-501/-Users-patrickbosek-dev-release-notes-agent/77317fb1-5342-40bf-be63-fcbafc8350d5/scratchpad/.claude; echo \"cleaned\")"
+      "Bash(rm -f /Users/patrickbosek/dev/release-notes-agent/.claude/launch.json /private/tmp/claude-501/-Users-patrickbosek-dev-release-notes-agent/77317fb1-5342-40bf-be63-fcbafc8350d5/scratchpad/chip-test.html; rm -rf /private/tmp/claude-501/-Users-patrickbosek-dev-release-notes-agent/77317fb1-5342-40bf-be63-fcbafc8350d5/scratchpad/.claude; echo \"cleaned\")",
+      "Bash(backend/venv/bin/hop-doctor)"
     ],
     "deny": [],
     "ask": [],

@@ -7,7 +7,6 @@ export interface JobCreate {
   jql_query: string;
   instruction_set_id: string;
   ai_credential_id?: string;
-  additional_instructions?: string;
   output_filename: string;
   publish_to_heretto: boolean;
   heretto_folder_id?: string;
@@ -20,7 +19,7 @@ export interface Job {
   instruction_set_id?: string;
   ai_credential_id?: string;
   jql_query: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
   triggered_by: 'manual' | 'webhook' | 'scheduled';
   output_filename?: string;
   tickets_processed: number;

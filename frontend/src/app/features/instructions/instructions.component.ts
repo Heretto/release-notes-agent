@@ -120,25 +120,15 @@ import { JobCreateDialogComponent } from '../jobs/job-create-dialog.component';
               <pre class="jql-query">{{ instruction.jql_query }}</pre>
             </mat-expansion-panel>
 
-            <mat-expansion-panel>
-              <mat-expansion-panel-header>
-                <mat-panel-title>
-                  <mat-icon>psychology</mat-icon>
-                  System Prompt
-                </mat-panel-title>
-              </mat-expansion-panel-header>
-              <pre class="prompt-text">{{ instruction.system_prompt }}</pre>
-            </mat-expansion-panel>
-
-            <mat-expansion-panel *ngIf="instruction.user_instructions">
-              <mat-expansion-panel-header>
-                <mat-panel-title>
-                  <mat-icon>note</mat-icon>
-                  Additional Instructions
-                </mat-panel-title>
-              </mat-expansion-panel-header>
-              <pre class="prompt-text">{{ instruction.user_instructions }}</pre>
-            </mat-expansion-panel>
+            <div class="agent-chain-display">
+              <mat-icon>smart_toy</mat-icon>
+              <span *ngIf="instruction.agent_ids?.length; else noAgents">
+                {{ instruction.agent_ids.length }} agent(s) configured
+              </span>
+              <ng-template #noAgents>
+                <span class="no-agents-warning">No agents configured</span>
+              </ng-template>
+            </div>
 
             <div *ngIf="instruction.publish_to_heretto" class="heretto-folder-info">
               <mat-icon>cloud_upload</mat-icon>
@@ -309,6 +299,25 @@ import { JobCreateDialogComponent } from '../jobs/job-create-dialog.component';
       font-size: 18px;
       width: 18px;
       height: 18px;
+    }
+
+    .agent-chain-display {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 12px;
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    .agent-chain-display mat-icon {
+      font-size: 18px;
+      width: 18px;
+      height: 18px;
+    }
+
+    .no-agents-warning {
+      color: var(--color-warning-text, #b45309);
     }
 
     .heretto-folder-info code {

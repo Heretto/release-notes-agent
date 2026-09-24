@@ -17,6 +17,7 @@ from hop_core.models.user import User
 from hop_core.models.organization import Organization, OrganizationMember, OrganizationInvitation, user_organizations
 from hop_core.models.credential import Credential
 from hop_core.models.enums import OrganizationRole, CredentialTypeRegistry
+from hop_core.models.agent import Agent
 
 # Legacy CredentialType enum — used by existing code that references CredentialType.JIRA, etc.
 # New code should use string types via CredentialTypeRegistry instead.
@@ -30,9 +31,17 @@ class CredentialType(str, enum.Enum):
 # Register credential types with hop-core
 CredentialTypeRegistry.register("jira", label="Jira")
 CredentialTypeRegistry.register("heretto", label="Heretto")
-CredentialTypeRegistry.register("gemini", label="Gemini")
-CredentialTypeRegistry.register("openai", label="OpenAI")
-CredentialTypeRegistry.register("anthropic", label="Anthropic")
+CredentialTypeRegistry.register("gemini", label="Gemini", is_ai_configuration=True)
+CredentialTypeRegistry.register("openai", label="OpenAI", is_ai_configuration=True)
+CredentialTypeRegistry.register("anthropic", label="Anthropic", is_ai_configuration=True)
+
+# hop-core's Agent runner resolves a provider's generator via AiProviderRegistry, which is
+# only populated automatically for hop-core's own built-in credential specs. Our three
+# provider types are registered above, not through that path, so register their generators
+# ourselves — the provider keys match hop_core.agents.providers.BUILTIN_GENERATORS exactly.
+from hop_core.agents.providers import register_builtin_generator
+for _provider in ("gemini", "openai", "anthropic"):
+    register_builtin_generator(_provider)
 
 # Domain enums
 class JobStatus(str, enum.Enum):
@@ -59,8 +68,7 @@ class InstructionSet(Base):
     name = Column(String(255), nullable=False)
     description = Column(Text)
     jql_query = Column(Text, nullable=False)
-    system_prompt = Column(Text, nullable=False)
-    user_instructions = Column(Text)
+    jira_credential_id = Column(UUID(as_uuid=True), ForeignKey("credentials.id", ondelete="SET NULL"), nullable=True)
     dita_template_id = Column(UUID(as_uuid=True), ForeignKey("dita_templates.id"))
     heretto_folder_id = Column(String(255))
     publish_to_heretto = Column(Boolean, default=False)
@@ -70,8 +78,32 @@ class InstructionSet(Base):
 
     user = relationship("User", foreign_keys=[user_id])
     organization = relationship("Organization", foreign_keys=[organization_id])
+    jira_credential = relationship("Credential", foreign_keys=[jira_credential_id])
     dita_template = relationship("DitaTemplate")
     jobs = relationship("Job", back_populates="instruction_set")
+    agent_links = relationship(
+        "InstructionSetAgent",
+        back_populates="instruction_set",
+        cascade="all, delete-orphan",
+        order_by="InstructionSetAgent.position",
+    )
+
+class InstructionSetAgent(Base):
+    """An ordered step in an Instruction Set's agent chain.
+
+    Jobs run the linked agents in ``position`` order, piping each agent's
+    output into the next agent's input. See JobOrchestrator.process_job.
+    """
+    __tablename__ = "instruction_set_agents"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    instruction_set_id = Column(UUID(as_uuid=True), ForeignKey("instruction_sets.id", ondelete="CASCADE"), nullable=False)
+    agent_id = Column(UUID(as_uuid=True), ForeignKey("agents.id", ondelete="CASCADE"), nullable=False)
+    position = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    instruction_set = relationship("InstructionSet", back_populates="agent_links")
+    agent = relationship("Agent")
 
 class Job(Base):
     __tablename__ = "jobs"
@@ -82,7 +114,6 @@ class Job(Base):
     instruction_set_id = Column(UUID(as_uuid=True), ForeignKey("instruction_sets.id"))
     ai_credential_id = Column(UUID(as_uuid=True), ForeignKey("credentials.id", ondelete="SET NULL"), nullable=True)
     jql_query = Column(Text, nullable=False)
-    additional_instructions = Column(Text)
     status = Column(SQLEnum(JobStatus), nullable=False, default=JobStatus.PENDING)
     triggered_by = Column(SQLEnum(JobTrigger), nullable=False)
     output_filename = Column(String(255))

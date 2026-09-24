@@ -18,6 +18,7 @@ export class ShellComponent {
     { label: 'Dashboard', route: '/dashboard', icon: 'dashboard' },
     { label: 'Jobs', route: '/jobs', icon: 'work' },
     { label: 'Instructions', route: '/instructions', icon: 'description' },
+    { label: 'Agents', route: '/agents', icon: 'smart_toy' },
     { label: 'Credentials', route: '/credentials', icon: 'vpn_key' },
   ];
 }

@@ -168,33 +168,33 @@ class InstructionSetBase(BaseModel):
     name: str
     description: Optional[str] = None
     jql_query: str = Field(..., min_length=1, max_length=4096)
-    system_prompt: str
-    user_instructions: Optional[str] = None
+    jira_credential_id: Optional[UUID] = None
     dita_template_id: Optional[UUID] = None
     heretto_folder_id: Optional[str] = None
     publish_to_heretto: bool = False
     is_default: bool = False
 
 class InstructionSetCreate(InstructionSetBase):
-    pass
+    agent_ids: List[UUID] = Field(default_factory=list)
 
 class InstructionSetUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     jql_query: Optional[str] = Field(None, min_length=1, max_length=4096)
-    system_prompt: Optional[str] = None
-    user_instructions: Optional[str] = None
+    jira_credential_id: Optional[UUID] = None
     dita_template_id: Optional[UUID] = None
     heretto_folder_id: Optional[str] = None
     publish_to_heretto: Optional[bool] = None
     is_default: Optional[bool] = None
+    agent_ids: Optional[List[UUID]] = None
 
 class InstructionSetResponse(InstructionSetBase):
     id: UUID
     user_id: UUID
+    agent_ids: List[UUID] = Field(default_factory=list)
     created_at: datetime
     updated_at: Optional[datetime]
-    
+
     class Config:
         from_attributes = True
 
@@ -203,7 +203,6 @@ class JobCreate(BaseModel):
     jql_query: str = Field(..., min_length=1, max_length=4096)
     instruction_set_id: UUID
     ai_credential_id: Optional[UUID] = None
-    additional_instructions: Optional[str] = None
     output_filename: str
     publish_to_heretto: bool = False
     heretto_folder_id: Optional[str] = None
