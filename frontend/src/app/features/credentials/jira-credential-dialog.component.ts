@@ -1,5 +1,5 @@
-import { Component, Inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, Inject, ChangeDetectionStrategy } from '@angular/core';
+
 import { FormBuilder, FormGroup, Validators, ReactiveFormsModule } from '@angular/forms';
 import { MatDialogModule, MatDialogRef, MAT_DIALOG_DATA } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -12,85 +12,103 @@ import { JiraCredential } from '../../core/services/credentials.service';
   selector: 'app-jira-credential-dialog',
   standalone: true,
   imports: [
-    CommonModule,
     ReactiveFormsModule,
     MatDialogModule,
     MatFormFieldModule,
     MatInputModule,
     MatButtonModule,
     MatIconModule
-  ],
+],
   template: `
     <h2 mat-dialog-title>{{ data ? 'Edit' : 'Add' }} Jira Credential</h2>
     <mat-dialog-content>
-      <div *ngIf="data" class="current-values">
-        <div class="info-box">
-          <mat-icon>info</mat-icon>
-          <span>Current credential details:</span>
+      @if (data) {
+        <div class="current-values">
+          <div class="info-box">
+            <mat-icon>info</mat-icon>
+            <span>Current credential details:</span>
+          </div>
+          <div class="credential-display">
+            <div class="field-display">
+              <strong>Server URL:</strong> {{ data.server_url }}
+            </div>
+            <div class="field-display">
+              <strong>Email:</strong> {{ data.email }}
+            </div>
+            <div class="field-display">
+              <strong>API Token:</strong> {{ maskApiToken(data.api_token) }}
+            </div>
+          </div>
         </div>
-        <div class="credential-display">
-          <div class="field-display">
-            <strong>Server URL:</strong> {{ data.server_url }}
-          </div>
-          <div class="field-display">
-            <strong>Email:</strong> {{ data.email }}
-          </div>
-          <div class="field-display">
-            <strong>API Token:</strong> {{ maskApiToken(data.api_token) }}
-          </div>
-        </div>
-      </div>
-      
+      }
+    
       <form [formGroup]="form">
         <mat-form-field appearance="outline" class="full-width">
           <mat-label>Name</mat-label>
           <input matInput formControlName="name" required>
-          <mat-error *ngIf="form.get('name')?.hasError('required')">
-            Name is required
-          </mat-error>
+          @if (form.get('name')?.hasError('required')) {
+            <mat-error>
+              Name is required
+            </mat-error>
+          }
         </mat-form-field>
-
+    
         <mat-form-field appearance="outline" class="full-width">
           <mat-label>Server URL</mat-label>
-          <input matInput formControlName="server_url" 
-                 placeholder="https://your-domain.atlassian.net" required>
-          <mat-hint *ngIf="data">Leave unchanged or enter new URL</mat-hint>
-          <mat-error *ngIf="form.get('server_url')?.hasError('required')">
-            Server URL is required
-          </mat-error>
-        </mat-form-field>
-
-        <mat-form-field appearance="outline" class="full-width">
-          <mat-label>Email</mat-label>
-          <input matInput type="email" formControlName="email" required>
-          <mat-hint *ngIf="data">Leave unchanged or enter new email</mat-hint>
-          <mat-error *ngIf="form.get('email')?.hasError('required')">
-            Email is required
-          </mat-error>
-          <mat-error *ngIf="form.get('email')?.hasError('email')">
-            Please enter a valid email
-          </mat-error>
-        </mat-form-field>
-
-        <mat-form-field appearance="outline" class="full-width">
-          <mat-label>API Token</mat-label>
-          <input matInput type="password" formControlName="api_token" 
-                 [placeholder]="data ? 'Enter new token (leave empty to keep current)' : 'Enter API token'" 
-                 [required]="!data">
-          <mat-hint *ngIf="data">Leave empty to keep current token</mat-hint>
-          <mat-error *ngIf="form.get('api_token')?.hasError('required')">
-            API Token is required
-          </mat-error>
-        </mat-form-field>
-      </form>
-    </mat-dialog-content>
-    <mat-dialog-actions align="end">
-      <button mat-button (click)="onCancel()">Cancel</button>
-      <button mat-raised-button color="primary" 
-              [disabled]="!form.valid"
-              (click)="onSave()">Save</button>
-    </mat-dialog-actions>
-  `,
+          <input matInput formControlName="server_url"
+            placeholder="https://your-domain.atlassian.net" required>
+            @if (data) {
+              <mat-hint>Leave unchanged or enter new URL</mat-hint>
+            }
+            @if (form.get('server_url')?.hasError('required')) {
+              <mat-error>
+                Server URL is required
+              </mat-error>
+            }
+          </mat-form-field>
+    
+          <mat-form-field appearance="outline" class="full-width">
+            <mat-label>Email</mat-label>
+            <input matInput type="email" formControlName="email" required>
+            @if (data) {
+              <mat-hint>Leave unchanged or enter new email</mat-hint>
+            }
+            @if (form.get('email')?.hasError('required')) {
+              <mat-error>
+                Email is required
+              </mat-error>
+            }
+            @if (form.get('email')?.hasError('email')) {
+              <mat-error>
+                Please enter a valid email
+              </mat-error>
+            }
+          </mat-form-field>
+    
+          <mat-form-field appearance="outline" class="full-width">
+            <mat-label>API Token</mat-label>
+            <input matInput type="password" formControlName="api_token"
+              [placeholder]="data ? 'Enter new token (leave empty to keep current)' : 'Enter API token'"
+              [required]="!data">
+            @if (data) {
+              <mat-hint>Leave empty to keep current token</mat-hint>
+            }
+            @if (form.get('api_token')?.hasError('required')) {
+              <mat-error>
+                API Token is required
+              </mat-error>
+            }
+          </mat-form-field>
+        </form>
+      </mat-dialog-content>
+      <mat-dialog-actions align="end">
+        <button mat-button (click)="onCancel()">Cancel</button>
+        <button mat-raised-button color="primary"
+          [disabled]="!form.valid"
+        (click)="onSave()">Save</button>
+      </mat-dialog-actions>
+    `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
     mat-dialog-content {
       padding-top: 20px;

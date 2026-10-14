@@ -1,5 +1,5 @@
-import { Component, Inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, Inject, ChangeDetectionStrategy } from '@angular/core';
+
 import { FormBuilder, FormGroup, Validators, ReactiveFormsModule } from '@angular/forms';
 import { MatDialogModule, MatDialogRef, MAT_DIALOG_DATA } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -16,7 +16,6 @@ import { InstructionSet } from '../../core/services/instructions.service';
   selector: 'app-instruction-dialog',
   standalone: true,
   imports: [
-    CommonModule,
     ReactiveFormsModule,
     MatDialogModule,
     MatFormFieldModule,
@@ -27,7 +26,7 @@ import { InstructionSet } from '../../core/services/instructions.service';
     MatExpansionModule,
     MatIconModule,
     MatTooltipModule
-  ],
+],
   template: `
     <h2 mat-dialog-title>
       {{ data ? 'Edit' : 'Create' }} Instruction Set
@@ -37,46 +36,50 @@ import { InstructionSet } from '../../core/services/instructions.service';
       <form [formGroup]="form">
         <div class="form-section">
           <h3>Basic Information</h3>
-          
+    
           <mat-form-field appearance="outline" class="full-width">
             <mat-label>Name</mat-label>
             <input matInput formControlName="name" required>
-            <mat-error *ngIf="form.get('name')?.hasError('required')">
-              Name is required
-            </mat-error>
+            @if (form.get('name')?.hasError('required')) {
+              <mat-error>
+                Name is required
+              </mat-error>
+            }
           </mat-form-field>
-
+    
           <mat-form-field appearance="outline" class="full-width">
             <mat-label>Description</mat-label>
             <textarea matInput formControlName="description" rows="2"></textarea>
             <mat-hint>Brief description of what this instruction set does</mat-hint>
           </mat-form-field>
-
+    
           <div class="default-toggle">
             <mat-slide-toggle formControlName="is_default">
               Set as default instruction set
             </mat-slide-toggle>
-            <mat-icon 
+            <mat-icon
               matTooltip="Default instruction sets are pre-selected when creating new jobs"
               class="info-icon">
               info
             </mat-icon>
           </div>
         </div>
-
+    
         <div class="form-section">
           <h3>Jira Configuration</h3>
-          
+    
           <mat-form-field appearance="outline" class="full-width">
             <mat-label>JQL Query</mat-label>
             <textarea matInput formControlName="jql_query" rows="3" required
-                      placeholder="e.g., project = MYPROJECT AND fixVersion = '1.0' ORDER BY created DESC"></textarea>
-            <mat-error *ngIf="form.get('jql_query')?.hasError('required')">
-              JQL query is required
-            </mat-error>
+            placeholder="e.g., project = MYPROJECT AND fixVersion = '1.0' ORDER BY created DESC"></textarea>
+            @if (form.get('jql_query')?.hasError('required')) {
+              <mat-error>
+                JQL query is required
+              </mat-error>
+            }
             <mat-hint>Enter the Jira Query Language (JQL) to select tickets for processing</mat-hint>
           </mat-form-field>
-
+    
           <mat-expansion-panel class="jql-help">
             <mat-expansion-panel-header>
               <mat-panel-title>
@@ -84,7 +87,7 @@ import { InstructionSet } from '../../core/services/instructions.service';
                 JQL Query Examples
               </mat-panel-title>
             </mat-expansion-panel-header>
-            
+    
             <div class="jql-examples">
               <p><strong>Common JQL Patterns:</strong></p>
               <ul>
@@ -98,27 +101,29 @@ import { InstructionSet } from '../../core/services/instructions.service';
             </div>
           </mat-expansion-panel>
         </div>
-
+    
         <div class="form-section">
           <h3>LLM Instructions</h3>
-          
+    
           <mat-form-field appearance="outline" class="full-width">
             <mat-label>System Prompt</mat-label>
             <textarea matInput formControlName="system_prompt" rows="6" required
-                      placeholder="You are a technical writer creating release notes from Jira tickets..."></textarea>
-            <mat-error *ngIf="form.get('system_prompt')?.hasError('required')">
-              System prompt is required
-            </mat-error>
+            placeholder="You are a technical writer creating release notes from Jira tickets..."></textarea>
+            @if (form.get('system_prompt')?.hasError('required')) {
+              <mat-error>
+                System prompt is required
+              </mat-error>
+            }
             <mat-hint>Instructions for the AI on how to process and format the release notes</mat-hint>
           </mat-form-field>
-
+    
           <mat-form-field appearance="outline" class="full-width">
             <mat-label>Additional User Instructions (Optional)</mat-label>
             <textarea matInput formControlName="user_instructions" rows="4"
-                      placeholder="Focus on user-facing changes, group by feature area..."></textarea>
+            placeholder="Focus on user-facing changes, group by feature area..."></textarea>
             <mat-hint>Additional context or specific requirements for this instruction set</mat-hint>
           </mat-form-field>
-
+    
           <mat-expansion-panel class="prompt-tips">
             <mat-expansion-panel-header>
               <mat-panel-title>
@@ -126,7 +131,7 @@ import { InstructionSet } from '../../core/services/instructions.service';
                 Prompt Writing Tips
               </mat-panel-title>
             </mat-expansion-panel-header>
-
+    
             <div class="tips-content">
               <p><strong>Effective System Prompts Should Include:</strong></p>
               <ul>
@@ -136,42 +141,45 @@ import { InstructionSet } from '../../core/services/instructions.service';
                 <li>Tone and style (e.g., "Use professional, concise language...")</li>
                 <li>Specific requirements (e.g., "Group by feature area, prioritize user impact...")</li>
               </ul>
-
+    
               <p><strong>Example System Prompt:</strong></p>
               <pre class="example-prompt">{{ examplePrompt }}</pre>
             </div>
           </mat-expansion-panel>
         </div>
-
+    
         <div class="form-section">
           <h3>Heretto CCMS</h3>
-
+    
           <div class="heretto-toggle">
             <mat-checkbox formControlName="publish_to_heretto">
               Save generated release notes to Heretto
             </mat-checkbox>
           </div>
-
-          <mat-form-field *ngIf="form.get('publish_to_heretto')?.value"
-                          appearance="outline" class="full-width">
-            <mat-label>Heretto Folder ID</mat-label>
-            <input matInput formControlName="heretto_folder_id"
-                   placeholder="e.g., 12345-abcde-67890">
-            <mat-hint>Target folder in Heretto where generated content will be saved</mat-hint>
-          </mat-form-field>
+    
+          @if (form.get('publish_to_heretto')?.value) {
+            <mat-form-field
+              appearance="outline" class="full-width">
+              <mat-label>Heretto Folder ID</mat-label>
+              <input matInput formControlName="heretto_folder_id"
+                placeholder="e.g., 12345-abcde-67890">
+              <mat-hint>Target folder in Heretto where generated content will be saved</mat-hint>
+            </mat-form-field>
+          }
         </div>
       </form>
     </mat-dialog-content>
-
+    
     <mat-dialog-actions align="end">
       <button mat-button (click)="onCancel()">Cancel</button>
-      <button mat-raised-button color="primary" 
-              [disabled]="!form.valid"
-              (click)="onSave()">
+      <button mat-raised-button color="primary"
+        [disabled]="!form.valid"
+        (click)="onSave()">
         {{ data ? 'Update' : 'Create' }}
       </button>
     </mat-dialog-actions>
-  `,
+    `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
     mat-dialog-content {
       min-width: 600px;

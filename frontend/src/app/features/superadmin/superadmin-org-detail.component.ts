@@ -1,4 +1,4 @@
-import { Component, inject, OnInit } from '@angular/core';
+import { Component, inject, OnInit, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
 import { MatCardModule } from '@angular/material/card';
@@ -33,158 +33,161 @@ import { SuperadminAddMemberDialogComponent, AddMemberDialogResult } from './sup
   ],
   template: `
     <div class="detail-container">
-      <div *ngIf="loading" class="loading-container">
-        <mat-spinner diameter="40"></mat-spinner>
-      </div>
-
-      <div *ngIf="error" class="error-message">
-        <mat-icon>error</mat-icon>
-        <span>{{ error }}</span>
-        <button mat-button color="primary" (click)="loadOrganization()">Retry</button>
-      </div>
-
-      <div *ngIf="!loading && !error && org">
-        <div class="page-header">
-          <button mat-icon-button (click)="goBack()" matTooltip="Back to organizations">
-            <mat-icon>arrow_back</mat-icon>
-          </button>
-          <div class="header-text">
-            <h1>{{ org.name }}</h1>
-            <span class="slug">{{ org.slug }}</span>
+      @if (loading) {
+        <div class="loading-container">
+          <mat-spinner diameter="40"></mat-spinner>
+        </div>
+      }
+    
+      @if (error) {
+        <div class="error-message">
+          <mat-icon>error</mat-icon>
+          <span>{{ error }}</span>
+          <button mat-button color="primary" (click)="loadOrganization()">Retry</button>
+        </div>
+      }
+    
+      @if (!loading && !error && org) {
+        <div>
+          <div class="page-header">
+            <button mat-icon-button (click)="goBack()" matTooltip="Back to organizations">
+              <mat-icon>arrow_back</mat-icon>
+            </button>
+            <div class="header-text">
+              <h1>{{ org.name }}</h1>
+              <span class="slug">{{ org.slug }}</span>
+            </div>
+            <span class="spacer"></span>
+            <button mat-raised-button color="warn" (click)="confirmDelete()">
+              <mat-icon>delete</mat-icon>
+              Delete Organization
+            </button>
           </div>
-          <span class="spacer"></span>
-          <button mat-raised-button color="warn" (click)="confirmDelete()">
-            <mat-icon>delete</mat-icon>
-            Delete Organization
-          </button>
-        </div>
-
-        <!-- Stats Cards -->
-        <div class="stats-row">
-          <mat-card class="stat-card">
+          <!-- Stats Cards -->
+          <div class="stats-row">
+            <mat-card class="stat-card">
+              <mat-card-content>
+                <div class="stat-value">{{ org.member_count }}</div>
+                <div class="stat-label">Members</div>
+              </mat-card-content>
+            </mat-card>
+            <mat-card class="stat-card">
+              <mat-card-content>
+                <div class="stat-value">{{ org.job_count }}</div>
+                <div class="stat-label">Jobs</div>
+              </mat-card-content>
+            </mat-card>
+            <mat-card class="stat-card">
+              <mat-card-content>
+                <div class="stat-value">{{ org.created_at | date:'mediumDate' }}</div>
+                <div class="stat-label">Created</div>
+              </mat-card-content>
+            </mat-card>
+            <mat-card class="stat-card">
+              <mat-card-content>
+                <div class="stat-value">{{ org.last_activity ? (org.last_activity | date:'mediumDate') : 'None' }}</div>
+                <div class="stat-label">Last Activity</div>
+              </mat-card-content>
+            </mat-card>
+          </div>
+          <!-- Organization Info -->
+          <mat-card class="info-card">
+            <mat-card-header>
+              <mat-card-title>Organization Details</mat-card-title>
+            </mat-card-header>
             <mat-card-content>
-              <div class="stat-value">{{ org.member_count }}</div>
-              <div class="stat-label">Members</div>
-            </mat-card-content>
-          </mat-card>
-          <mat-card class="stat-card">
-            <mat-card-content>
-              <div class="stat-value">{{ org.job_count }}</div>
-              <div class="stat-label">Jobs</div>
-            </mat-card-content>
-          </mat-card>
-          <mat-card class="stat-card">
-            <mat-card-content>
-              <div class="stat-value">{{ org.created_at | date:'mediumDate' }}</div>
-              <div class="stat-label">Created</div>
-            </mat-card-content>
-          </mat-card>
-          <mat-card class="stat-card">
-            <mat-card-content>
-              <div class="stat-value">{{ org.last_activity ? (org.last_activity | date:'mediumDate') : 'None' }}</div>
-              <div class="stat-label">Last Activity</div>
-            </mat-card-content>
-          </mat-card>
-        </div>
-
-        <!-- Organization Info -->
-        <mat-card class="info-card">
-          <mat-card-header>
-            <mat-card-title>Organization Details</mat-card-title>
-          </mat-card-header>
-          <mat-card-content>
-            <div class="info-grid">
-              <div class="info-item">
-                <span class="info-label">ID</span>
-                <span class="info-value mono">{{ org.id }}</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">Created By</span>
-                <span class="info-value">{{ org.created_by_email || 'Unknown' }}</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">Status</span>
-                <mat-chip [color]="org.is_active ? 'primary' : 'warn'" selected>
-                  {{ org.is_active ? 'Active' : 'Inactive' }}
-                </mat-chip>
-              </div>
-              <div class="info-item" *ngIf="org.updated_at">
-                <span class="info-label">Last Updated</span>
-                <span class="info-value">{{ org.updated_at | date:'medium' }}</span>
-              </div>
-            </div>
-          </mat-card-content>
-        </mat-card>
-
-        <!-- Members Table -->
-        <mat-card>
-          <mat-card-header>
-            <mat-card-title>Members</mat-card-title>
-            <mat-card-subtitle>{{ org.members.length }} members in this organization</mat-card-subtitle>
-          </mat-card-header>
-          <mat-card-content>
-            <div class="members-actions">
-              <button mat-raised-button color="primary" (click)="openAddMemberDialog()">
-                <mat-icon>person_add</mat-icon>
-                Add Member
-              </button>
-            </div>
-
-            <table mat-table [dataSource]="org.members" class="members-table" *ngIf="org.members.length > 0">
-              <ng-container matColumnDef="email">
-                <th mat-header-cell *matHeaderCellDef>Email</th>
-                <td mat-cell *matCellDef="let member">{{ member.email }}</td>
-              </ng-container>
-
-              <ng-container matColumnDef="role">
-                <th mat-header-cell *matHeaderCellDef>Role</th>
-                <td mat-cell *matCellDef="let member">
-                  <mat-chip [color]="member.role === 'admin' ? 'accent' : 'primary'" selected>
-                    {{ member.role }}
+              <div class="info-grid">
+                <div class="info-item">
+                  <span class="info-label">ID</span>
+                  <span class="info-value mono">{{ org.id }}</span>
+                </div>
+                <div class="info-item">
+                  <span class="info-label">Created By</span>
+                  <span class="info-value">{{ org.created_by_email || 'Unknown' }}</span>
+                </div>
+                <div class="info-item">
+                  <span class="info-label">Status</span>
+                  <mat-chip [color]="org.is_active ? 'primary' : 'warn'" selected>
+                    {{ org.is_active ? 'Active' : 'Inactive' }}
                   </mat-chip>
-                </td>
-              </ng-container>
-
-              <ng-container matColumnDef="status">
-                <th mat-header-cell *matHeaderCellDef>Status</th>
-                <td mat-cell *matCellDef="let member">
-                  <span [class.active-status]="member.is_active" [class.inactive-status]="!member.is_active">
-                    {{ member.is_active ? 'Active' : 'Inactive' }}
-                  </span>
-                </td>
-              </ng-container>
-
-              <ng-container matColumnDef="joined_at">
-                <th mat-header-cell *matHeaderCellDef>Joined</th>
-                <td mat-cell *matCellDef="let member">
-                  {{ member.joined_at ? (member.joined_at | date:'mediumDate') : '—' }}
-                </td>
-              </ng-container>
-
-              <ng-container matColumnDef="actions">
-                <th mat-header-cell *matHeaderCellDef></th>
-                <td mat-cell *matCellDef="let member">
-                  <button mat-icon-button color="warn"
-                          (click)="confirmRemoveMember(member); $event.stopPropagation()"
-                          matTooltip="Remove from organization">
-                    <mat-icon>person_remove</mat-icon>
-                  </button>
-                </td>
-              </ng-container>
-
-              <tr mat-header-row *matHeaderRowDef="memberColumns"></tr>
-              <tr mat-row *matRowDef="let row; columns: memberColumns;"></tr>
-            </table>
-
-            <div *ngIf="org.members.length === 0" class="empty-state">
-              <mat-icon>people</mat-icon>
-              <p>No members in this organization</p>
-            </div>
-          </mat-card-content>
-        </mat-card>
-      </div>
+                </div>
+                @if (org.updated_at) {
+                  <div class="info-item">
+                    <span class="info-label">Last Updated</span>
+                    <span class="info-value">{{ org.updated_at | date:'medium' }}</span>
+                  </div>
+                }
+              </div>
+            </mat-card-content>
+          </mat-card>
+          <!-- Members Table -->
+          <mat-card>
+            <mat-card-header>
+              <mat-card-title>Members</mat-card-title>
+              <mat-card-subtitle>{{ org.members.length }} members in this organization</mat-card-subtitle>
+            </mat-card-header>
+            <mat-card-content>
+              <div class="members-actions">
+                <button mat-raised-button color="primary" (click)="openAddMemberDialog()">
+                  <mat-icon>person_add</mat-icon>
+                  Add Member
+                </button>
+              </div>
+              @if (org.members.length > 0) {
+                <table mat-table [dataSource]="org.members" class="members-table">
+                  <ng-container matColumnDef="email">
+                    <th mat-header-cell *matHeaderCellDef>Email</th>
+                    <td mat-cell *matCellDef="let member">{{ member.email }}</td>
+                  </ng-container>
+                  <ng-container matColumnDef="role">
+                    <th mat-header-cell *matHeaderCellDef>Role</th>
+                    <td mat-cell *matCellDef="let member">
+                      <mat-chip [color]="member.role === 'admin' ? 'accent' : 'primary'" selected>
+                        {{ member.role }}
+                      </mat-chip>
+                    </td>
+                  </ng-container>
+                  <ng-container matColumnDef="status">
+                    <th mat-header-cell *matHeaderCellDef>Status</th>
+                    <td mat-cell *matCellDef="let member">
+                      <span [class.active-status]="member.is_active" [class.inactive-status]="!member.is_active">
+                        {{ member.is_active ? 'Active' : 'Inactive' }}
+                      </span>
+                    </td>
+                  </ng-container>
+                  <ng-container matColumnDef="joined_at">
+                    <th mat-header-cell *matHeaderCellDef>Joined</th>
+                    <td mat-cell *matCellDef="let member">
+                      {{ member.joined_at ? (member.joined_at | date:'mediumDate') : '—' }}
+                    </td>
+                  </ng-container>
+                  <ng-container matColumnDef="actions">
+                    <th mat-header-cell *matHeaderCellDef></th>
+                    <td mat-cell *matCellDef="let member">
+                      <button mat-icon-button color="warn"
+                        (click)="confirmRemoveMember(member); $event.stopPropagation()"
+                        matTooltip="Remove from organization">
+                        <mat-icon>person_remove</mat-icon>
+                      </button>
+                    </td>
+                  </ng-container>
+                  <tr mat-header-row *matHeaderRowDef="memberColumns"></tr>
+                  <tr mat-row *matRowDef="let row; columns: memberColumns;"></tr>
+                </table>
+              }
+              @if (org.members.length === 0) {
+                <div class="empty-state">
+                  <mat-icon>people</mat-icon>
+                  <p>No members in this organization</p>
+                </div>
+              }
+            </mat-card-content>
+          </mat-card>
+        </div>
+      }
     </div>
-  `,
+    `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
     .detail-container {
       max-width: 1200px;

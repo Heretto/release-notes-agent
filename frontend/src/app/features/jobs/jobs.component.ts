@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, inject } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { MatCardModule } from '@angular/material/card';
@@ -45,131 +45,142 @@ import { switchMap, startWith } from 'rxjs/operators';
           Create New Job
         </button>
       </div>
-      
-      <div *ngIf="loading" class="loading-container">
-        <mat-spinner></mat-spinner>
-        <p>Loading jobs...</p>
-      </div>
-
-      <div *ngIf="!loading && jobs.length === 0" class="empty-state">
-        <mat-card>
-          <mat-card-content>
-            <mat-icon class="empty-icon">work_off</mat-icon>
-            <h3>No Jobs Yet</h3>
-            <p>Create your first job to start generating release notes.</p>
-            <button mat-raised-button color="primary" (click)="createJob()">
-              <mat-icon>add</mat-icon>
-              Create Your First Job
-            </button>
-          </mat-card-content>
-        </mat-card>
-      </div>
-
-      <div *ngIf="!loading && jobs.length > 0" class="jobs-list">
-        <mat-card class="jobs-table-card">
-          <table mat-table [dataSource]="jobs" class="jobs-table">
-            
-            <!-- Status Column -->
-            <ng-container matColumnDef="status">
-              <th mat-header-cell *matHeaderCellDef>Status</th>
-              <td mat-cell *matCellDef="let job">
-                <mat-chip [class]="getStatusClass(job.status)">
-                  <mat-icon class="status-icon">{{ getStatusIcon(job.status) }}</mat-icon>
-                  {{ job.status | uppercase }}
-                </mat-chip>
-              </td>
-            </ng-container>
-
-            <!-- JQL Query Column -->
-            <ng-container matColumnDef="jql_query">
-              <th mat-header-cell *matHeaderCellDef>JQL Query</th>
-              <td mat-cell *matCellDef="let job" class="query-cell">
-                <span [matTooltip]="job.jql_query">
-                  {{ truncateQuery(job.jql_query) }}
-                </span>
-              </td>
-            </ng-container>
-
-            <!-- Output Column -->
-            <ng-container matColumnDef="output_filename">
-              <th mat-header-cell *matHeaderCellDef>Output</th>
-              <td mat-cell *matCellDef="let job">
-                {{ job.output_filename || 'N/A' }}
-              </td>
-            </ng-container>
-
-            <!-- Tickets Column -->
-            <ng-container matColumnDef="tickets_processed">
-              <th mat-header-cell *matHeaderCellDef>Tickets</th>
-              <td mat-cell *matCellDef="let job">
-                <span class="ticket-count">{{ job.tickets_processed || 0 }}</span>
-              </td>
-            </ng-container>
-
-            <!-- Created Column -->
-            <ng-container matColumnDef="created_at">
-              <th mat-header-cell *matHeaderCellDef>Created</th>
-              <td mat-cell *matCellDef="let job">
-                {{ formatDate(job.created_at) }}
-              </td>
-            </ng-container>
-
-            <!-- Duration Column -->
-            <ng-container matColumnDef="duration">
-              <th mat-header-cell *matHeaderCellDef>Duration</th>
-              <td mat-cell *matCellDef="let job">
-                {{ calculateDuration(job) }}
-              </td>
-            </ng-container>
-
-            <!-- Actions Column -->
-            <ng-container matColumnDef="actions">
-              <th mat-header-cell *matHeaderCellDef>Actions</th>
-              <td mat-cell *matCellDef="let job">
-                <button mat-icon-button [matMenuTriggerFor]="menu" (click)="$event.stopPropagation()">
-                  <mat-icon>more_vert</mat-icon>
-                </button>
-                <mat-menu #menu="matMenu">
-                  <button mat-menu-item (click)="viewJob(job)" *ngIf="job.status === 'completed'">
-                    <mat-icon>visibility</mat-icon>
-                    <span>View Output</span>
+    
+      @if (loading) {
+        <div class="loading-container">
+          <mat-spinner></mat-spinner>
+          <p>Loading jobs...</p>
+        </div>
+      }
+    
+      @if (!loading && jobs.length === 0) {
+        <div class="empty-state">
+          <mat-card>
+            <mat-card-content>
+              <mat-icon class="empty-icon">work_off</mat-icon>
+              <h3>No Jobs Yet</h3>
+              <p>Create your first job to start generating release notes.</p>
+              <button mat-raised-button color="primary" (click)="createJob()">
+                <mat-icon>add</mat-icon>
+                Create Your First Job
+              </button>
+            </mat-card-content>
+          </mat-card>
+        </div>
+      }
+    
+      @if (!loading && jobs.length > 0) {
+        <div class="jobs-list">
+          <mat-card class="jobs-table-card">
+            <table mat-table [dataSource]="jobs" class="jobs-table">
+              <!-- Status Column -->
+              <ng-container matColumnDef="status">
+                <th mat-header-cell *matHeaderCellDef>Status</th>
+                <td mat-cell *matCellDef="let job">
+                  <mat-chip [class]="getStatusClass(job.status)">
+                    <mat-icon class="status-icon">{{ getStatusIcon(job.status) }}</mat-icon>
+                    {{ job.status | uppercase }}
+                  </mat-chip>
+                </td>
+              </ng-container>
+              <!-- JQL Query Column -->
+              <ng-container matColumnDef="jql_query">
+                <th mat-header-cell *matHeaderCellDef>JQL Query</th>
+                <td mat-cell *matCellDef="let job" class="query-cell">
+                  <span [matTooltip]="job.jql_query">
+                    {{ truncateQuery(job.jql_query) }}
+                  </span>
+                </td>
+              </ng-container>
+              <!-- Output Column -->
+              <ng-container matColumnDef="output_filename">
+                <th mat-header-cell *matHeaderCellDef>Output</th>
+                <td mat-cell *matCellDef="let job">
+                  {{ job.output_filename || 'N/A' }}
+                </td>
+              </ng-container>
+              <!-- Tickets Column -->
+              <ng-container matColumnDef="tickets_processed">
+                <th mat-header-cell *matHeaderCellDef>Tickets</th>
+                <td mat-cell *matCellDef="let job">
+                  <span class="ticket-count">{{ job.tickets_processed || 0 }}</span>
+                </td>
+              </ng-container>
+              <!-- Created Column -->
+              <ng-container matColumnDef="created_at">
+                <th mat-header-cell *matHeaderCellDef>Created</th>
+                <td mat-cell *matCellDef="let job">
+                  {{ formatDate(job.created_at) }}
+                </td>
+              </ng-container>
+              <!-- Duration Column -->
+              <ng-container matColumnDef="duration">
+                <th mat-header-cell *matHeaderCellDef>Duration</th>
+                <td mat-cell *matCellDef="let job">
+                  {{ calculateDuration(job) }}
+                </td>
+              </ng-container>
+              <!-- Actions Column -->
+              <ng-container matColumnDef="actions">
+                <th mat-header-cell *matHeaderCellDef>Actions</th>
+                <td mat-cell *matCellDef="let job">
+                  <button mat-icon-button [matMenuTriggerFor]="menu" (click)="$event.stopPropagation()">
+                    <mat-icon>more_vert</mat-icon>
                   </button>
-                  <button mat-menu-item (click)="downloadArtifact(job)" *ngIf="job.status === 'completed'">
-                    <mat-icon>download</mat-icon>
-                    <span>Download</span>
-                  </button>
-                  <button mat-menu-item (click)="rerunJob(job)" *ngIf="job.status === 'completed' || job.status === 'failed'">
-                    <mat-icon>replay</mat-icon>
-                    <span>Rerun</span>
-                  </button>
-                  <button mat-menu-item (click)="retryJob(job)" *ngIf="job.status === 'failed'">
-                    <mat-icon>refresh</mat-icon>
-                    <span>Retry</span>
-                  </button>
-                  <button mat-menu-item (click)="cancelJob(job)" 
-                          *ngIf="job.status === 'running' || job.status === 'pending'">
-                    <mat-icon>cancel</mat-icon>
-                    <span>Cancel</span>
-                  </button>
-                  <button mat-menu-item (click)="viewError(job)" *ngIf="job.error_message">
-                    <mat-icon>error_outline</mat-icon>
-                    <span>View Error</span>
-                  </button>
-                </mat-menu>
-              </td>
-            </ng-container>
-
-            <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
-            <tr mat-row *matRowDef="let row; columns: displayedColumns;" 
+                  <mat-menu #menu="matMenu">
+                    @if (job.status === 'completed') {
+                      <button mat-menu-item (click)="viewJob(job)">
+                        <mat-icon>visibility</mat-icon>
+                        <span>View Output</span>
+                      </button>
+                    }
+                    @if (job.status === 'completed') {
+                      <button mat-menu-item (click)="downloadArtifact(job)">
+                        <mat-icon>download</mat-icon>
+                        <span>Download</span>
+                      </button>
+                    }
+                    @if (job.status === 'completed' || job.status === 'failed') {
+                      <button mat-menu-item (click)="rerunJob(job)">
+                        <mat-icon>replay</mat-icon>
+                        <span>Rerun</span>
+                      </button>
+                    }
+                    @if (job.status === 'failed') {
+                      <button mat-menu-item (click)="retryJob(job)">
+                        <mat-icon>refresh</mat-icon>
+                        <span>Retry</span>
+                      </button>
+                    }
+                    @if (job.status === 'running' || job.status === 'pending') {
+                      <button mat-menu-item (click)="cancelJob(job)"
+                        >
+                        <mat-icon>cancel</mat-icon>
+                        <span>Cancel</span>
+                      </button>
+                    }
+                    @if (job.error_message) {
+                      <button mat-menu-item (click)="viewError(job)">
+                        <mat-icon>error_outline</mat-icon>
+                        <span>View Error</span>
+                      </button>
+                    }
+                  </mat-menu>
+                </td>
+              </ng-container>
+              <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+              <tr mat-row *matRowDef="let row; columns: displayedColumns;"
                 [class.running-job]="row.status === 'running'"
                 class="clickable-row"
                 (click)="navigateToJob(row)"
-                matTooltip="Click to view details"></tr>
-          </table>
-        </mat-card>
-      </div>
+              matTooltip="Click to view details"></tr>
+            </table>
+          </mat-card>
+        </div>
+      }
     </div>
-  `,
+    `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
     .jobs-container {
       max-width: 1400px;
