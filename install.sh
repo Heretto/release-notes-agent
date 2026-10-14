@@ -57,13 +57,26 @@ if [[ -z "$PYTHON" ]]; then
 fi
 green "  ✓ Python $($PYTHON --version)"
 
-# Node 18+
+# Node — Angular 22 requires ^22.22.3 || ^24.15.0 || >=26.0.0. Checking only the major
+# is not enough: 22.22.1 passes a major check and then fails the build.
 if ! command -v node &>/dev/null; then
-  fail "Node.js not found. Install from https://nodejs.org/ (v18 or later)"
+  fail "Node.js not found. Install from https://nodejs.org/ (v22.22.3+ or v24.15.0+)"
 fi
-node_major=$(node --version | tr -d 'v' | cut -d. -f1)
-if [[ "$node_major" -lt 18 ]]; then
-  fail "Node.js 18+ required (found $(node --version)). Upgrade at https://nodejs.org/"
+node_version=$(node --version | tr -d 'v')
+node_major=${node_version%%.*}
+node_rest=${node_version#*.}
+node_minor=${node_rest%%.*}
+node_patch=${node_rest#*.}
+node_ok=0
+if [[ "$node_major" -ge 26 ]]; then
+  node_ok=1
+elif [[ "$node_major" -eq 24 ]]; then
+  { [[ "$node_minor" -gt 15 ]] || { [[ "$node_minor" -eq 15 ]] && [[ "$node_patch" -ge 0 ]]; }; } && node_ok=1
+elif [[ "$node_major" -eq 22 ]]; then
+  { [[ "$node_minor" -gt 22 ]] || { [[ "$node_minor" -eq 22 ]] && [[ "$node_patch" -ge 3 ]]; }; } && node_ok=1
+fi
+if [[ "$node_ok" -ne 1 ]]; then
+  fail "Node.js ^22.22.3 || ^24.15.0 || >=26 required by Angular 22 (found v$node_version). Upgrade at https://nodejs.org/"
 fi
 green "  ✓ Node $(node --version)"
 

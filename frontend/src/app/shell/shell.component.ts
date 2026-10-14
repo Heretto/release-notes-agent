@@ -1,9 +1,10 @@
-import { Component } from '@angular/core';
+import { Component, ChangeDetectionStrategy } from '@angular/core';
 import { HopMainLayoutComponent, NavItem } from '@heretto/hop-ui';
 
 @Component({
   selector: 'app-shell',
   imports: [HopMainLayoutComponent],
+  changeDetection: ChangeDetectionStrategy.Eager,
   template: `
     <hop-main-layout
       appTitle="AI Release Notes Agent"

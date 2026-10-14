@@ -1,9 +1,12 @@
 # release-notes-agent — agent notes
 
-Built on [hop-core](https://github.com/Heretto/hop-core), pinned at **v0.1.4**.
+Built on [hop-core](https://github.com/Heretto/hop-core), pinned at **v0.1.8**.
 
-Automated DITA release-notes generation from Jira tickets: FastAPI backend, Angular 19
+Automated DITA release-notes generation from Jira tickets: FastAPI backend, Angular 22
 frontend, Celery workers, Postgres, Redis.
+
+**Node ^22.22.3 || ^24.15.0 || >=26 is required** — Angular 22's engine constraint. A plain
+major-version check is not enough: Node 22.22.1 satisfies "Node 22" and still fails the build.
 
 ## Before changing anything
 
@@ -43,11 +46,24 @@ local state.
   `app/models/database.py`) and let autogenerate write migrations against a hop-core table.
   `backend/alembic/env.py` derives `OUR_TABLES` from mappers only. The reasoning is in a
   comment there — read it before changing the filter.
-- **The production frontend build fails its 1 MB `initial` bundle budget** (~1.14 MB). This
+- **The production frontend build fails its 1 MB `initial` bundle budget** (~1.36 MB on
+  hop-core v0.1.8 / Angular 22; was ~1.14 MB on v0.1.4 / Angular 19). This
   is not caused by anything in this repo: an eager `hopAuthInterceptor` import pins the whole
   flat `@heretto/hop-ui` bundle and its Angular Material tree into the initial chunk, and
   hop-ui has no secondary entry points to split it. `docker compose build frontend` fails on
   this. Open upstream.
+- **`npm audit` reports ~11 high findings in the frontend. Do NOT run `npm audit fix
+  --force`** — it "fixes" them by installing `karma@4.0.0`, a two-major downgrade that breaks
+  the test setup and resolves nothing real. Every package in the report is a
+  `devDependency` (`karma*`, `jasmine*`, `@angular-devkit/build-angular`), so none of it
+  reaches the shipped bundle. Both branches have one root, and it is tooling Angular 22 has
+  already deprecated: `braces` → `chokidar` → **karma**, and `micromatch` →
+  `http-proxy-middleware` → `webpack-dev-server` → **`@angular-devkit/build-angular`**. The
+  real fix is the two optional Angular 22 migrations, deliberately deferred so the v0.1.8
+  upgrade stayed reviewable — they delete the vulnerable subtrees rather than patching them:
+  `ng update @angular/cli --name use-application-builder` (also clears the
+  `@angular-devkit/build-angular:dev-server is deprecated` warning on every `dev.sh` run) and
+  `ng update @angular/cli --name migrate-karma-to-vitest`.
 
 ## Upgrading hop-core
 

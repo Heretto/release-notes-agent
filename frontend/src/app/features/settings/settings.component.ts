@@ -1,5 +1,5 @@
-import { Component } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, ChangeDetectionStrategy } from '@angular/core';
+
 import { MatCardModule } from '@angular/material/card';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -9,12 +9,11 @@ import { MatSlideToggleModule } from '@angular/material/slide-toggle';
   selector: 'app-settings',
   standalone: true,
   imports: [
-    CommonModule,
     MatCardModule,
     MatButtonModule,
     MatIconModule,
     MatSlideToggleModule
-  ],
+],
   template: `
     <div class="settings-container">
       <h1>Settings</h1>
@@ -57,6 +56,7 @@ import { MatSlideToggleModule } from '@angular/material/slide-toggle';
       </mat-card>
     </div>
   `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
     .settings-container {
       max-width: 800px;

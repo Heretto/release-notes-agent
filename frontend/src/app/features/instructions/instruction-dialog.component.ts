@@ -1,5 +1,4 @@
-import { Component, Inject, OnInit } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, Inject, OnInit, ChangeDetectionStrategy } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { FormBuilder, FormGroup, Validators, ReactiveFormsModule } from '@angular/forms';
 import { MatDialogModule, MatDialogRef, MAT_DIALOG_DATA } from '@angular/material/dialog';
@@ -20,7 +19,6 @@ import { CredentialsService, JiraCredential } from '../../core/services/credenti
   selector: 'app-instruction-dialog',
   standalone: true,
   imports: [
-    CommonModule,
     RouterLink,
     ReactiveFormsModule,
     MatDialogModule,
@@ -47,9 +45,9 @@ import { CredentialsService, JiraCredential } from '../../core/services/credenti
           <mat-form-field appearance="outline" class="full-width">
             <mat-label>Name</mat-label>
             <input matInput formControlName="name" required>
-            <mat-error *ngIf="form.get('name')?.hasError('required')">
-              Name is required
-            </mat-error>
+            @if (form.get('name')?.hasError('required')) {
+              <mat-error>Name is required</mat-error>
+            }
           </mat-form-field>
 
           <mat-form-field appearance="outline" class="full-width">
@@ -73,29 +71,35 @@ import { CredentialsService, JiraCredential } from '../../core/services/credenti
         <div class="form-section">
           <h3>Jira Configuration</h3>
 
-          <div *ngIf="jiraCredentials.length === 0" class="no-agents-hint">
-            <mat-icon>info</mat-icon>
-            <span>No Jira credentials yet. Add one in the Credentials page first.</span>
-          </div>
+          @if (jiraCredentials.length === 0) {
+            <div class="no-agents-hint">
+              <mat-icon>info</mat-icon>
+              <span>No Jira credentials yet. Add one in the Credentials page first.</span>
+            </div>
+          }
 
-          <mat-form-field appearance="outline" class="full-width" *ngIf="jiraCredentials.length > 0">
-            <mat-label>Jira Credential</mat-label>
-            <mat-select formControlName="jira_credential_id">
-              <mat-option [value]="null">Use any available (org default)</mat-option>
-              <mat-option *ngFor="let cred of jiraCredentials" [value]="cred.id">
-                {{ cred.name }} ({{ cred.server_url }})
-              </mat-option>
-            </mat-select>
-            <mat-hint>Which Jira connection this instruction set's query runs against</mat-hint>
-          </mat-form-field>
+          @if (jiraCredentials.length > 0) {
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Jira Credential</mat-label>
+              <mat-select formControlName="jira_credential_id">
+                <mat-option [value]="null">Use any available (org default)</mat-option>
+                @for (cred of jiraCredentials; track cred.id) {
+                  <mat-option [value]="cred.id">
+                    {{ cred.name }} ({{ cred.server_url }})
+                  </mat-option>
+                }
+              </mat-select>
+              <mat-hint>Which Jira connection this instruction set's query runs against</mat-hint>
+            </mat-form-field>
+          }
 
           <mat-form-field appearance="outline" class="full-width">
             <mat-label>JQL Query</mat-label>
             <textarea matInput formControlName="jql_query" rows="3" required
                       placeholder="e.g., project = MYPROJECT AND fixVersion = '1.0' ORDER BY created DESC"></textarea>
-            <mat-error *ngIf="form.get('jql_query')?.hasError('required')">
-              JQL query is required
-            </mat-error>
+            @if (form.get('jql_query')?.hasError('required')) {
+              <mat-error>JQL query is required</mat-error>
+            }
             <mat-hint>Enter the Jira Query Language (JQL) to select tickets for processing</mat-hint>
           </mat-form-field>
 
@@ -128,45 +132,59 @@ import { CredentialsService, JiraCredential } from '../../core/services/credenti
             agent's output becomes the next agent's input.
           </p>
 
-          <div *ngIf="availableAgents.length === 0" class="no-agents-hint">
-            <mat-icon>info</mat-icon>
-            <span>No agents yet. <a routerLink="/agents">Create one</a> to get started.</span>
-          </div>
-
-          <mat-form-field appearance="outline" class="full-width" *ngIf="unselectedAgents.length > 0">
-            <mat-label>Add Agent</mat-label>
-            <mat-select (selectionChange)="addAgent($event.value)" [value]="null">
-              <mat-option *ngFor="let agent of unselectedAgents" [value]="agent.id">
-                {{ agent.name }}
-              </mat-option>
-            </mat-select>
-          </mat-form-field>
-
-          <div class="agent-chain" *ngIf="selectedAgents.length > 0">
-            <div class="agent-chain-item" *ngFor="let agent of selectedAgents; let i = index">
-              <span class="agent-position">{{ i + 1 }}</span>
-              <span class="agent-name">{{ agent.name }}</span>
-              <span class="agent-arrow" *ngIf="i < selectedAgents.length - 1">&rarr;</span>
-              <span class="agent-controls">
-                <button mat-icon-button type="button" [disabled]="i === 0"
-                        matTooltip="Move up" (click)="moveAgent(i, -1)">
-                  <mat-icon>arrow_upward</mat-icon>
-                </button>
-                <button mat-icon-button type="button" [disabled]="i === selectedAgents.length - 1"
-                        matTooltip="Move down" (click)="moveAgent(i, 1)">
-                  <mat-icon>arrow_downward</mat-icon>
-                </button>
-                <button mat-icon-button type="button" color="warn"
-                        matTooltip="Remove" (click)="removeAgent(i)">
-                  <mat-icon>close</mat-icon>
-                </button>
-              </span>
+          @if (availableAgents.length === 0) {
+            <div class="no-agents-hint">
+              <mat-icon>info</mat-icon>
+              <span>No agents yet. <a routerLink="/agents">Create one</a> to get started.</span>
             </div>
-          </div>
+          }
 
-          <p class="agent-chain-empty" *ngIf="availableAgents.length > 0 && selectedAgents.length === 0">
-            No agents added yet. At least one agent is required to generate content.
-          </p>
+          @if (unselectedAgents.length > 0) {
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Add Agent</mat-label>
+              <mat-select (selectionChange)="addAgent($event.value)" [value]="null">
+                @for (agent of unselectedAgents; track agent.id) {
+                  <mat-option [value]="agent.id">
+                    {{ agent.name }}
+                  </mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+          }
+
+          @if (selectedAgents.length > 0) {
+            <div class="agent-chain">
+              @for (agent of selectedAgents; track agent.id; let i = $index) {
+                <div class="agent-chain-item">
+                  <span class="agent-position">{{ i + 1 }}</span>
+                  <span class="agent-name">{{ agent.name }}</span>
+                  @if (i < selectedAgents.length - 1) {
+                    <span class="agent-arrow">&rarr;</span>
+                  }
+                  <span class="agent-controls">
+                    <button mat-icon-button type="button" [disabled]="i === 0"
+                            matTooltip="Move up" (click)="moveAgent(i, -1)">
+                      <mat-icon>arrow_upward</mat-icon>
+                    </button>
+                    <button mat-icon-button type="button" [disabled]="i === selectedAgents.length - 1"
+                            matTooltip="Move down" (click)="moveAgent(i, 1)">
+                      <mat-icon>arrow_downward</mat-icon>
+                    </button>
+                    <button mat-icon-button type="button" color="warn"
+                            matTooltip="Remove" (click)="removeAgent(i)">
+                      <mat-icon>close</mat-icon>
+                    </button>
+                  </span>
+                </div>
+              }
+            </div>
+          }
+
+          @if (availableAgents.length > 0 && selectedAgents.length === 0) {
+            <p class="agent-chain-empty">
+              No agents added yet. At least one agent is required to generate content.
+            </p>
+          }
         </div>
 
         <div class="form-section">
@@ -178,13 +196,14 @@ import { CredentialsService, JiraCredential } from '../../core/services/credenti
             </mat-checkbox>
           </div>
 
-          <mat-form-field *ngIf="form.get('publish_to_heretto')?.value"
-                          appearance="outline" class="full-width">
-            <mat-label>Heretto Folder ID</mat-label>
-            <input matInput formControlName="heretto_folder_id"
-                   placeholder="e.g., 12345-abcde-67890">
-            <mat-hint>Target folder in Heretto where generated content will be saved</mat-hint>
-          </mat-form-field>
+          @if (form.get('publish_to_heretto')?.value) {
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Heretto Folder ID</mat-label>
+              <input matInput formControlName="heretto_folder_id"
+                     placeholder="e.g., 12345-abcde-67890">
+              <mat-hint>Target folder in Heretto where generated content will be saved</mat-hint>
+            </mat-form-field>
+          }
         </div>
       </form>
     </mat-dialog-content>
@@ -198,6 +217,7 @@ import { CredentialsService, JiraCredential } from '../../core/services/credenti
       </button>
     </mat-dialog-actions>
   `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
     mat-dialog-content {
       min-width: 600px;

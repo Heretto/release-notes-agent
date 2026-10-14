@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, inject } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { MatCardModule } from '@angular/material/card';
@@ -70,303 +70,353 @@ interface JobArtifact {
         </button>
         <div class="header-content">
           <h1>Job Details</h1>
-          <p class="job-id" *ngIf="job">ID: {{ job.id }}</p>
+          @if (job) {
+            <p class="job-id">ID: {{ job.id }}</p>
+          }
         </div>
-        <div class="header-actions" *ngIf="job">
-          <button mat-raised-button color="primary" 
-                  (click)="downloadArtifact()"
-                  *ngIf="job.status === 'completed' && artifacts.length > 0">
-            <mat-icon>download</mat-icon>
-            Download Output
-          </button>
-          <button mat-raised-button 
-                  (click)="rerunJob()"
-                  *ngIf="job.status === 'completed' || job.status === 'failed'"
-                  matTooltip="Create a new job with the same parameters">
-            <mat-icon>replay</mat-icon>
-            Rerun Job
-          </button>
-          <button mat-raised-button color="accent" 
-                  (click)="retryJob()"
-                  *ngIf="job.status === 'failed'"
-                  matTooltip="Retry the failed job">
-            <mat-icon>refresh</mat-icon>
-            Retry Job
-          </button>
-          <button mat-raised-button color="warn" 
-                  (click)="cancelJob()"
-                  *ngIf="job.status === 'running' || job.status === 'pending'">
-            <mat-icon>cancel</mat-icon>
-            Cancel Job
-          </button>
+        @if (job) {
+          <div class="header-actions">
+            @if (job.status === 'completed' && artifacts.length > 0) {
+              <button mat-raised-button color="primary"
+                (click)="downloadArtifact()"
+                >
+                <mat-icon>download</mat-icon>
+                Download Output
+              </button>
+            }
+            @if (job.status === 'completed' || job.status === 'failed') {
+              <button mat-raised-button
+                (click)="rerunJob()"
+                matTooltip="Create a new job with the same parameters">
+                <mat-icon>replay</mat-icon>
+                Rerun Job
+              </button>
+            }
+            @if (job.status === 'failed') {
+              <button mat-raised-button color="accent"
+                (click)="retryJob()"
+                matTooltip="Retry the failed job">
+                <mat-icon>refresh</mat-icon>
+                Retry Job
+              </button>
+            }
+            @if (job.status === 'running' || job.status === 'pending') {
+              <button mat-raised-button color="warn"
+                (click)="cancelJob()"
+                >
+                <mat-icon>cancel</mat-icon>
+                Cancel Job
+              </button>
+            }
+          </div>
+        }
+      </div>
+    
+      @if (loading) {
+        <div class="loading-container">
+          <mat-spinner></mat-spinner>
+          <p>Loading job details...</p>
         </div>
-      </div>
-
-      <div *ngIf="loading" class="loading-container">
-        <mat-spinner></mat-spinner>
-        <p>Loading job details...</p>
-      </div>
-
+      }
+    
       <!-- Retry Progress Bar -->
-      <div *ngIf="retryInProgress" class="retry-progress-container">
-        <mat-card class="retry-card">
-          <mat-card-header>
-            <mat-card-title>
-              <mat-icon class="spinning">sync</mat-icon>
-              Retrying Job
-            </mat-card-title>
-          </mat-card-header>
-          <mat-card-content>
-            <p class="retry-message">{{ retryStatusMessage }}</p>
-            <mat-progress-bar 
-              [mode]="retryJobStatus === 'running' ? 'indeterminate' : 'determinate'"
-              [value]="retryProgress"
-              [color]="retryJobStatus === 'failed' ? 'warn' : 'primary'">
-            </mat-progress-bar>
-            <div class="retry-details" *ngIf="retryJobData">
-              <span>New Job ID: {{ retryJobData.id }}</span>
-              <span>Status: <strong>{{ retryJobData.status | uppercase }}</strong></span>
-              <span *ngIf="retryJobData.tickets_processed > 0">Tickets: {{ retryJobData.tickets_processed }}</span>
-            </div>
-          </mat-card-content>
-        </mat-card>
-      </div>
-
-      <div *ngIf="!loading && job" class="job-content">
-        <!-- Summary Card -->
-        <mat-card class="summary-card">
-          <mat-card-header>
-            <mat-card-title>Job Summary</mat-card-title>
-          </mat-card-header>
-          <mat-card-content>
-            <div class="summary-grid">
-              <div class="summary-item">
-                <span class="label">Status:</span>
-                <mat-chip [class]="getStatusClass(job.status)">
-                  <mat-icon class="status-icon">{{ getStatusIcon(job.status) }}</mat-icon>
-                  {{ job.status | uppercase }}
-                </mat-chip>
-              </div>
-              <div class="summary-item">
-                <span class="label">Triggered By:</span>
-                <span>{{ job.triggered_by | titlecase }}</span>
-              </div>
-              <div class="summary-item">
-                <span class="label">Created:</span>
-                <span>{{ formatDate(job.created_at) }}</span>
-              </div>
-              <div class="summary-item" *ngIf="job.started_at">
-                <span class="label">Started:</span>
-                <span>{{ formatDate(job.started_at) }}</span>
-              </div>
-              <div class="summary-item" *ngIf="job.completed_at">
-                <span class="label">Completed:</span>
-                <span>{{ formatDate(job.completed_at) }}</span>
-              </div>
-              <div class="summary-item">
-                <span class="label">Duration:</span>
-                <span>{{ calculateDuration() }}</span>
-              </div>
-              <div class="summary-item">
-                <span class="label">Tickets Processed:</span>
-                <span class="ticket-count">{{ job.tickets_processed || 0 }}<span *ngIf="job.max_tickets"> / {{ job.max_tickets }}</span></span>
-              </div>
-              <div class="summary-item" *ngIf="aiCredential">
-                <span class="label">AI Model:</span>
-                <mat-chip class="ai-chip">
-                  <mat-icon class="chip-icon">smart_toy</mat-icon>
-                  {{ aiCredential.name }}
-                </mat-chip>
-              </div>
-              <div class="summary-item full-width">
-                <span class="label">JQL Query:</span>
-                <code class="jql-query">{{ job.jql_query }}</code>
-              </div>
-              <div class="summary-item full-width" *ngIf="job.output_filename">
-                <span class="label">Output File:</span>
-                <span>{{ job.output_filename }}</span>
-              </div>
-              <div class="summary-item full-width" *ngIf="herettoFolderUrl">
-                <span class="label">Heretto CCMS:</span>
-                <a [href]="herettoFolderUrl" target="_blank" rel="noopener" class="heretto-link">
-                  <mat-icon class="heretto-link-icon">cloud_upload</mat-icon>
-                  {{ herettoFolderPath || 'View folder in Heretto' }}
-                  <mat-icon class="heretto-link-icon">open_in_new</mat-icon>
-                </a>
-              </div>
-            </div>
-          </mat-card-content>
-        </mat-card>
-
-        <!-- Error Card (if failed) -->
-        <mat-card class="error-card" *ngIf="job.status === 'failed' && job.error_message">
-          <mat-card-header>
-            <mat-card-title>
-              <mat-icon color="warn">error</mat-icon>
-              Error Details
-            </mat-card-title>
-          </mat-card-header>
-          <mat-card-content>
-            <pre class="error-message">{{ job.error_message }}</pre>
-          </mat-card-content>
-        </mat-card>
-
-        <!-- Tabs for detailed information -->
-        <mat-card class="details-card">
-          <mat-tab-group>
-            <!-- Requests Tab -->
-            <mat-tab label="Requests ({{ requests.length }})">
-              <div class="tab-content">
-                <div *ngIf="requests.length === 0" class="empty-state">
-                  <mat-icon>http</mat-icon>
-                  <p>No requests recorded yet</p>
+      @if (retryInProgress) {
+        <div class="retry-progress-container">
+          <mat-card class="retry-card">
+            <mat-card-header>
+              <mat-card-title>
+                <mat-icon class="spinning">sync</mat-icon>
+                Retrying Job
+              </mat-card-title>
+            </mat-card-header>
+            <mat-card-content>
+              <p class="retry-message">{{ retryStatusMessage }}</p>
+              <mat-progress-bar
+                [mode]="retryJobStatus === 'running' ? 'indeterminate' : 'determinate'"
+                [value]="retryProgress"
+                [color]="retryJobStatus === 'failed' ? 'warn' : 'primary'">
+              </mat-progress-bar>
+              @if (retryJobData) {
+                <div class="retry-details">
+                  <span>New Job ID: {{ retryJobData.id }}</span>
+                  <span>Status: <strong>{{ retryJobData.status | uppercase }}</strong></span>
+                  @if (retryJobData.tickets_processed > 0) {
+                    <span>Tickets: {{ retryJobData.tickets_processed }}</span>
+                  }
                 </div>
-                
-                <mat-accordion *ngIf="requests.length > 0">
-                  <mat-expansion-panel *ngFor="let request of requests; let i = index" 
-                                       [expanded]="i === 0">
-                    <mat-expansion-panel-header>
-                      <mat-panel-title>
-                        <mat-chip [class]="getRequestStatusClass(request.status)" class="small-chip">
-                          {{ request.status | uppercase }}
-                        </mat-chip>
-                        <span class="request-type">{{ formatRequestType(request.type) }}</span>
-                      </mat-panel-title>
-                      <mat-panel-description>
-                        {{ formatDate(request.timestamp) }}
-                        <span class="duration" *ngIf="request.duration_ms">
-                          ({{ request.duration_ms }}ms)
-                        </span>
-                      </mat-panel-description>
-                    </mat-expansion-panel-header>
-                    
-                    <div class="request-details">
-                      <div class="request-section">
-                        <h4>Request</h4>
-                        <pre class="code-block">{{ formatJson(request.request_data) }}</pre>
-                      </div>
-                      
-                      <mat-divider></mat-divider>
-                      
-                      <div class="request-section" *ngIf="request.response_data">
-                        <h4>Response</h4>
-                        <pre class="code-block">{{ formatJson(request.response_data) }}</pre>
-                      </div>
-                      
-                      <div class="request-section" *ngIf="request.error_message">
-                        <h4>Error</h4>
-                        <pre class="error-block">{{ request.error_message }}</pre>
-                      </div>
-                    </div>
-                  </mat-expansion-panel>
-                </mat-accordion>
-              </div>
-            </mat-tab>
-
-            <!-- Logs Tab -->
-            <mat-tab label="Logs ({{ logs.length }})">
-              <div class="tab-content">
-                <div *ngIf="logs.length === 0" class="empty-state">
-                  <mat-icon>description</mat-icon>
-                  <p>No logs available</p>
+              }
+            </mat-card-content>
+          </mat-card>
+        </div>
+      }
+    
+      @if (!loading && job) {
+        <div class="job-content">
+          <!-- Summary Card -->
+          <mat-card class="summary-card">
+            <mat-card-header>
+              <mat-card-title>Job Summary</mat-card-title>
+            </mat-card-header>
+            <mat-card-content>
+              <div class="summary-grid">
+                <div class="summary-item">
+                  <span class="label">Status:</span>
+                  <mat-chip [class]="getStatusClass(job.status)">
+                    <mat-icon class="status-icon">{{ getStatusIcon(job.status) }}</mat-icon>
+                    {{ job.status | uppercase }}
+                  </mat-chip>
                 </div>
-                
-                <div class="logs-container" *ngIf="logs.length > 0">
-                  <div *ngFor="let log of logs" class="log-entry" [class]="'log-' + log.level">
-                    <span class="log-timestamp">{{ formatTimestamp(log.timestamp) }}</span>
-                    <mat-chip class="log-level" [class]="'level-' + log.level">
-                      {{ log.level | uppercase }}
+                <div class="summary-item">
+                  <span class="label">Triggered By:</span>
+                  <span>{{ job.triggered_by | titlecase }}</span>
+                </div>
+                <div class="summary-item">
+                  <span class="label">Created:</span>
+                  <span>{{ formatDate(job.created_at) }}</span>
+                </div>
+                @if (job.started_at) {
+                  <div class="summary-item">
+                    <span class="label">Started:</span>
+                    <span>{{ formatDate(job.started_at) }}</span>
+                  </div>
+                }
+                @if (job.completed_at) {
+                  <div class="summary-item">
+                    <span class="label">Completed:</span>
+                    <span>{{ formatDate(job.completed_at) }}</span>
+                  </div>
+                }
+                <div class="summary-item">
+                  <span class="label">Duration:</span>
+                  <span>{{ calculateDuration() }}</span>
+                </div>
+                <div class="summary-item">
+                  <span class="label">Tickets Processed:</span>
+                  <span class="ticket-count">{{ job.tickets_processed || 0 }}@if (job.max_tickets) {
+                    <span> / {{ job.max_tickets }}</span>
+                  }</span>
+                </div>
+                @if (aiCredential) {
+                  <div class="summary-item">
+                    <span class="label">AI Model:</span>
+                    <mat-chip class="ai-chip">
+                      <mat-icon class="chip-icon">smart_toy</mat-icon>
+                      {{ aiCredential.name }}
                     </mat-chip>
-                    <span class="log-message">{{ log.message }}</span>
-                    <pre *ngIf="log.details" class="log-details">{{ formatJson(log.details) }}</pre>
                   </div>
+                }
+                <div class="summary-item full-width">
+                  <span class="label">JQL Query:</span>
+                  <code class="jql-query">{{ job.jql_query }}</code>
                 </div>
-              </div>
-            </mat-tab>
-
-            <!-- Generated Content Tab -->
-            <mat-tab label="Generated Content" *ngIf="artifacts.length > 0">
-              <div class="tab-content">
-                <div class="artifacts-header">
-                  <h3>Generated Files</h3>
-                  <button mat-raised-button color="warn" (click)="clearAllArtifacts()" *ngIf="artifacts.length > 0">
-                    <mat-icon>delete_sweep</mat-icon>
-                    Clear All Content
-                  </button>
-                </div>
-                <div class="artifacts-list">
-                  <div *ngFor="let artifact of artifacts" class="artifact-item">
-                    <mat-icon>insert_drive_file</mat-icon>
-                    <div class="artifact-info">
-                      <span class="artifact-name">{{ artifact.filename }}</span>
-                      <span class="artifact-meta">
-                        {{ formatFileSize(artifact.size_bytes) }} • 
-                        {{ artifact.content_type }} • 
-                        {{ formatDate(artifact.created_at) }}
-                      </span>
-                    </div>
-                    <button mat-icon-button (click)="viewArtifact(artifact)" matTooltip="View">
-                      <mat-icon>visibility</mat-icon>
-                    </button>
-                    <button mat-icon-button (click)="downloadSpecificArtifact(artifact)" matTooltip="Download">
-                      <mat-icon>download</mat-icon>
-                    </button>
-                    <button mat-icon-button color="warn" (click)="deleteArtifact(artifact)" matTooltip="Delete">
-                      <mat-icon>delete</mat-icon>
-                    </button>
+                @if (job.output_filename) {
+                  <div class="summary-item full-width">
+                    <span class="label">Output File:</span>
+                    <span>{{ job.output_filename }}</span>
                   </div>
-                </div>
-                
-                <div class="content-preview" *ngIf="contentPreview">
-                  <h4>Content Preview</h4>
-                  <pre class="code-block">{{ contentPreview }}</pre>
-                </div>
+                }
+                @if (herettoFolderUrl) {
+                  <div class="summary-item full-width">
+                    <span class="label">Heretto CCMS:</span>
+                    <a [href]="herettoFolderUrl" target="_blank" rel="noopener" class="heretto-link">
+                      <mat-icon class="heretto-link-icon">cloud_upload</mat-icon>
+                      {{ herettoFolderPath || 'View folder in Heretto' }}
+                      <mat-icon class="heretto-link-icon">open_in_new</mat-icon>
+                    </a>
+                  </div>
+                }
               </div>
-            </mat-tab>
-
-            <!-- Metrics Tab -->
-            <mat-tab label="Metrics" *ngIf="job.status === 'completed'">
-              <div class="tab-content">
-                <div class="metrics-grid">
-                  <mat-card class="metric-card">
-                    <mat-card-content>
-                      <mat-icon>timer</mat-icon>
-                      <div class="metric-value">{{ calculateDuration() }}</div>
-                      <div class="metric-label">Total Duration</div>
-                    </mat-card-content>
-                  </mat-card>
-                  
-                  <mat-card class="metric-card">
-                    <mat-card-content>
-                      <mat-icon>confirmation_number</mat-icon>
-                      <div class="metric-value">{{ job.tickets_processed || 0 }}</div>
-                      <div class="metric-label">Tickets Processed</div>
-                    </mat-card-content>
-                  </mat-card>
-                  
-                  <mat-card class="metric-card">
-                    <mat-card-content>
+            </mat-card-content>
+          </mat-card>
+          <!-- Error Card (if failed) -->
+          @if (job.status === 'failed' && job.error_message) {
+            <mat-card class="error-card">
+              <mat-card-header>
+                <mat-card-title>
+                  <mat-icon color="warn">error</mat-icon>
+                  Error Details
+                </mat-card-title>
+              </mat-card-header>
+              <mat-card-content>
+                <pre class="error-message">{{ job.error_message }}</pre>
+              </mat-card-content>
+            </mat-card>
+          }
+          <!-- Tabs for detailed information -->
+          <mat-card class="details-card">
+            <mat-tab-group>
+              <!-- Requests Tab -->
+              <mat-tab label="Requests ({{ requests.length }})">
+                <div class="tab-content">
+                  @if (requests.length === 0) {
+                    <div class="empty-state">
                       <mat-icon>http</mat-icon>
-                      <div class="metric-value">{{ requests.length }}</div>
-                      <div class="metric-label">API Requests</div>
-                    </mat-card-content>
-                  </mat-card>
-                  
-                  <mat-card class="metric-card">
-                    <mat-card-content>
-                      <mat-icon>storage</mat-icon>
-                      <div class="metric-value">{{ calculateTotalSize() }}</div>
-                      <div class="metric-label">Output Size</div>
-                    </mat-card-content>
-                  </mat-card>
+                      <p>No requests recorded yet</p>
+                    </div>
+                  }
+                  @if (requests.length > 0) {
+                    <mat-accordion>
+                      @for (request of requests; track request; let i = $index) {
+                        <mat-expansion-panel
+                          [expanded]="i === 0">
+                          <mat-expansion-panel-header>
+                            <mat-panel-title>
+                              <mat-chip [class]="getRequestStatusClass(request.status)" class="small-chip">
+                                {{ request.status | uppercase }}
+                              </mat-chip>
+                              <span class="request-type">{{ formatRequestType(request.type) }}</span>
+                            </mat-panel-title>
+                            <mat-panel-description>
+                              {{ formatDate(request.timestamp) }}
+                              @if (request.duration_ms) {
+                                <span class="duration">
+                                  ({{ request.duration_ms }}ms)
+                                </span>
+                              }
+                            </mat-panel-description>
+                          </mat-expansion-panel-header>
+                          <div class="request-details">
+                            <div class="request-section">
+                              <h4>Request</h4>
+                              <pre class="code-block">{{ formatJson(request.request_data) }}</pre>
+                            </div>
+                            <mat-divider></mat-divider>
+                            @if (request.response_data) {
+                              <div class="request-section">
+                                <h4>Response</h4>
+                                <pre class="code-block">{{ formatJson(request.response_data) }}</pre>
+                              </div>
+                            }
+                            @if (request.error_message) {
+                              <div class="request-section">
+                                <h4>Error</h4>
+                                <pre class="error-block">{{ request.error_message }}</pre>
+                              </div>
+                            }
+                          </div>
+                        </mat-expansion-panel>
+                      }
+                    </mat-accordion>
+                  }
                 </div>
-              </div>
-            </mat-tab>
-          </mat-tab-group>
-        </mat-card>
-      </div>
+              </mat-tab>
+              <!-- Logs Tab -->
+              <mat-tab label="Logs ({{ logs.length }})">
+                <div class="tab-content">
+                  @if (logs.length === 0) {
+                    <div class="empty-state">
+                      <mat-icon>description</mat-icon>
+                      <p>No logs available</p>
+                    </div>
+                  }
+                  @if (logs.length > 0) {
+                    <div class="logs-container">
+                      @for (log of logs; track log) {
+                        <div class="log-entry" [class]="'log-' + log.level">
+                          <span class="log-timestamp">{{ formatTimestamp(log.timestamp) }}</span>
+                          <mat-chip class="log-level" [class]="'level-' + log.level">
+                            {{ log.level | uppercase }}
+                          </mat-chip>
+                          <span class="log-message">{{ log.message }}</span>
+                          @if (log.details) {
+                            <pre class="log-details">{{ formatJson(log.details) }}</pre>
+                          }
+                        </div>
+                      }
+                    </div>
+                  }
+                </div>
+              </mat-tab>
+              <!-- Generated Content Tab -->
+              @if (artifacts.length > 0) {
+                <mat-tab label="Generated Content">
+                  <div class="tab-content">
+                    <div class="artifacts-header">
+                      <h3>Generated Files</h3>
+                      @if (artifacts.length > 0) {
+                        <button mat-raised-button color="warn" (click)="clearAllArtifacts()">
+                          <mat-icon>delete_sweep</mat-icon>
+                          Clear All Content
+                        </button>
+                      }
+                    </div>
+                    <div class="artifacts-list">
+                      @for (artifact of artifacts; track artifact) {
+                        <div class="artifact-item">
+                          <mat-icon>insert_drive_file</mat-icon>
+                          <div class="artifact-info">
+                            <span class="artifact-name">{{ artifact.filename }}</span>
+                            <span class="artifact-meta">
+                              {{ formatFileSize(artifact.size_bytes) }} •
+                              {{ artifact.content_type }} •
+                              {{ formatDate(artifact.created_at) }}
+                            </span>
+                          </div>
+                          <button mat-icon-button (click)="viewArtifact(artifact)" matTooltip="View">
+                            <mat-icon>visibility</mat-icon>
+                          </button>
+                          <button mat-icon-button (click)="downloadSpecificArtifact(artifact)" matTooltip="Download">
+                            <mat-icon>download</mat-icon>
+                          </button>
+                          <button mat-icon-button color="warn" (click)="deleteArtifact(artifact)" matTooltip="Delete">
+                            <mat-icon>delete</mat-icon>
+                          </button>
+                        </div>
+                      }
+                    </div>
+                    @if (contentPreview) {
+                      <div class="content-preview">
+                        <h4>Content Preview</h4>
+                        <pre class="code-block">{{ contentPreview }}</pre>
+                      </div>
+                    }
+                  </div>
+                </mat-tab>
+              }
+              <!-- Metrics Tab -->
+              @if (job.status === 'completed') {
+                <mat-tab label="Metrics">
+                  <div class="tab-content">
+                    <div class="metrics-grid">
+                      <mat-card class="metric-card">
+                        <mat-card-content>
+                          <mat-icon>timer</mat-icon>
+                          <div class="metric-value">{{ calculateDuration() }}</div>
+                          <div class="metric-label">Total Duration</div>
+                        </mat-card-content>
+                      </mat-card>
+                      <mat-card class="metric-card">
+                        <mat-card-content>
+                          <mat-icon>confirmation_number</mat-icon>
+                          <div class="metric-value">{{ job.tickets_processed || 0 }}</div>
+                          <div class="metric-label">Tickets Processed</div>
+                        </mat-card-content>
+                      </mat-card>
+                      <mat-card class="metric-card">
+                        <mat-card-content>
+                          <mat-icon>http</mat-icon>
+                          <div class="metric-value">{{ requests.length }}</div>
+                          <div class="metric-label">API Requests</div>
+                        </mat-card-content>
+                      </mat-card>
+                      <mat-card class="metric-card">
+                        <mat-card-content>
+                          <mat-icon>storage</mat-icon>
+                          <div class="metric-value">{{ calculateTotalSize() }}</div>
+                          <div class="metric-label">Output Size</div>
+                        </mat-card-content>
+                      </mat-card>
+                    </div>
+                  </div>
+                </mat-tab>
+              }
+            </mat-tab-group>
+          </mat-card>
+        </div>
+      }
     </div>
-  `,
+    `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
     .job-detail-container{max-width:1400px;margin:0 auto;padding:20px}
     .header{display:flex;align-items:center;gap:20px;margin-bottom:30px}

@@ -1,4 +1,4 @@
-import { Component, inject, OnInit } from '@angular/core';
+import { Component, inject, OnInit, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { MatCardModule } from '@angular/material/card';
@@ -31,84 +31,91 @@ import { SuperadminService, SuperadminOrgListItem } from '../../core/services/su
         <h1>System Administration</h1>
         <p class="subtitle">Manage all organizations across the platform</p>
       </div>
-
+    
       <mat-card>
         <mat-card-header>
           <mat-card-title>Organizations</mat-card-title>
           <mat-card-subtitle>{{ organizations.length }} total organizations</mat-card-subtitle>
         </mat-card-header>
         <mat-card-content>
-          <div *ngIf="loading" class="loading-container">
-            <mat-spinner diameter="40"></mat-spinner>
-          </div>
-
-          <div *ngIf="error" class="error-message">
-            <mat-icon>error</mat-icon>
-            <span>{{ error }}</span>
-            <button mat-button color="primary" (click)="loadOrganizations()">Retry</button>
-          </div>
-
-          <table mat-table [dataSource]="organizations" class="org-table" *ngIf="!loading && !error">
-            <ng-container matColumnDef="name">
-              <th mat-header-cell *matHeaderCellDef>Organization</th>
-              <td mat-cell *matCellDef="let org">
-                <div class="org-name-cell">
-                  <strong>{{ org.name }}</strong>
-                  <span class="slug">{{ org.slug }}</span>
-                </div>
-              </td>
-            </ng-container>
-
-            <ng-container matColumnDef="created_by">
-              <th mat-header-cell *matHeaderCellDef>Created By</th>
-              <td mat-cell *matCellDef="let org">{{ org.created_by_email || '—' }}</td>
-            </ng-container>
-
-            <ng-container matColumnDef="members">
-              <th mat-header-cell *matHeaderCellDef>Members</th>
-              <td mat-cell *matCellDef="let org">
-                <mat-chip>{{ org.member_count }}</mat-chip>
-              </td>
-            </ng-container>
-
-            <ng-container matColumnDef="last_activity">
-              <th mat-header-cell *matHeaderCellDef>Last Activity</th>
-              <td mat-cell *matCellDef="let org">
-                <span *ngIf="org.last_activity" [matTooltip]="(org.last_activity | date:'medium') || ''">
-                  {{ getRelativeTime(org.last_activity) }}
-                </span>
-                <span *ngIf="!org.last_activity" class="no-activity">No activity</span>
-              </td>
-            </ng-container>
-
-            <ng-container matColumnDef="created_at">
-              <th mat-header-cell *matHeaderCellDef>Created</th>
-              <td mat-cell *matCellDef="let org">{{ org.created_at | date:'mediumDate' }}</td>
-            </ng-container>
-
-            <ng-container matColumnDef="actions">
-              <th mat-header-cell *matHeaderCellDef></th>
-              <td mat-cell *matCellDef="let org">
-                <button mat-icon-button color="primary" (click)="viewOrganization(org)"
-                        matTooltip="View details">
-                  <mat-icon>visibility</mat-icon>
-                </button>
-              </td>
-            </ng-container>
-
-            <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
-            <tr mat-row *matRowDef="let row; columns: displayedColumns;"
-                class="org-row" (click)="viewOrganization(row)"></tr>
-          </table>
-
-          <div *ngIf="!loading && !error && organizations.length === 0" class="empty-state">
-            <mat-icon>business</mat-icon>
-            <p>No organizations found</p>
-          </div>
+          @if (loading) {
+            <div class="loading-container">
+              <mat-spinner diameter="40"></mat-spinner>
+            </div>
+          }
+    
+          @if (error) {
+            <div class="error-message">
+              <mat-icon>error</mat-icon>
+              <span>{{ error }}</span>
+              <button mat-button color="primary" (click)="loadOrganizations()">Retry</button>
+            </div>
+          }
+    
+          @if (!loading && !error) {
+            <table mat-table [dataSource]="organizations" class="org-table">
+              <ng-container matColumnDef="name">
+                <th mat-header-cell *matHeaderCellDef>Organization</th>
+                <td mat-cell *matCellDef="let org">
+                  <div class="org-name-cell">
+                    <strong>{{ org.name }}</strong>
+                    <span class="slug">{{ org.slug }}</span>
+                  </div>
+                </td>
+              </ng-container>
+              <ng-container matColumnDef="created_by">
+                <th mat-header-cell *matHeaderCellDef>Created By</th>
+                <td mat-cell *matCellDef="let org">{{ org.created_by_email || '—' }}</td>
+              </ng-container>
+              <ng-container matColumnDef="members">
+                <th mat-header-cell *matHeaderCellDef>Members</th>
+                <td mat-cell *matCellDef="let org">
+                  <mat-chip>{{ org.member_count }}</mat-chip>
+                </td>
+              </ng-container>
+              <ng-container matColumnDef="last_activity">
+                <th mat-header-cell *matHeaderCellDef>Last Activity</th>
+                <td mat-cell *matCellDef="let org">
+                  @if (org.last_activity) {
+                    <span [matTooltip]="(org.last_activity | date:'medium') || ''">
+                      {{ getRelativeTime(org.last_activity) }}
+                    </span>
+                  }
+                  @if (!org.last_activity) {
+                    <span class="no-activity">No activity</span>
+                  }
+                </td>
+              </ng-container>
+              <ng-container matColumnDef="created_at">
+                <th mat-header-cell *matHeaderCellDef>Created</th>
+                <td mat-cell *matCellDef="let org">{{ org.created_at | date:'mediumDate' }}</td>
+              </ng-container>
+              <ng-container matColumnDef="actions">
+                <th mat-header-cell *matHeaderCellDef></th>
+                <td mat-cell *matCellDef="let org">
+                  <button mat-icon-button color="primary" (click)="viewOrganization(org)"
+                    matTooltip="View details">
+                    <mat-icon>visibility</mat-icon>
+                  </button>
+                </td>
+              </ng-container>
+              <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+              <tr mat-row *matRowDef="let row; columns: displayedColumns;"
+              class="org-row" (click)="viewOrganization(row)"></tr>
+            </table>
+          }
+    
+          @if (!loading && !error && organizations.length === 0) {
+            <div class="empty-state">
+              <mat-icon>business</mat-icon>
+              <p>No organizations found</p>
+            </div>
+          }
         </mat-card-content>
       </mat-card>
     </div>
-  `,
+    `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
     .superadmin-container {
       max-width: 1200px;

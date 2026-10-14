@@ -1,5 +1,5 @@
-import { Component, Inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, Inject, ChangeDetectionStrategy } from '@angular/core';
+
 import { FormBuilder, FormGroup, Validators, ReactiveFormsModule } from '@angular/forms';
 import { MatDialogModule, MatDialogRef, MAT_DIALOG_DATA } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -12,82 +12,98 @@ import { HerettoCredential } from '../../core/services/credentials.service';
   selector: 'app-heretto-credential-dialog',
   standalone: true,
   imports: [
-    CommonModule,
     ReactiveFormsModule,
     MatDialogModule,
     MatFormFieldModule,
     MatInputModule,
     MatButtonModule,
     MatIconModule
-  ],
+],
   template: `
     <h2 mat-dialog-title>{{ data ? 'Edit' : 'Add' }} Heretto Credential</h2>
     <mat-dialog-content>
-      <div *ngIf="data" class="current-values">
-        <div class="info-box">
-          <mat-icon>info</mat-icon>
-          <span>Current credential details:</span>
+      @if (data) {
+        <div class="current-values">
+          <div class="info-box">
+            <mat-icon>info</mat-icon>
+            <span>Current credential details:</span>
+          </div>
+          <div class="credential-display">
+            <div class="field-display">
+              <strong>Server URL:</strong> {{ data.server_url }}
+            </div>
+            <div class="field-display">
+              <strong>Username:</strong> {{ data.username }}
+            </div>
+            <div class="field-display">
+              <strong>Token:</strong> {{ maskToken(data.token) }}
+            </div>
+          </div>
         </div>
-        <div class="credential-display">
-          <div class="field-display">
-            <strong>Server URL:</strong> {{ data.server_url }}
-          </div>
-          <div class="field-display">
-            <strong>Username:</strong> {{ data.username }}
-          </div>
-          <div class="field-display">
-            <strong>Token:</strong> {{ maskToken(data.token) }}
-          </div>
-        </div>
-      </div>
-
+      }
+    
       <form [formGroup]="form">
         <mat-form-field appearance="outline" class="full-width">
           <mat-label>Name</mat-label>
           <input matInput formControlName="name" required>
-          <mat-error *ngIf="form.get('name')?.hasError('required')">
-            Name is required
-          </mat-error>
+          @if (form.get('name')?.hasError('required')) {
+            <mat-error>
+              Name is required
+            </mat-error>
+          }
         </mat-form-field>
-
+    
         <mat-form-field appearance="outline" class="full-width">
           <mat-label>Server URL</mat-label>
           <input matInput formControlName="server_url"
-                 placeholder="https://your-heretto-instance.com" required>
-          <mat-hint *ngIf="data">Leave unchanged or enter new URL</mat-hint>
-          <mat-error *ngIf="form.get('server_url')?.hasError('required')">
-            Server URL is required
-          </mat-error>
-        </mat-form-field>
-
-        <mat-form-field appearance="outline" class="full-width">
-          <mat-label>Username</mat-label>
-          <input matInput formControlName="username" required>
-          <mat-hint *ngIf="data">Leave unchanged or enter new username</mat-hint>
-          <mat-error *ngIf="form.get('username')?.hasError('required')">
-            Username is required
-          </mat-error>
-        </mat-form-field>
-
-        <mat-form-field appearance="outline" class="full-width">
-          <mat-label>Token</mat-label>
-          <input matInput type="password" formControlName="token"
-                 [placeholder]="data ? 'Enter new token (leave empty to keep current)' : 'Enter token'"
-                 [required]="!data">
-          <mat-hint *ngIf="data">Leave empty to keep current token</mat-hint>
-          <mat-error *ngIf="form.get('token')?.hasError('required')">
-            Token is required
-          </mat-error>
-        </mat-form-field>
-      </form>
-    </mat-dialog-content>
-    <mat-dialog-actions align="end">
-      <button mat-button (click)="onCancel()">Cancel</button>
-      <button mat-raised-button color="primary"
-              [disabled]="!form.valid"
-              (click)="onSave()">Save</button>
-    </mat-dialog-actions>
-  `,
+            placeholder="https://your-heretto-instance.com" required>
+            @if (data) {
+              <mat-hint>Leave unchanged or enter new URL</mat-hint>
+            }
+            @if (form.get('server_url')?.hasError('required')) {
+              <mat-error>
+                Server URL is required
+              </mat-error>
+            }
+          </mat-form-field>
+    
+          <mat-form-field appearance="outline" class="full-width">
+            <mat-label>Username</mat-label>
+            <input matInput formControlName="username" required>
+            @if (data) {
+              <mat-hint>Leave unchanged or enter new username</mat-hint>
+            }
+            @if (form.get('username')?.hasError('required')) {
+              <mat-error>
+                Username is required
+              </mat-error>
+            }
+          </mat-form-field>
+    
+          <mat-form-field appearance="outline" class="full-width">
+            <mat-label>Token</mat-label>
+            <input matInput type="password" formControlName="token"
+              [placeholder]="data ? 'Enter new token (leave empty to keep current)' : 'Enter token'"
+              [required]="!data">
+            @if (data) {
+              <mat-hint>Leave empty to keep current token</mat-hint>
+            }
+            @if (form.get('token')?.hasError('required')) {
+              <mat-error>
+                Token is required
+              </mat-error>
+            }
+          </mat-form-field>
+        </form>
+      </mat-dialog-content>
+      <mat-dialog-actions align="end">
+        <button mat-button (click)="onCancel()">Cancel</button>
+        <button mat-raised-button color="primary"
+          [disabled]="!form.valid"
+        (click)="onSave()">Save</button>
+      </mat-dialog-actions>
+    `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
     mat-dialog-content {
       padding-top: 20px;

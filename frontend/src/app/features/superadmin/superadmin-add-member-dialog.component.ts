@@ -1,5 +1,5 @@
-import { Component, inject, Inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, inject, Inject, ChangeDetectionStrategy } from '@angular/core';
+
 import { FormBuilder, Validators, ReactiveFormsModule } from '@angular/forms';
 import { MatDialogModule, MatDialogRef, MAT_DIALOG_DATA } from '@angular/material/dialog';
 import { MatButtonModule } from '@angular/material/button';
@@ -22,15 +22,14 @@ export interface AddMemberDialogResult {
   selector: 'app-superadmin-add-member-dialog',
   standalone: true,
   imports: [
-    CommonModule,
     ReactiveFormsModule,
     MatDialogModule,
     MatButtonModule,
     MatFormFieldModule,
     MatInputModule,
     MatSelectModule,
-    MatTabsModule,
-  ],
+    MatTabsModule
+],
   template: `
     <h2 mat-dialog-title>Add Member to {{ data.orgName }}</h2>
     <mat-dialog-content>
@@ -42,8 +41,12 @@ export interface AddMemberDialogResult {
               <mat-form-field appearance="outline" class="full-width">
                 <mat-label>Email Address</mat-label>
                 <input matInput type="email" formControlName="email" required>
-                <mat-error *ngIf="addForm.get('email')?.hasError('required')">Email is required</mat-error>
-                <mat-error *ngIf="addForm.get('email')?.hasError('email')">Enter a valid email</mat-error>
+                @if (addForm.get('email')?.hasError('required')) {
+                  <mat-error>Email is required</mat-error>
+                }
+                @if (addForm.get('email')?.hasError('email')) {
+                  <mat-error>Enter a valid email</mat-error>
+                }
               </mat-form-field>
               <mat-form-field appearance="outline" class="full-width">
                 <mat-label>Role</mat-label>
@@ -62,8 +65,12 @@ export interface AddMemberDialogResult {
               <mat-form-field appearance="outline" class="full-width">
                 <mat-label>Email Address</mat-label>
                 <input matInput type="email" formControlName="email" required>
-                <mat-error *ngIf="inviteForm.get('email')?.hasError('required')">Email is required</mat-error>
-                <mat-error *ngIf="inviteForm.get('email')?.hasError('email')">Enter a valid email</mat-error>
+                @if (inviteForm.get('email')?.hasError('required')) {
+                  <mat-error>Email is required</mat-error>
+                }
+                @if (inviteForm.get('email')?.hasError('email')) {
+                  <mat-error>Enter a valid email</mat-error>
+                }
               </mat-form-field>
               <mat-form-field appearance="outline" class="full-width">
                 <mat-label>Role</mat-label>
@@ -80,12 +87,13 @@ export interface AddMemberDialogResult {
     <mat-dialog-actions align="end">
       <button mat-button (click)="onCancel()">Cancel</button>
       <button mat-raised-button color="primary"
-              [disabled]="!isValid()"
-              (click)="onSubmit()">
+        [disabled]="!isValid()"
+        (click)="onSubmit()">
         {{ selectedTab === 0 ? 'Add User' : 'Send Invitation' }}
       </button>
     </mat-dialog-actions>
-  `,
+    `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
     .full-width {
       width: 100%;
