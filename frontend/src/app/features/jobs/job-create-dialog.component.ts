@@ -1,5 +1,5 @@
-import { Component, Inject, OnInit } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, Inject, OnInit, ChangeDetectionStrategy } from '@angular/core';
+
 import { FormBuilder, FormGroup, Validators, ReactiveFormsModule } from '@angular/forms';
 import { MatDialogModule, MatDialogRef, MAT_DIALOG_DATA } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -17,104 +17,121 @@ import { CredentialsService, AICredential } from '../../core/services/credential
   selector: 'app-job-create-dialog',
   standalone: true,
   imports: [
-    CommonModule,
     ReactiveFormsModule,
     MatDialogModule,
     MatFormFieldModule,
     MatInputModule,
     MatButtonModule,
     MatIconModule,
-
     MatProgressSpinnerModule,
     MatSelectModule
-  ],
+],
   template: `
     <h2 mat-dialog-title>
       <mat-icon>rocket_launch</mat-icon>
       Generate Release Notes
     </h2>
-
+    
     <mat-dialog-content>
       <form [formGroup]="form">
         <mat-form-field appearance="outline" class="full-width">
           <mat-label>Instruction Set</mat-label>
           <mat-select formControlName="instruction_set_id" required>
-            <mat-option *ngFor="let ins of instructionSets" [value]="ins.id">
-              {{ ins.name }}
-              <span *ngIf="ins.is_default"> (Default)</span>
-            </mat-option>
+            @for (ins of instructionSets; track ins) {
+              <mat-option [value]="ins.id">
+                {{ ins.name }}
+                @if (ins.is_default) {
+                  <span> (Default)</span>
+                }
+              </mat-option>
+            }
           </mat-select>
           <mat-hint>Select which instruction set to use</mat-hint>
         </mat-form-field>
-
-        <div *ngIf="selectedInstructionSet" class="jql-preview">
-          <p class="jql-display">{{ selectedInstructionSet.jql_query }}</p>
-        </div>
-
-        <div *ngIf="selectedInstructionSet?.publish_to_heretto" class="heretto-notice">
-          <mat-icon>cloud_upload</mat-icon>
-          <span>Output will be published to Heretto CCMS</span>
-        </div>
-
+    
+        @if (selectedInstructionSet) {
+          <div class="jql-preview">
+            <p class="jql-display">{{ selectedInstructionSet.jql_query }}</p>
+          </div>
+        }
+    
+        @if (selectedInstructionSet?.publish_to_heretto) {
+          <div class="heretto-notice">
+            <mat-icon>cloud_upload</mat-icon>
+            <span>Output will be published to Heretto CCMS</span>
+          </div>
+        }
+    
         <mat-form-field appearance="outline" class="full-width">
           <mat-label>AI Model (Optional)</mat-label>
           <mat-select formControlName="ai_credential_id">
             <mat-option value="">Use Default</mat-option>
-            <mat-option *ngFor="let cred of aiCredentials" [value]="cred.id">
-              {{ cred.name }} ({{ cred.provider }})
-            </mat-option>
+            @for (cred of aiCredentials; track cred) {
+              <mat-option [value]="cred.id">
+                {{ cred.name }} ({{ cred.provider }})
+              </mat-option>
+            }
           </mat-select>
           <mat-hint>Select which AI model to use for generation</mat-hint>
         </mat-form-field>
-
+    
         <mat-form-field appearance="outline" class="full-width">
           <mat-label>Output Filename</mat-label>
           <input matInput formControlName="output_filename"
-                 placeholder="release-notes-v2.0.xml" required>
+            placeholder="release-notes-v2.0.xml" required>
           <mat-hint>Name for the generated DITA file</mat-hint>
-          <mat-error *ngIf="form.get('output_filename')?.hasError('required')">
-            Output filename is required
-          </mat-error>
+          @if (form.get('output_filename')?.hasError('required')) {
+            <mat-error>
+              Output filename is required
+            </mat-error>
+          }
         </mat-form-field>
-
+    
         <mat-form-field appearance="outline" class="full-width">
           <mat-label>Additional Instructions (Optional)</mat-label>
           <textarea matInput formControlName="additional_instructions"
-                    rows="4"
-                    placeholder="Any specific requirements or customizations for this release note..."></textarea>
+            rows="4"
+          placeholder="Any specific requirements or customizations for this release note..."></textarea>
           <mat-hint>Extra context or requirements for the AI</mat-hint>
         </mat-form-field>
-
+    
         <mat-form-field appearance="outline" class="full-width">
           <mat-label>Custom JQL Query (Optional)</mat-label>
           <textarea matInput formControlName="jql_query"
-                    rows="2"
-                    placeholder="Leave empty to use instruction set's default query"></textarea>
+            rows="2"
+          placeholder="Leave empty to use instruction set's default query"></textarea>
           <mat-hint>Override the instruction set's JQL query for this job</mat-hint>
         </mat-form-field>
-
+    
         <mat-form-field appearance="outline" class="full-width">
           <mat-label>Maximum Tickets to Process (Optional)</mat-label>
           <input matInput formControlName="max_tickets"
-                 type="number" min="1" max="1000"
-                 placeholder="Leave empty for default (100)">
+            type="number" min="1" max="1000"
+            placeholder="Leave empty for default (100)">
           <mat-hint>Limit the number of tickets to process (default: 100, max: 1000)</mat-hint>
         </mat-form-field>
-
+    
       </form>
     </mat-dialog-content>
-
+    
     <mat-dialog-actions align="end">
       <button mat-button (click)="onCancel()">Cancel</button>
       <button mat-raised-button color="primary"
-              [disabled]="!form.valid || creating"
-              (click)="onCreate()">
-        <mat-spinner *ngIf="creating" diameter="20" class="inline-spinner"></mat-spinner>
-        <mat-icon *ngIf="!creating">play_arrow</mat-icon>
-        <span *ngIf="!creating">Generate Release Notes</span>
+        [disabled]="!form.valid || creating"
+        (click)="onCreate()">
+        @if (creating) {
+          <mat-spinner diameter="20" class="inline-spinner"></mat-spinner>
+        }
+        @if (!creating) {
+          <mat-icon>play_arrow</mat-icon>
+        }
+        @if (!creating) {
+          <span>Generate Release Notes</span>
+        }
       </button>
     </mat-dialog-actions>
-  `,
+    `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
     mat-dialog-content {
       min-width: 500px;

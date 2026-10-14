@@ -1,7 +1,8 @@
 {
   "compileOnSave": false,
   "compilerOptions": {
-    "baseUrl": "./",
+    // No "baseUrl": deprecated in TypeScript 6 (TS5101). The "paths" below still
+    // work — since TS 5.0 they resolve relative to this file's directory.
     "outDir": "./dist/out-tsc",
     "forceConsistentCasingInFileNames": true,
     "strict": true,
@@ -11,20 +12,31 @@
     "noFallthroughCasesInSwitch": true,
     "sourceMap": true,
     "declaration": false,
-    "downlevelIteration": true,
+    // "downlevelIteration" removed: deprecated in TypeScript 6 (TS5101) and a
+    // no-op at "target": "ES2022", which iterates natively.
     "experimentalDecorators": true,
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "importHelpers": true,
     "target": "ES2022",
     "module": "ES2022",
     "useDefineForClassFields": false,
-    "lib": ["ES2022", "dom"],
+    // Targets must be relative ("./…") now that "baseUrl" is gone (TS5090).
     "paths": {
-      "@app/*": ["src/app/*"],
-      "@core/*": ["src/app/core/*"],
-      "@features/*": ["src/app/features/*"],
-      "@shared/*": ["src/app/shared/*"],
-      "@environments/*": ["src/environments/*"]
+      "@app/*": [
+        "./src/app/*"
+      ],
+      "@core/*": [
+        "./src/app/core/*"
+      ],
+      "@features/*": [
+        "./src/app/features/*"
+      ],
+      "@shared/*": [
+        "./src/app/shared/*"
+      ],
+      "@environments/*": [
+        "./src/environments/*"
+      ]
     }
   },
   "angularCompilerOptions": {

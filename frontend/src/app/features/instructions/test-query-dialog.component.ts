@@ -1,5 +1,5 @@
-import { Component, Inject, OnInit, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, Inject, OnInit, inject, ChangeDetectionStrategy } from '@angular/core';
+
 import { MatDialogModule, MatDialogRef, MAT_DIALOG_DATA } from '@angular/material/dialog';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -46,7 +46,6 @@ interface TestResult {
   selector: 'app-test-query-dialog',
   standalone: true,
   imports: [
-    CommonModule,
     FormsModule,
     MatDialogModule,
     MatButtonModule,
@@ -58,197 +57,226 @@ interface TestResult {
     MatSelectModule,
     MatDividerModule,
     MatSnackBarModule
-  ],
+],
   template: `
     <h2 mat-dialog-title>
       <mat-icon>bug_report</mat-icon>
       Test JQL Query
     </h2>
-
+    
     <mat-dialog-content>
       <!-- Credential Selection -->
-      <div class="credential-section" *ngIf="!testing && !testResult">
-        <h3>Select Jira Credentials</h3>
-        
-        <div *ngIf="loadingCredentials" class="loading">
-          <mat-spinner diameter="30"></mat-spinner>
-          <p>Loading credentials...</p>
-        </div>
-
-        <div *ngIf="!loadingCredentials && jiraCredentials.length === 0" class="no-credentials">
-          <mat-icon>warning</mat-icon>
-          <p>No Jira credentials configured</p>
-          <p class="hint">Please add Jira credentials in the Credentials section first.</p>
-        </div>
-
-        <mat-form-field *ngIf="!loadingCredentials && jiraCredentials.length > 0" appearance="outline" class="full-width">
-          <mat-label>Jira Credential</mat-label>
-          <mat-select [(ngModel)]="selectedCredentialId">
-            <mat-option *ngFor="let cred of jiraCredentials" [value]="cred.id">
-              {{ cred.name }} ({{ cred.server_url }})
-            </mat-option>
-          </mat-select>
-        </mat-form-field>
-
-        <div class="query-info">
-          <h4>Query to Test:</h4>
-          <pre class="jql-query">{{ data.jql_query }}</pre>
-        </div>
-      </div>
-
-      <!-- Testing State -->
-      <div *ngIf="testing" class="testing-state">
-        <mat-spinner></mat-spinner>
-        <h3>Testing Query...</h3>
-        <p>Executing: {{ data.jql_query }}</p>
-        <p class="hint">This may take a few seconds depending on your Jira instance.</p>
-      </div>
-
-      <!-- Test Results -->
-      <div *ngIf="testResult" class="results-section">
-        <!-- Success Header -->
-        <div class="result-header" [class.success]="testResult.success" [class.error]="!testResult.success">
-          <mat-icon>{{ testResult.success ? 'check_circle' : 'error' }}</mat-icon>
-          <div>
-            <h3>{{ testResult.success ? 'Query Successful' : 'Query Failed' }}</h3>
-            <p>{{ testResult.message }}</p>
-          </div>
-        </div>
-
-        <!-- Connection Info -->
-        <div *ngIf="testResult.jira_credential" class="connection-info">
-          <p><strong>Server:</strong> {{ testResult.jira_credential.server }}</p>
-          <p><strong>Credential:</strong> {{ testResult.jira_credential.name }}</p>
-        </div>
-
-        <mat-divider></mat-divider>
-
-        <!-- Error Details -->
-        <div *ngIf="!testResult.success && testResult.error" class="error-details">
-          <h4>Error Details:</h4>
-          <pre class="error-message">{{ testResult.error }}</pre>
-        </div>
-
-        <!-- Issues Table -->
-        <div *ngIf="testResult.success && testResult.results" class="issues-section">
-          <h4>
-            Found {{ testResult.results.total_found }} issue(s)
-            <span *ngIf="testResult.results.total_found > testResult.results.limited_to">
-              (showing first {{ testResult.results.limited_to }})
-            </span>
-          </h4>
-
-          <div *ngIf="testResult.results.issues.length === 0" class="no-issues">
-            <mat-icon>inbox</mat-icon>
-            <p>No issues match this query</p>
-          </div>
-
-          <table mat-table [dataSource]="testResult.results.issues" class="issues-table" 
-                 *ngIf="testResult.results.issues.length > 0">
-            
-            <!-- Key Column -->
-            <ng-container matColumnDef="key">
-              <th mat-header-cell *matHeaderCellDef>Key</th>
-              <td mat-cell *matCellDef="let issue">
-                <strong>{{ issue.key }}</strong>
-              </td>
-            </ng-container>
-
-            <!-- Summary Column -->
-            <ng-container matColumnDef="summary">
-              <th mat-header-cell *matHeaderCellDef>Summary</th>
-              <td mat-cell *matCellDef="let issue" class="summary-cell">
-                {{ issue.summary }}
-              </td>
-            </ng-container>
-
-            <!-- Type Column -->
-            <ng-container matColumnDef="type">
-              <th mat-header-cell *matHeaderCellDef>Type</th>
-              <td mat-cell *matCellDef="let issue">
-                <mat-chip size="small">{{ issue.type }}</mat-chip>
-              </td>
-            </ng-container>
-
-            <!-- Status Column -->
-            <ng-container matColumnDef="status">
-              <th mat-header-cell *matHeaderCellDef>Status</th>
-              <td mat-cell *matCellDef="let issue">
-                <mat-chip size="small" [class]="getStatusClass(issue.status)">
-                  {{ issue.status }}
-                </mat-chip>
-              </td>
-            </ng-container>
-
-            <!-- Priority Column -->
-            <ng-container matColumnDef="priority">
-              <th mat-header-cell *matHeaderCellDef>Priority</th>
-              <td mat-cell *matCellDef="let issue">
-                <mat-chip size="small" *ngIf="issue.priority" 
-                          [class]="getPriorityClass(issue.priority)">
-                  {{ issue.priority }}
-                </mat-chip>
-                <span *ngIf="!issue.priority">-</span>
-              </td>
-            </ng-container>
-
-            <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
-            <tr mat-row *matRowDef="let row; columns: displayedColumns;"></tr>
-          </table>
-
-          <!-- Expanded Details -->
-          <mat-expansion-panel *ngIf="testResult.results.issues.length > 0" class="details-panel">
-            <mat-expansion-panel-header>
-              <mat-panel-title>
-                <mat-icon>info</mat-icon>
-                Additional Details
-              </mat-panel-title>
-            </mat-expansion-panel-header>
-            
-            <div class="issue-details" *ngFor="let issue of testResult.results.issues">
-              <h5>{{ issue.key }}: {{ issue.summary }}</h5>
-              
-              <div class="detail-row" *ngIf="issue.labels && issue.labels.length > 0">
-                <strong>Labels:</strong>
-                <div class="chip-list">
-                  <mat-chip *ngFor="let label of issue.labels" size="small">{{ label }}</mat-chip>
-                </div>
-              </div>
-              
-              <div class="detail-row" *ngIf="issue.components && issue.components.length > 0">
-                <strong>Components:</strong>
-                <div class="chip-list">
-                  <mat-chip *ngFor="let component of issue.components" size="small">{{ component }}</mat-chip>
-                </div>
-              </div>
-              
-              <div class="detail-row" *ngIf="issue.created">
-                <strong>Created:</strong>
-                <span>{{ formatDate(issue.created) }}</span>
-              </div>
-              
-              <mat-divider></mat-divider>
+      @if (!testing && !testResult) {
+        <div class="credential-section">
+          <h3>Select Jira Credentials</h3>
+          @if (loadingCredentials) {
+            <div class="loading">
+              <mat-spinner diameter="30"></mat-spinner>
+              <p>Loading credentials...</p>
             </div>
-          </mat-expansion-panel>
+          }
+          @if (!loadingCredentials && jiraCredentials.length === 0) {
+            <div class="no-credentials">
+              <mat-icon>warning</mat-icon>
+              <p>No Jira credentials configured</p>
+              <p class="hint">Please add Jira credentials in the Credentials section first.</p>
+            </div>
+          }
+          @if (!loadingCredentials && jiraCredentials.length > 0) {
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Jira Credential</mat-label>
+              <mat-select [(ngModel)]="selectedCredentialId">
+                @for (cred of jiraCredentials; track cred) {
+                  <mat-option [value]="cred.id">
+                    {{ cred.name }} ({{ cred.server_url }})
+                  </mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+          }
+          <div class="query-info">
+            <h4>Query to Test:</h4>
+            <pre class="jql-query">{{ data.jql_query }}</pre>
+          </div>
         </div>
-      </div>
+      }
+    
+      <!-- Testing State -->
+      @if (testing) {
+        <div class="testing-state">
+          <mat-spinner></mat-spinner>
+          <h3>Testing Query...</h3>
+          <p>Executing: {{ data.jql_query }}</p>
+          <p class="hint">This may take a few seconds depending on your Jira instance.</p>
+        </div>
+      }
+    
+      <!-- Test Results -->
+      @if (testResult) {
+        <div class="results-section">
+          <!-- Success Header -->
+          <div class="result-header" [class.success]="testResult.success" [class.error]="!testResult.success">
+            <mat-icon>{{ testResult.success ? 'check_circle' : 'error' }}</mat-icon>
+            <div>
+              <h3>{{ testResult.success ? 'Query Successful' : 'Query Failed' }}</h3>
+              <p>{{ testResult.message }}</p>
+            </div>
+          </div>
+          <!-- Connection Info -->
+          @if (testResult.jira_credential) {
+            <div class="connection-info">
+              <p><strong>Server:</strong> {{ testResult.jira_credential.server }}</p>
+              <p><strong>Credential:</strong> {{ testResult.jira_credential.name }}</p>
+            </div>
+          }
+          <mat-divider></mat-divider>
+          <!-- Error Details -->
+          @if (!testResult.success && testResult.error) {
+            <div class="error-details">
+              <h4>Error Details:</h4>
+              <pre class="error-message">{{ testResult.error }}</pre>
+            </div>
+          }
+          <!-- Issues Table -->
+          @if (testResult.success && testResult.results) {
+            <div class="issues-section">
+              <h4>
+                Found {{ testResult.results.total_found }} issue(s)
+                @if (testResult.results.total_found > testResult.results.limited_to) {
+                  <span>
+                    (showing first {{ testResult.results.limited_to }})
+                  </span>
+                }
+              </h4>
+              @if (testResult.results.issues.length === 0) {
+                <div class="no-issues">
+                  <mat-icon>inbox</mat-icon>
+                  <p>No issues match this query</p>
+                </div>
+              }
+              @if (testResult.results.issues.length > 0) {
+                <table mat-table [dataSource]="testResult.results.issues" class="issues-table"
+                  >
+                  <!-- Key Column -->
+                  <ng-container matColumnDef="key">
+                    <th mat-header-cell *matHeaderCellDef>Key</th>
+                    <td mat-cell *matCellDef="let issue">
+                      <strong>{{ issue.key }}</strong>
+                    </td>
+                  </ng-container>
+                  <!-- Summary Column -->
+                  <ng-container matColumnDef="summary">
+                    <th mat-header-cell *matHeaderCellDef>Summary</th>
+                    <td mat-cell *matCellDef="let issue" class="summary-cell">
+                      {{ issue.summary }}
+                    </td>
+                  </ng-container>
+                  <!-- Type Column -->
+                  <ng-container matColumnDef="type">
+                    <th mat-header-cell *matHeaderCellDef>Type</th>
+                    <td mat-cell *matCellDef="let issue">
+                      <mat-chip size="small">{{ issue.type }}</mat-chip>
+                    </td>
+                  </ng-container>
+                  <!-- Status Column -->
+                  <ng-container matColumnDef="status">
+                    <th mat-header-cell *matHeaderCellDef>Status</th>
+                    <td mat-cell *matCellDef="let issue">
+                      <mat-chip size="small" [class]="getStatusClass(issue.status)">
+                        {{ issue.status }}
+                      </mat-chip>
+                    </td>
+                  </ng-container>
+                  <!-- Priority Column -->
+                  <ng-container matColumnDef="priority">
+                    <th mat-header-cell *matHeaderCellDef>Priority</th>
+                    <td mat-cell *matCellDef="let issue">
+                      @if (issue.priority) {
+                        <mat-chip size="small"
+                          [class]="getPriorityClass(issue.priority)">
+                          {{ issue.priority }}
+                        </mat-chip>
+                      }
+                      @if (!issue.priority) {
+                        <span>-</span>
+                      }
+                    </td>
+                  </ng-container>
+                  <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+                  <tr mat-row *matRowDef="let row; columns: displayedColumns;"></tr>
+                </table>
+              }
+              <!-- Expanded Details -->
+              @if (testResult.results.issues.length > 0) {
+                <mat-expansion-panel class="details-panel">
+                  <mat-expansion-panel-header>
+                    <mat-panel-title>
+                      <mat-icon>info</mat-icon>
+                      Additional Details
+                    </mat-panel-title>
+                  </mat-expansion-panel-header>
+                  @for (issue of testResult.results.issues; track issue) {
+                    <div class="issue-details">
+                      <h5>{{ issue.key }}: {{ issue.summary }}</h5>
+                      @if (issue.labels && issue.labels.length > 0) {
+                        <div class="detail-row">
+                          <strong>Labels:</strong>
+                          <div class="chip-list">
+                            @for (label of issue.labels; track label) {
+                              <mat-chip size="small">{{ label }}</mat-chip>
+                            }
+                          </div>
+                        </div>
+                      }
+                      @if (issue.components && issue.components.length > 0) {
+                        <div class="detail-row">
+                          <strong>Components:</strong>
+                          <div class="chip-list">
+                            @for (component of issue.components; track component) {
+                              <mat-chip size="small">{{ component }}</mat-chip>
+                            }
+                          </div>
+                        </div>
+                      }
+                      @if (issue.created) {
+                        <div class="detail-row">
+                          <strong>Created:</strong>
+                          <span>{{ formatDate(issue.created) }}</span>
+                        </div>
+                      }
+                      <mat-divider></mat-divider>
+                    </div>
+                  }
+                </mat-expansion-panel>
+              }
+            </div>
+          }
+        </div>
+      }
     </mat-dialog-content>
-
+    
     <mat-dialog-actions align="end">
-      <button mat-button (click)="close()" *ngIf="!testing">Close</button>
-      <button mat-button (click)="reset()" *ngIf="testResult && !testing">
-        <mat-icon>refresh</mat-icon>
-        Test Again
-      </button>
-      <button mat-raised-button color="primary" 
-              (click)="runTest()"
-              [disabled]="!selectedCredentialId || testing"
-              *ngIf="!testResult && jiraCredentials.length > 0">
-        <mat-icon>play_arrow</mat-icon>
-        Run Test
-      </button>
+      @if (!testing) {
+        <button mat-button (click)="close()">Close</button>
+      }
+      @if (testResult && !testing) {
+        <button mat-button (click)="reset()">
+          <mat-icon>refresh</mat-icon>
+          Test Again
+        </button>
+      }
+      @if (!testResult && jiraCredentials.length > 0) {
+        <button mat-raised-button color="primary"
+          (click)="runTest()"
+          [disabled]="!selectedCredentialId || testing"
+          >
+          <mat-icon>play_arrow</mat-icon>
+          Run Test
+        </button>
+      }
     </mat-dialog-actions>
-  `,
+    `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
     mat-dialog-content {
       min-width: 700px;

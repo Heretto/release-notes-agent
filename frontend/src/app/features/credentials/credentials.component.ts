@@ -1,5 +1,5 @@
-import { Component, OnInit, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, OnInit, inject, ChangeDetectionStrategy } from '@angular/core';
+
 import { MatCardModule } from '@angular/material/card';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -23,7 +23,6 @@ import { TestResultsDialogComponent } from './test-results-dialog.component';
   selector: 'app-credentials',
   standalone: true,
   imports: [
-    CommonModule,
     MatCardModule,
     MatButtonModule,
     MatIconModule,
@@ -32,11 +31,11 @@ import { TestResultsDialogComponent } from './test-results-dialog.component';
     MatDialogModule,
     MatSnackBarModule,
     MatProgressSpinnerModule
-  ],
+],
   template: `
     <div class="credentials-container">
       <h1>Credentials Management</h1>
-      
+    
       <mat-card>
         <mat-card-content>
           <mat-tab-group>
@@ -49,61 +48,67 @@ import { TestResultsDialogComponent } from './test-results-dialog.component';
                     Add Jira Credentials
                   </button>
                 </div>
-
-                <div *ngIf="loadingJira" class="loading-container">
-                  <mat-spinner></mat-spinner>
-                </div>
-
-                <table mat-table [dataSource]="jiraCredentials" class="full-width" *ngIf="!loadingJira">
-                  <ng-container matColumnDef="name">
-                    <th mat-header-cell *matHeaderCellDef>Name</th>
-                    <td mat-cell *matCellDef="let element">{{ element.name }}</td>
-                  </ng-container>
-
-                  <ng-container matColumnDef="server_url">
-                    <th mat-header-cell *matHeaderCellDef>Server URL</th>
-                    <td mat-cell *matCellDef="let element">{{ element.server_url }}</td>
-                  </ng-container>
-
-                  <ng-container matColumnDef="email">
-                    <th mat-header-cell *matHeaderCellDef>Email</th>
-                    <td mat-cell *matCellDef="let element">{{ element.email }}</td>
-                  </ng-container>
-
-                  <ng-container matColumnDef="actions">
-                    <th mat-header-cell *matHeaderCellDef>Actions</th>
-                    <td mat-cell *matCellDef="let element">
-                      <button mat-icon-button color="accent" 
-                              (click)="testJiraCredential(element)"
-                              matTooltip="Test Connection"
-                              [disabled]="testingCredential === element.id">
-                        <mat-icon *ngIf="testingCredential !== element.id">speed</mat-icon>
-                        <mat-spinner *ngIf="testingCredential === element.id" 
-                                     diameter="20"></mat-spinner>
-                      </button>
-                      <button mat-icon-button color="primary" 
-                              (click)="editJiraCredential(element)"
-                              matTooltip="Edit">
-                        <mat-icon>edit</mat-icon>
-                      </button>
-                      <button mat-icon-button color="warn" 
-                              (click)="deleteJiraCredential(element)"
-                              matTooltip="Delete">
-                        <mat-icon>delete</mat-icon>
-                      </button>
-                    </td>
-                  </ng-container>
-
-                  <tr mat-header-row *matHeaderRowDef="jiraColumns"></tr>
-                  <tr mat-row *matRowDef="let row; columns: jiraColumns;"></tr>
-                </table>
-
-                <p *ngIf="jiraCredentials.length === 0 && !loadingJira" class="no-data">
-                  No Jira credentials configured. Click "Add Jira Credentials" to get started.
-                </p>
+    
+                @if (loadingJira) {
+                  <div class="loading-container">
+                    <mat-spinner></mat-spinner>
+                  </div>
+                }
+    
+                @if (!loadingJira) {
+                  <table mat-table [dataSource]="jiraCredentials" class="full-width">
+                    <ng-container matColumnDef="name">
+                      <th mat-header-cell *matHeaderCellDef>Name</th>
+                      <td mat-cell *matCellDef="let element">{{ element.name }}</td>
+                    </ng-container>
+                    <ng-container matColumnDef="server_url">
+                      <th mat-header-cell *matHeaderCellDef>Server URL</th>
+                      <td mat-cell *matCellDef="let element">{{ element.server_url }}</td>
+                    </ng-container>
+                    <ng-container matColumnDef="email">
+                      <th mat-header-cell *matHeaderCellDef>Email</th>
+                      <td mat-cell *matCellDef="let element">{{ element.email }}</td>
+                    </ng-container>
+                    <ng-container matColumnDef="actions">
+                      <th mat-header-cell *matHeaderCellDef>Actions</th>
+                      <td mat-cell *matCellDef="let element">
+                        <button mat-icon-button color="accent"
+                          (click)="testJiraCredential(element)"
+                          matTooltip="Test Connection"
+                          [disabled]="testingCredential === element.id">
+                          @if (testingCredential !== element.id) {
+                            <mat-icon>speed</mat-icon>
+                          }
+                          @if (testingCredential === element.id) {
+                            <mat-spinner
+                            diameter="20"></mat-spinner>
+                          }
+                        </button>
+                        <button mat-icon-button color="primary"
+                          (click)="editJiraCredential(element)"
+                          matTooltip="Edit">
+                          <mat-icon>edit</mat-icon>
+                        </button>
+                        <button mat-icon-button color="warn"
+                          (click)="deleteJiraCredential(element)"
+                          matTooltip="Delete">
+                          <mat-icon>delete</mat-icon>
+                        </button>
+                      </td>
+                    </ng-container>
+                    <tr mat-header-row *matHeaderRowDef="jiraColumns"></tr>
+                    <tr mat-row *matRowDef="let row; columns: jiraColumns;"></tr>
+                  </table>
+                }
+    
+                @if (jiraCredentials.length === 0 && !loadingJira) {
+                  <p class="no-data">
+                    No Jira credentials configured. Click "Add Jira Credentials" to get started.
+                  </p>
+                }
               </div>
             </mat-tab>
-            
+    
             <mat-tab label="AI Providers">
               <div class="tab-content">
                 <div class="header-row">
@@ -113,63 +118,69 @@ import { TestResultsDialogComponent } from './test-results-dialog.component';
                     Add AI Credentials
                   </button>
                 </div>
-
-                <div *ngIf="loadingAI" class="loading-container">
-                  <mat-spinner></mat-spinner>
-                </div>
-
-                <table mat-table [dataSource]="aiCredentials" class="full-width" *ngIf="!loadingAI && aiCredentials.length > 0">
-                  <ng-container matColumnDef="name">
-                    <th mat-header-cell *matHeaderCellDef>Name</th>
-                    <td mat-cell *matCellDef="let element">{{ element.name }}</td>
-                  </ng-container>
-
-                  <ng-container matColumnDef="provider">
-                    <th mat-header-cell *matHeaderCellDef>Provider</th>
-                    <td mat-cell *matCellDef="let element">
-                      <span class="provider-badge">{{ formatProvider(element.provider) }}</span>
-                    </td>
-                  </ng-container>
-
-                  <ng-container matColumnDef="model">
-                    <th mat-header-cell *matHeaderCellDef>Model</th>
-                    <td mat-cell *matCellDef="let element">{{ element.model || 'Default' }}</td>
-                  </ng-container>
-
-                  <ng-container matColumnDef="actions">
-                    <th mat-header-cell *matHeaderCellDef>Actions</th>
-                    <td mat-cell *matCellDef="let element">
-                      <button mat-icon-button color="accent" 
-                              (click)="testAICredential(element)"
-                              matTooltip="Test Connection"
-                              [disabled]="testingCredential === element.id">
-                        <mat-icon *ngIf="testingCredential !== element.id">speed</mat-icon>
-                        <mat-spinner *ngIf="testingCredential === element.id" 
-                                     diameter="20"></mat-spinner>
-                      </button>
-                      <button mat-icon-button color="primary" 
-                              (click)="editAICredential(element)"
-                              matTooltip="Edit">
-                        <mat-icon>edit</mat-icon>
-                      </button>
-                      <button mat-icon-button color="warn" 
-                              (click)="deleteAICredential(element)"
-                              matTooltip="Delete">
-                        <mat-icon>delete</mat-icon>
-                      </button>
-                    </td>
-                  </ng-container>
-
-                  <tr mat-header-row *matHeaderRowDef="aiColumns"></tr>
-                  <tr mat-row *matRowDef="let row; columns: aiColumns;"></tr>
-                </table>
-
-                <p *ngIf="aiCredentials.length === 0 && !loadingAI" class="no-data">
-                  No AI provider credentials configured. Click "Add AI Credentials" to get started.
-                </p>
+    
+                @if (loadingAI) {
+                  <div class="loading-container">
+                    <mat-spinner></mat-spinner>
+                  </div>
+                }
+    
+                @if (!loadingAI && aiCredentials.length > 0) {
+                  <table mat-table [dataSource]="aiCredentials" class="full-width">
+                    <ng-container matColumnDef="name">
+                      <th mat-header-cell *matHeaderCellDef>Name</th>
+                      <td mat-cell *matCellDef="let element">{{ element.name }}</td>
+                    </ng-container>
+                    <ng-container matColumnDef="provider">
+                      <th mat-header-cell *matHeaderCellDef>Provider</th>
+                      <td mat-cell *matCellDef="let element">
+                        <span class="provider-badge">{{ formatProvider(element.provider) }}</span>
+                      </td>
+                    </ng-container>
+                    <ng-container matColumnDef="model">
+                      <th mat-header-cell *matHeaderCellDef>Model</th>
+                      <td mat-cell *matCellDef="let element">{{ element.model || 'Default' }}</td>
+                    </ng-container>
+                    <ng-container matColumnDef="actions">
+                      <th mat-header-cell *matHeaderCellDef>Actions</th>
+                      <td mat-cell *matCellDef="let element">
+                        <button mat-icon-button color="accent"
+                          (click)="testAICredential(element)"
+                          matTooltip="Test Connection"
+                          [disabled]="testingCredential === element.id">
+                          @if (testingCredential !== element.id) {
+                            <mat-icon>speed</mat-icon>
+                          }
+                          @if (testingCredential === element.id) {
+                            <mat-spinner
+                            diameter="20"></mat-spinner>
+                          }
+                        </button>
+                        <button mat-icon-button color="primary"
+                          (click)="editAICredential(element)"
+                          matTooltip="Edit">
+                          <mat-icon>edit</mat-icon>
+                        </button>
+                        <button mat-icon-button color="warn"
+                          (click)="deleteAICredential(element)"
+                          matTooltip="Delete">
+                          <mat-icon>delete</mat-icon>
+                        </button>
+                      </td>
+                    </ng-container>
+                    <tr mat-header-row *matHeaderRowDef="aiColumns"></tr>
+                    <tr mat-row *matRowDef="let row; columns: aiColumns;"></tr>
+                  </table>
+                }
+    
+                @if (aiCredentials.length === 0 && !loadingAI) {
+                  <p class="no-data">
+                    No AI provider credentials configured. Click "Add AI Credentials" to get started.
+                  </p>
+                }
               </div>
             </mat-tab>
-            
+    
             <mat-tab label="Heretto">
               <div class="tab-content">
                 <div class="header-row">
@@ -179,72 +190,79 @@ import { TestResultsDialogComponent } from './test-results-dialog.component';
                     Add Heretto Credentials
                   </button>
                 </div>
-
-                <div *ngIf="loadingHeretto" class="loading-container">
-                  <mat-spinner></mat-spinner>
-                </div>
-
-                <table mat-table [dataSource]="herettoCredentials" class="full-width" *ngIf="!loadingHeretto && herettoCredentials.length > 0">
-                  <ng-container matColumnDef="name">
-                    <th mat-header-cell *matHeaderCellDef>Name</th>
-                    <td mat-cell *matCellDef="let element">{{ element.name }}</td>
-                  </ng-container>
-
-                  <ng-container matColumnDef="server_url">
-                    <th mat-header-cell *matHeaderCellDef>Server URL</th>
-                    <td mat-cell *matCellDef="let element">{{ element.server_url }}</td>
-                  </ng-container>
-
-                  <ng-container matColumnDef="username">
-                    <th mat-header-cell *matHeaderCellDef>Username</th>
-                    <td mat-cell *matCellDef="let element">{{ element.username }}</td>
-                  </ng-container>
-
-                  <ng-container matColumnDef="actions">
-                    <th mat-header-cell *matHeaderCellDef>Actions</th>
-                    <td mat-cell *matCellDef="let element">
-                      <button mat-icon-button color="accent"
-                              (click)="testHerettoCredential(element)"
-                              matTooltip="Test Connection"
-                              [disabled]="testingCredential === element.id">
-                        <mat-icon *ngIf="testingCredential !== element.id">speed</mat-icon>
-                        <mat-spinner *ngIf="testingCredential === element.id"
-                                     diameter="20"></mat-spinner>
-                      </button>
-                      <button mat-icon-button color="accent"
-                              (click)="testHerettoUpload(element)"
-                              matTooltip="Test File Upload"
-                              [disabled]="testingCredential === element.id">
-                        <mat-icon>cloud_upload</mat-icon>
-                      </button>
-                      <button mat-icon-button color="primary"
-                              (click)="editHerettoCredential(element)"
-                              matTooltip="Edit">
-                        <mat-icon>edit</mat-icon>
-                      </button>
-                      <button mat-icon-button color="warn"
-                              (click)="deleteHerettoCredential(element)"
-                              matTooltip="Delete">
-                        <mat-icon>delete</mat-icon>
-                      </button>
-                    </td>
-                  </ng-container>
-
-                  <tr mat-header-row *matHeaderRowDef="herettoColumns"></tr>
-                  <tr mat-row *matRowDef="let row; columns: herettoColumns;"></tr>
-                </table>
-
-                <p *ngIf="herettoCredentials.length === 0 && !loadingHeretto" class="no-data">
-                  No Heretto credentials configured. Click "Add Heretto Credentials" to get started.
-                </p>
+    
+                @if (loadingHeretto) {
+                  <div class="loading-container">
+                    <mat-spinner></mat-spinner>
+                  </div>
+                }
+    
+                @if (!loadingHeretto && herettoCredentials.length > 0) {
+                  <table mat-table [dataSource]="herettoCredentials" class="full-width">
+                    <ng-container matColumnDef="name">
+                      <th mat-header-cell *matHeaderCellDef>Name</th>
+                      <td mat-cell *matCellDef="let element">{{ element.name }}</td>
+                    </ng-container>
+                    <ng-container matColumnDef="server_url">
+                      <th mat-header-cell *matHeaderCellDef>Server URL</th>
+                      <td mat-cell *matCellDef="let element">{{ element.server_url }}</td>
+                    </ng-container>
+                    <ng-container matColumnDef="username">
+                      <th mat-header-cell *matHeaderCellDef>Username</th>
+                      <td mat-cell *matCellDef="let element">{{ element.username }}</td>
+                    </ng-container>
+                    <ng-container matColumnDef="actions">
+                      <th mat-header-cell *matHeaderCellDef>Actions</th>
+                      <td mat-cell *matCellDef="let element">
+                        <button mat-icon-button color="accent"
+                          (click)="testHerettoCredential(element)"
+                          matTooltip="Test Connection"
+                          [disabled]="testingCredential === element.id">
+                          @if (testingCredential !== element.id) {
+                            <mat-icon>speed</mat-icon>
+                          }
+                          @if (testingCredential === element.id) {
+                            <mat-spinner
+                            diameter="20"></mat-spinner>
+                          }
+                        </button>
+                        <button mat-icon-button color="accent"
+                          (click)="testHerettoUpload(element)"
+                          matTooltip="Test File Upload"
+                          [disabled]="testingCredential === element.id">
+                          <mat-icon>cloud_upload</mat-icon>
+                        </button>
+                        <button mat-icon-button color="primary"
+                          (click)="editHerettoCredential(element)"
+                          matTooltip="Edit">
+                          <mat-icon>edit</mat-icon>
+                        </button>
+                        <button mat-icon-button color="warn"
+                          (click)="deleteHerettoCredential(element)"
+                          matTooltip="Delete">
+                          <mat-icon>delete</mat-icon>
+                        </button>
+                      </td>
+                    </ng-container>
+                    <tr mat-header-row *matHeaderRowDef="herettoColumns"></tr>
+                    <tr mat-row *matRowDef="let row; columns: herettoColumns;"></tr>
+                  </table>
+                }
+    
+                @if (herettoCredentials.length === 0 && !loadingHeretto) {
+                  <p class="no-data">
+                    No Heretto credentials configured. Click "Add Heretto Credentials" to get started.
+                  </p>
+                }
               </div>
             </mat-tab>
-            
+    
           </mat-tab-group>
         </mat-card-content>
       </mat-card>
     </div>
-  `,
+    `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
     .credentials-container {
       max-width: 1200px;

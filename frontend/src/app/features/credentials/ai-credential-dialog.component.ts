@@ -1,4 +1,4 @@
-import { Component, Inject } from '@angular/core';
+import { Component, Inject, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, Validators, ReactiveFormsModule } from '@angular/forms';
 import { MatDialogModule, MatDialogRef, MAT_DIALOG_DATA } from '@angular/material/dialog';
@@ -44,35 +44,39 @@ export interface AICredential {
   template: `
     <h2 mat-dialog-title>{{ data ? 'Edit' : 'Add' }} AI Credential</h2>
     <mat-dialog-content>
-      <div *ngIf="data" class="current-values">
-        <div class="info-box">
-          <mat-icon>info</mat-icon>
-          <span>Current credential details:</span>
+      @if (data) {
+        <div class="current-values">
+          <div class="info-box">
+            <mat-icon>info</mat-icon>
+            <span>Current credential details:</span>
+          </div>
+          <div class="credential-display">
+            <div class="field-display">
+              <strong>Provider:</strong> {{ data.provider }}
+            </div>
+            <div class="field-display">
+              <strong>Model:</strong> {{ data.model || 'Default' }}
+            </div>
+            <div class="field-display">
+              <strong>API Key:</strong> {{ maskApiKey(data.api_key) }}
+            </div>
+          </div>
         </div>
-        <div class="credential-display">
-          <div class="field-display">
-            <strong>Provider:</strong> {{ data.provider }}
-          </div>
-          <div class="field-display">
-            <strong>Model:</strong> {{ data.model || 'Default' }}
-          </div>
-          <div class="field-display">
-            <strong>API Key:</strong> {{ maskApiKey(data.api_key) }}
-          </div>
-        </div>
-      </div>
-
+      }
+    
       <form [formGroup]="form">
         <mat-form-field appearance="outline" class="full-width">
           <mat-label>Name</mat-label>
-          <input matInput formControlName="name" required 
-                 placeholder="My OpenAI Credential">
+          <input matInput formControlName="name" required
+            placeholder="My OpenAI Credential">
           <mat-hint>A friendly name to identify this credential</mat-hint>
-          <mat-error *ngIf="form.get('name')?.hasError('required')">
-            Name is required
-          </mat-error>
+          @if (form.get('name')?.hasError('required')) {
+            <mat-error>
+              Name is required
+            </mat-error>
+          }
         </mat-form-field>
-
+    
         <mat-form-field appearance="outline" class="full-width">
           <mat-label>AI Provider</mat-label>
           <mat-select formControlName="provider" required>
@@ -93,93 +97,112 @@ export interface AICredential {
               Custom/Other
             </mat-option>
           </mat-select>
-          <mat-error *ngIf="form.get('provider')?.hasError('required')">
-            Provider is required
-          </mat-error>
+          @if (form.get('provider')?.hasError('required')) {
+            <mat-error>
+              Provider is required
+            </mat-error>
+          }
         </mat-form-field>
-
+    
         <mat-form-field appearance="outline" class="full-width">
           <mat-label>API Key</mat-label>
-          <input matInput type="password" formControlName="api_key" 
-                 [placeholder]="data ? 'Enter new key (leave empty to keep current)' : 'Enter API key'"
-                 [required]="!data">
-          <mat-hint *ngIf="data">Leave empty to keep current API key</mat-hint>
-          <mat-error *ngIf="form.get('api_key')?.hasError('required')">
-            API Key is required
-          </mat-error>
+          <input matInput type="password" formControlName="api_key"
+            [placeholder]="data ? 'Enter new key (leave empty to keep current)' : 'Enter API key'"
+            [required]="!data">
+          @if (data) {
+            <mat-hint>Leave empty to keep current API key</mat-hint>
+          }
+          @if (form.get('api_key')?.hasError('required')) {
+            <mat-error>
+              API Key is required
+            </mat-error>
+          }
         </mat-form-field>
-
+    
         <mat-form-field appearance="outline" class="full-width">
           <mat-label>Model (Optional)</mat-label>
-          <input matInput formControlName="model" 
-                 [placeholder]="getModelPlaceholder()">
+          <input matInput formControlName="model"
+            [placeholder]="getModelPlaceholder()">
           <mat-hint>{{ getModelHint() }}</mat-hint>
         </mat-form-field>
-
-        <mat-form-field appearance="outline" class="full-width" 
-                        *ngIf="showBaseUrl">
-          <mat-label>Base URL (Optional)</mat-label>
-          <input matInput formControlName="base_url" 
-                 placeholder="https://api.openai.com/v1">
-          <mat-hint>Custom API endpoint (for self-hosted or alternative providers)</mat-hint>
-        </mat-form-field>
-
-        <mat-form-field appearance="outline" class="full-width" 
-                        *ngIf="showOrganizationId">
-          <mat-label>Organization ID (Optional)</mat-label>
-          <input matInput formControlName="organization_id" 
-                 placeholder="org-...">
-          <mat-hint>OpenAI organization ID if applicable</mat-hint>
-        </mat-form-field>
-
+    
+        @if (showBaseUrl) {
+          <mat-form-field appearance="outline" class="full-width"
+            >
+            <mat-label>Base URL (Optional)</mat-label>
+            <input matInput formControlName="base_url"
+              placeholder="https://api.openai.com/v1">
+              <mat-hint>Custom API endpoint (for self-hosted or alternative providers)</mat-hint>
+            </mat-form-field>
+          }
+    
+          @if (showOrganizationId) {
+            <mat-form-field appearance="outline" class="full-width"
+              >
+            <mat-label>Organization ID (Optional)</mat-label>
+            <input matInput formControlName="organization_id"
+              placeholder="org-...">
+            <mat-hint>OpenAI organization ID if applicable</mat-hint>
+          </mat-form-field>
+        }
+    
         <div class="test-section">
-          <button mat-stroked-button type="button" color="primary" 
-                  (click)="testConnection()"
-                  [disabled]="(!form.get('api_key')?.value && !data) || testing">
-            <mat-icon *ngIf="!testing">speed</mat-icon>
-            <mat-spinner *ngIf="testing" diameter="20" style="display: inline-block; margin-right: 8px;"></mat-spinner>
+          <button mat-stroked-button type="button" color="primary"
+            (click)="testConnection()"
+            [disabled]="(!form.get('api_key')?.value && !data) || testing">
+            @if (!testing) {
+              <mat-icon>speed</mat-icon>
+            }
+            @if (testing) {
+              <mat-spinner diameter="20" style="display: inline-block; margin-right: 8px;"></mat-spinner>
+            }
             {{ testing ? 'Testing...' : 'Test Connection' }}
           </button>
           <span class="test-result" [class.success]="testSuccess" [class.error]="testError">
             {{ testMessage }}
           </span>
         </div>
-
-        <mat-expansion-panel *ngIf="testRequest || testResponse" class="test-details">
-          <mat-expansion-panel-header>
-            <mat-panel-title>
-              <mat-icon>{{ testSuccess ? 'check_circle' : 'error' }}</mat-icon>
-              Test Details
-            </mat-panel-title>
-            <mat-panel-description>
-              View request and response details
-            </mat-panel-description>
-          </mat-expansion-panel-header>
-          
-          <div class="test-details-content">
-            <div *ngIf="testRequest" class="detail-section">
-              <h4>Request Sent:</h4>
-              <pre>{{ testRequest | json }}</pre>
+    
+        @if (testRequest || testResponse) {
+          <mat-expansion-panel class="test-details">
+            <mat-expansion-panel-header>
+              <mat-panel-title>
+                <mat-icon>{{ testSuccess ? 'check_circle' : 'error' }}</mat-icon>
+                Test Details
+              </mat-panel-title>
+              <mat-panel-description>
+                View request and response details
+              </mat-panel-description>
+            </mat-expansion-panel-header>
+            <div class="test-details-content">
+              @if (testRequest) {
+                <div class="detail-section">
+                  <h4>Request Sent:</h4>
+                  <pre>{{ testRequest | json }}</pre>
+                </div>
+              }
+              @if (testResponse) {
+                <div class="detail-section">
+                  <h4>Response Received:</h4>
+                  <pre>{{ testResponse | json }}</pre>
+                </div>
+              }
             </div>
-            
-            <div *ngIf="testResponse" class="detail-section">
-              <h4>Response Received:</h4>
-              <pre>{{ testResponse | json }}</pre>
-            </div>
-          </div>
-        </mat-expansion-panel>
+          </mat-expansion-panel>
+        }
       </form>
     </mat-dialog-content>
-
+    
     <mat-dialog-actions align="end">
       <button mat-button (click)="onCancel()">Cancel</button>
-      <button mat-raised-button color="primary" 
-              [disabled]="!form.valid"
-              (click)="onSave()">
+      <button mat-raised-button color="primary"
+        [disabled]="!form.valid"
+        (click)="onSave()">
         Save
       </button>
     </mat-dialog-actions>
-  `,
+    `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
     mat-dialog-content {
       padding-top: 20px;

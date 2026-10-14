@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, inject, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatCardModule } from '@angular/material/card';
 import { MatIconModule } from '@angular/material/icon';
@@ -19,7 +19,7 @@ import { JobsService, Job } from '../../core/services/jobs.service';
   template: `
     <div class="dashboard-container">
       <h1>Dashboard</h1>
-
+    
       <div class="stats-grid">
         <mat-card class="stat-card">
           <mat-card-content>
@@ -32,7 +32,7 @@ import { JobsService, Job } from '../../core/services/jobs.service';
             </div>
           </mat-card-content>
         </mat-card>
-
+    
         <mat-card class="stat-card">
           <mat-card-content>
             <div class="stat-icon success">
@@ -44,7 +44,7 @@ import { JobsService, Job } from '../../core/services/jobs.service';
             </div>
           </mat-card-content>
         </mat-card>
-
+    
         <mat-card class="stat-card">
           <mat-card-content>
             <div class="stat-icon warning">
@@ -56,7 +56,7 @@ import { JobsService, Job } from '../../core/services/jobs.service';
             </div>
           </mat-card-content>
         </mat-card>
-
+    
         <mat-card class="stat-card">
           <mat-card-content>
             <div class="stat-icon error">
@@ -69,7 +69,7 @@ import { JobsService, Job } from '../../core/services/jobs.service';
           </mat-card-content>
         </mat-card>
       </div>
-
+    
       <div class="actions-section">
         <h2>Quick Actions</h2>
         <div class="action-buttons">
@@ -77,55 +77,62 @@ import { JobsService, Job } from '../../core/services/jobs.service';
             <mat-icon>add</mat-icon>
             Create New Job
           </button>
-
+    
           <button mat-raised-button routerLink="/credentials">
             <mat-icon>vpn_key</mat-icon>
             Manage Credentials
           </button>
-
+    
           <button mat-raised-button routerLink="/instructions">
             <mat-icon>description</mat-icon>
             Configure Instructions
           </button>
         </div>
       </div>
-
+    
       <mat-card class="recent-jobs">
         <mat-card-header>
           <mat-card-title>Recent Jobs</mat-card-title>
         </mat-card-header>
         <mat-card-content>
-          <p *ngIf="recentJobs.length === 0" class="no-data">No recent jobs to display</p>
-          <table *ngIf="recentJobs.length > 0" class="jobs-table">
-            <thead>
-              <tr>
-                <th>Status</th>
-                <th>Output File</th>
-                <th>Tickets</th>
-                <th>Created</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr *ngFor="let job of recentJobs">
-                <td>
-                  <span class="status-badge" [ngClass]="job.status">
-                    {{ job.status }}
-                  </span>
-                </td>
-                <td>{{ job.output_filename || '—' }}</td>
-                <td>{{ job.tickets_processed }}</td>
-                <td>{{ job.created_at | date:'short' }}</td>
-                <td>
-                  <a mat-button [routerLink]="'/jobs/' + job.id">View</a>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+          @if (recentJobs.length === 0) {
+            <p class="no-data">No recent jobs to display</p>
+          }
+          @if (recentJobs.length > 0) {
+            <table class="jobs-table">
+              <thead>
+                <tr>
+                  <th>Status</th>
+                  <th>Output File</th>
+                  <th>Tickets</th>
+                  <th>Created</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (job of recentJobs; track job) {
+                  <tr>
+                    <td>
+                      <span class="status-badge" [ngClass]="job.status">
+                        {{ job.status }}
+                      </span>
+                    </td>
+                    <td>{{ job.output_filename || '—' }}</td>
+                    <td>{{ job.tickets_processed }}</td>
+                    <td>{{ job.created_at | date:'short' }}</td>
+                    <td>
+                      <a mat-button [routerLink]="'/jobs/' + job.id">View</a>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          }
         </mat-card-content>
       </mat-card>
     </div>
-  `,
+    `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
     .dashboard-container {
       max-width: 1200px;

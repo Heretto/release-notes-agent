@@ -1,5 +1,5 @@
-import { Component, OnInit, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, OnInit, inject, ChangeDetectionStrategy } from '@angular/core';
+
 import { Router } from '@angular/router';
 import { MatCardModule } from '@angular/material/card';
 import { MatButtonModule } from '@angular/material/button';
@@ -24,7 +24,6 @@ import { JobCreateDialogComponent } from '../jobs/job-create-dialog.component';
   selector: 'app-instructions',
   standalone: true,
   imports: [
-    CommonModule,
     MatCardModule,
     MatButtonModule,
     MatIconModule,
@@ -35,7 +34,7 @@ import { JobCreateDialogComponent } from '../jobs/job-create-dialog.component';
     MatSnackBarModule,
     MatProgressSpinnerModule,
     MatExpansionModule
-  ],
+],
   template: `
     <div class="instructions-container">
       <div class="header">
@@ -48,129 +47,144 @@ import { JobCreateDialogComponent } from '../jobs/job-create-dialog.component';
           Create Instruction Set
         </button>
       </div>
-      
-      <div *ngIf="loading" class="loading-container">
-        <mat-spinner></mat-spinner>
-      </div>
-
-      <div *ngIf="!loading && instructionSets.length === 0" class="empty-state">
-        <mat-card>
-          <mat-card-content>
-            <mat-icon class="empty-icon">description</mat-icon>
-            <h3>No Instruction Sets Yet</h3>
-            <p>Create your first instruction set to define how release notes should be generated.</p>
-            <button mat-raised-button color="primary" (click)="createInstructionSet()">
-              <mat-icon>add</mat-icon>
-              Create Your First Instruction Set
-            </button>
-          </mat-card-content>
-        </mat-card>
-      </div>
-
-      <div *ngIf="!loading && instructionSets.length > 0" class="instruction-list">
-        <mat-card *ngFor="let instruction of instructionSets" class="instruction-card">
-          <mat-card-header>
-            <div class="card-header-content">
-              <div class="title-section">
-                <mat-card-title>
-                  {{ instruction.name }}
-                  <mat-chip *ngIf="instruction.is_default" color="primary" selected>
-                    Default
-                  </mat-chip>
-                </mat-card-title>
-                <mat-card-subtitle *ngIf="instruction.description">
-                  {{ instruction.description }}
-                </mat-card-subtitle>
-              </div>
-              <div class="actions">
-                <button mat-icon-button 
-                        [matTooltip]="instruction.is_default ? 'Already default' : 'Set as default'"
-                        (click)="setAsDefault(instruction)"
-                        [disabled]="instruction.is_default">
-                  <mat-icon>star</mat-icon>
+    
+      @if (loading) {
+        <div class="loading-container">
+          <mat-spinner></mat-spinner>
+        </div>
+      }
+    
+      @if (!loading && instructionSets.length === 0) {
+        <div class="empty-state">
+          <mat-card>
+            <mat-card-content>
+              <mat-icon class="empty-icon">description</mat-icon>
+              <h3>No Instruction Sets Yet</h3>
+              <p>Create your first instruction set to define how release notes should be generated.</p>
+              <button mat-raised-button color="primary" (click)="createInstructionSet()">
+                <mat-icon>add</mat-icon>
+                Create Your First Instruction Set
+              </button>
+            </mat-card-content>
+          </mat-card>
+        </div>
+      }
+    
+      @if (!loading && instructionSets.length > 0) {
+        <div class="instruction-list">
+          @for (instruction of instructionSets; track instruction) {
+            <mat-card class="instruction-card">
+              <mat-card-header>
+                <div class="card-header-content">
+                  <div class="title-section">
+                    <mat-card-title>
+                      {{ instruction.name }}
+                      @if (instruction.is_default) {
+                        <mat-chip color="primary" selected>
+                          Default
+                        </mat-chip>
+                      }
+                    </mat-card-title>
+                    @if (instruction.description) {
+                      <mat-card-subtitle>
+                        {{ instruction.description }}
+                      </mat-card-subtitle>
+                    }
+                  </div>
+                  <div class="actions">
+                    <button mat-icon-button
+                      [matTooltip]="instruction.is_default ? 'Already default' : 'Set as default'"
+                      (click)="setAsDefault(instruction)"
+                      [disabled]="instruction.is_default">
+                      <mat-icon>star</mat-icon>
+                    </button>
+                    <button mat-icon-button
+                      matTooltip="Edit"
+                      (click)="editInstructionSet(instruction)">
+                      <mat-icon>edit</mat-icon>
+                    </button>
+                    <button mat-icon-button
+                      matTooltip="Duplicate"
+                      (click)="duplicateInstructionSet(instruction)">
+                      <mat-icon>content_copy</mat-icon>
+                    </button>
+                    <button mat-icon-button
+                      matTooltip="Delete"
+                      color="warn"
+                      (click)="deleteInstructionSet(instruction)">
+                      <mat-icon>delete</mat-icon>
+                    </button>
+                  </div>
+                </div>
+              </mat-card-header>
+              <mat-card-content>
+                <mat-expansion-panel>
+                  <mat-expansion-panel-header>
+                    <mat-panel-title>
+                      <mat-icon>search</mat-icon>
+                      JQL Query
+                    </mat-panel-title>
+                  </mat-expansion-panel-header>
+                  <pre class="jql-query">{{ instruction.jql_query }}</pre>
+                </mat-expansion-panel>
+                <mat-expansion-panel>
+                  <mat-expansion-panel-header>
+                    <mat-panel-title>
+                      <mat-icon>psychology</mat-icon>
+                      System Prompt
+                    </mat-panel-title>
+                  </mat-expansion-panel-header>
+                  <pre class="prompt-text">{{ instruction.system_prompt }}</pre>
+                </mat-expansion-panel>
+                @if (instruction.user_instructions) {
+                  <mat-expansion-panel>
+                    <mat-expansion-panel-header>
+                      <mat-panel-title>
+                        <mat-icon>note</mat-icon>
+                        Additional Instructions
+                      </mat-panel-title>
+                    </mat-expansion-panel-header>
+                    <pre class="prompt-text">{{ instruction.user_instructions }}</pre>
+                  </mat-expansion-panel>
+                }
+                @if (instruction.publish_to_heretto) {
+                  <div class="heretto-folder-info">
+                    <mat-icon>cloud_upload</mat-icon>
+                    <span>Save to Heretto{{ instruction.heretto_folder_id ? ' — Folder: ' : '' }}@if (instruction.heretto_folder_id) {
+                      <code>{{ instruction.heretto_folder_id }}</code>
+                    }</span>
+                  </div>
+                }
+                <div class="metadata">
+                  <span class="meta-item">
+                    <mat-icon>schedule</mat-icon>
+                    Created: {{ formatDate(instruction.created_at) }}
+                  </span>
+                  @if (instruction.updated_at) {
+                    <span class="meta-item">
+                      <mat-icon>update</mat-icon>
+                      Updated: {{ formatDate(instruction.updated_at) }}
+                    </span>
+                  }
+                </div>
+              </mat-card-content>
+              <mat-card-actions>
+                <button mat-raised-button color="primary" (click)="testInstructionSet(instruction)">
+                  <mat-icon>bug_report</mat-icon>
+                  TEST JQL QUERY
                 </button>
-                <button mat-icon-button 
-                        matTooltip="Edit"
-                        (click)="editInstructionSet(instruction)">
-                  <mat-icon>edit</mat-icon>
+                <button mat-raised-button color="accent" (click)="runJob(instruction)">
+                  <mat-icon>rocket_launch</mat-icon>
+                  Generate Release Notes
                 </button>
-                <button mat-icon-button 
-                        matTooltip="Duplicate"
-                        (click)="duplicateInstructionSet(instruction)">
-                  <mat-icon>content_copy</mat-icon>
-                </button>
-                <button mat-icon-button 
-                        matTooltip="Delete"
-                        color="warn"
-                        (click)="deleteInstructionSet(instruction)">
-                  <mat-icon>delete</mat-icon>
-                </button>
-              </div>
-            </div>
-          </mat-card-header>
-
-          <mat-card-content>
-            <mat-expansion-panel>
-              <mat-expansion-panel-header>
-                <mat-panel-title>
-                  <mat-icon>search</mat-icon>
-                  JQL Query
-                </mat-panel-title>
-              </mat-expansion-panel-header>
-              <pre class="jql-query">{{ instruction.jql_query }}</pre>
-            </mat-expansion-panel>
-
-            <mat-expansion-panel>
-              <mat-expansion-panel-header>
-                <mat-panel-title>
-                  <mat-icon>psychology</mat-icon>
-                  System Prompt
-                </mat-panel-title>
-              </mat-expansion-panel-header>
-              <pre class="prompt-text">{{ instruction.system_prompt }}</pre>
-            </mat-expansion-panel>
-
-            <mat-expansion-panel *ngIf="instruction.user_instructions">
-              <mat-expansion-panel-header>
-                <mat-panel-title>
-                  <mat-icon>note</mat-icon>
-                  Additional Instructions
-                </mat-panel-title>
-              </mat-expansion-panel-header>
-              <pre class="prompt-text">{{ instruction.user_instructions }}</pre>
-            </mat-expansion-panel>
-
-            <div *ngIf="instruction.publish_to_heretto" class="heretto-folder-info">
-              <mat-icon>cloud_upload</mat-icon>
-              <span>Save to Heretto{{ instruction.heretto_folder_id ? ' — Folder: ' : '' }}<code *ngIf="instruction.heretto_folder_id">{{ instruction.heretto_folder_id }}</code></span>
-            </div>
-
-            <div class="metadata">
-              <span class="meta-item">
-                <mat-icon>schedule</mat-icon>
-                Created: {{ formatDate(instruction.created_at) }}
-              </span>
-              <span class="meta-item" *ngIf="instruction.updated_at">
-                <mat-icon>update</mat-icon>
-                Updated: {{ formatDate(instruction.updated_at) }}
-              </span>
-            </div>
-          </mat-card-content>
-
-          <mat-card-actions>
-            <button mat-raised-button color="primary" (click)="testInstructionSet(instruction)">
-              <mat-icon>bug_report</mat-icon>
-              TEST JQL QUERY
-            </button>
-            <button mat-raised-button color="accent" (click)="runJob(instruction)">
-              <mat-icon>rocket_launch</mat-icon>
-              Generate Release Notes
-            </button>
-          </mat-card-actions>
-        </mat-card>
-      </div>
+              </mat-card-actions>
+            </mat-card>
+          }
+        </div>
+      }
     </div>
-  `,
+    `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
     .instructions-container {
       max-width: 1200px;
