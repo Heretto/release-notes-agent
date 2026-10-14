@@ -86,7 +86,6 @@ async def create_job(
         instruction_set_id=job_data.instruction_set_id,
         ai_credential_id=job_data.ai_credential_id,
         jql_query=job_data.jql_query,
-        additional_instructions=job_data.additional_instructions,
         output_filename=job_data.output_filename,
         heretto_folder_id=job_data.heretto_folder_id,
         auto_publish=job_data.publish_to_heretto,
@@ -531,7 +530,6 @@ async def rerun_job(
         instruction_set_id=original_job.instruction_set_id,
         ai_credential_id=original_job.ai_credential_id,
         jql_query=original_job.jql_query,
-        additional_instructions=original_job.additional_instructions,
         status=JobStatus.PENDING,
         triggered_by=JobTrigger.MANUAL,  # Rerun is always manual
         output_filename=original_job.output_filename,
@@ -555,7 +553,6 @@ async def rerun_job(
         instruction_set_id=new_job.instruction_set_id,
         ai_credential_id=new_job.ai_credential_id,
         jql_query=new_job.jql_query,
-        additional_instructions=new_job.additional_instructions,
         status=new_job.status,
         triggered_by=new_job.triggered_by,
         output_filename=new_job.output_filename,

@@ -63,7 +63,7 @@ import { CredentialsService, AICredential } from '../../core/services/credential
         }
     
         <mat-form-field appearance="outline" class="full-width">
-          <mat-label>AI Model (Optional)</mat-label>
+          <mat-label>AI Model for DITA Validation (Optional)</mat-label>
           <mat-select formControlName="ai_credential_id">
             <mat-option value="">Use Default</mat-option>
             @for (cred of aiCredentials; track cred) {
@@ -72,7 +72,7 @@ import { CredentialsService, AICredential } from '../../core/services/credential
               </mat-option>
             }
           </mat-select>
-          <mat-hint>Select which AI model to use for generation</mat-hint>
+          <mat-hint>Used only for the automatic DITA structure validation/correction pass — content generation is driven by the instruction set's configured agents</mat-hint>
         </mat-form-field>
     
         <mat-form-field appearance="outline" class="full-width">
@@ -85,14 +85,6 @@ import { CredentialsService, AICredential } from '../../core/services/credential
               Output filename is required
             </mat-error>
           }
-        </mat-form-field>
-    
-        <mat-form-field appearance="outline" class="full-width">
-          <mat-label>Additional Instructions (Optional)</mat-label>
-          <textarea matInput formControlName="additional_instructions"
-            rows="4"
-          placeholder="Any specific requirements or customizations for this release note..."></textarea>
-          <mat-hint>Extra context or requirements for the AI</mat-hint>
         </mat-form-field>
     
         <mat-form-field appearance="outline" class="full-width">
@@ -213,7 +205,6 @@ export class JobCreateDialogComponent implements OnInit {
       instruction_set_id: [defaultSet.id, Validators.required],
       ai_credential_id: [''],
       output_filename: ['', Validators.required],
-      additional_instructions: [''],
       jql_query: [''],
       max_tickets: [null, [Validators.min(1), Validators.max(1000)]]
     });
@@ -254,7 +245,6 @@ export class JobCreateDialogComponent implements OnInit {
         ai_credential_id: this.form.value.ai_credential_id || undefined,
         jql_query: this.form.value.jql_query || this.selectedInstructionSet?.jql_query,
         output_filename: this.form.value.output_filename,
-        additional_instructions: this.form.value.additional_instructions || undefined,
         max_tickets: this.form.value.max_tickets || undefined,
         publish_to_heretto: this.selectedInstructionSet?.publish_to_heretto || false,
         heretto_folder_id: this.selectedInstructionSet?.publish_to_heretto ?

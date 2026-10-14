@@ -54,13 +54,38 @@ def wait_for_job(headers, job_id, timeout=120):
     raise TimeoutError(f"Job {job_id} did not complete within {timeout}s")
 
 
-def get_instruction_set(headers):
-    """Get the first available instruction set, creating one if needed."""
+def _ensure_agent(headers, ai_credential_id=None):
+    """Create a minimal Agent for testing.  Returns (agent_id, created)."""
+    name = "Test Agent (env)"
+    resp = requests.get(f"{BASE_URL}/agents", headers=headers)
+    if resp.status_code == 200:
+        for agent in resp.json():
+            if agent["name"] == name:
+                return agent["id"], False
+
+    create_resp = requests.post(
+        f"{BASE_URL}/agents",
+        json={
+            "name": name,
+            "description": "Generate release notes from the provided Jira tickets.",
+            "ai_configuration_id": ai_credential_id,
+        },
+        headers=headers,
+    )
+    if create_resp.status_code == 200:
+        return create_resp.json()["id"], True
+    return None, False
+
+
+def get_instruction_set(headers, ai_credential_id=None):
+    """Get the first available instruction set, creating one (with an agent) if needed."""
     resp = requests.get(f"{BASE_URL}/instructions", headers=headers)
     assert resp.status_code == 200, f"Failed to list instructions: {resp.status_code}"
     instruction_sets = resp.json()
     if instruction_sets:
         return instruction_sets[0]["id"]
+
+    agent_id, _ = _ensure_agent(headers, ai_credential_id)
 
     # Create a minimal instruction set for testing
     create_resp = requests.post(
@@ -68,7 +93,7 @@ def get_instruction_set(headers):
         json={
             "name": "Test Instruction Set",
             "jql_query": "project = EZDNXTGEN ORDER BY created DESC",
-            "system_prompt": "Generate release notes from the provided Jira tickets.",
+            "agent_ids": [agent_id] if agent_id else [],
         },
         headers=headers,
     )
@@ -167,7 +192,7 @@ def test_job_completes_successfully(headers, max_retries=3):
         return True
 
     ai_id, ai_created = _ensure_ai_credential(headers)
-    instruction_set_id = get_instruction_set(headers)
+    instruction_set_id = get_instruction_set(headers, ai_credential_id=ai_id)
 
     try:
         for attempt in range(1, max_retries + 1):
@@ -298,7 +323,7 @@ def test_org_shared_credentials_used(headers):
         return True
 
     try:
-        instruction_set_id = get_instruction_set(headers)
+        instruction_set_id = get_instruction_set(headers, ai_credential_id=ai_id)
         job_data = {
             "instruction_set_id": instruction_set_id,
             "jql_query": "project = EZDNXTGEN ORDER BY created DESC",

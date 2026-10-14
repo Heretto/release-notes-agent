@@ -8,8 +8,8 @@ export interface InstructionSet {
   name: string;
   description?: string;
   jql_query: string;
-  system_prompt: string;
-  user_instructions?: string;
+  jira_credential_id?: string;
+  agent_ids: string[];
   dita_template_id?: string;
   heretto_folder_id?: string;
   publish_to_heretto: boolean;

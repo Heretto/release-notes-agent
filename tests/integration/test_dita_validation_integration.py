@@ -59,7 +59,6 @@ def test_dita_validation_integration():
         "instruction_set_id": instruction_set["id"],
         "output_filename": "test-dita-validation.dita",
         "publish_to_heretto": False,
-        "additional_instructions": "Generate valid DITA XML with sections for features and bugs.",
         "max_tickets": 5  # Limit for testing
     }
     

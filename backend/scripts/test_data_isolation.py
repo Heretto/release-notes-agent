@@ -194,7 +194,6 @@ class DataIsolationTester:
         inst_data = {
             "name": f"{org_name}_TestInstruction",
             "jql_query": f"project = TEST_{org_name}",
-            "system_prompt": f"Test system prompt for {org_name}",
             "is_active": True
         }
         response = requests.post(

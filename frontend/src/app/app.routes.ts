@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { hopAuthGuard, hopAdminGuard, hopSuperuserGuard } from '@heretto/hop-ui';
+import { hopAuthGuard, hopAdminGuard, hopSuperuserGuard, HOP_AGENT_ROUTES } from '@heretto/hop-ui';
 
 export const routes: Routes = [
   // Public routes (no layout)
@@ -26,6 +26,10 @@ export const routes: Routes = [
       {
         path: 'instructions',
         loadComponent: () => import('./features/instructions/instructions.component').then(m => m.InstructionsComponent),
+      },
+      {
+        path: 'agents',
+        children: HOP_AGENT_ROUTES,
       },
       {
         path: 'jobs',
