@@ -179,8 +179,9 @@ class JiraServiceV3:
                     return default
             return obj
         
+        key = issue.get("key")
         return JiraTicket(
-            key=issue.get("key"),
+            key=key,
             summary=fields.get("summary", ""),
             description=self._extract_text_from_adf(fields.get("description")) if fields.get("description") else None,
             issue_type=safe_get(fields, "issuetype", "name", default="Unknown"),
@@ -190,34 +191,65 @@ class JiraServiceV3:
             components=[comp.get("name", "") for comp in fields.get("components", [])],
             fix_versions=[ver.get("name", "") for ver in fields.get("fixVersions", [])],
             comments=comments,
-            custom_fields=custom_fields
+            custom_fields=custom_fields,
+            assignee=safe_get(fields, "assignee", "displayName"),
+            reporter=safe_get(fields, "reporter", "displayName"),
+            created=fields.get("created"),
+            updated=fields.get("updated"),
+            url=f"{self.server}/browse/{key}" if key else None,
         )
     
     def _extract_text_from_adf(self, adf_content: Any) -> str:
-        """Extract plain text from Atlassian Document Format."""
+        """Extract plain text from Atlassian Document Format.
+
+        Walks every node, so lists, code blocks, tables and nested content all come through —
+        not only top-level paragraphs and headings. Block boundaries become newlines.
+        """
         if not adf_content:
             return ""
-        
+
         if isinstance(adf_content, str):
             return adf_content
-        
+
         if not isinstance(adf_content, dict):
             return str(adf_content)
-        
-        # Handle ADF format
-        text_parts = []
-        for content in adf_content.get("content", []):
-            if content.get("type") == "paragraph":
-                for item in content.get("content", []):
-                    if item.get("type") == "text":
-                        text_parts.append(item.get("text", ""))
-            elif content.get("type") == "heading":
-                for item in content.get("content", []):
-                    if item.get("type") == "text":
-                        text_parts.append(item.get("text", ""))
-        
-        return "\n".join(text_parts)
-    
+
+        blocks = {"paragraph", "heading", "listItem", "codeBlock", "blockquote", "tableRow", "rule"}
+        parts: List[str] = []
+
+        def walk(node: Any, parent_type: Optional[str] = None) -> None:
+            if isinstance(node, list):
+                for child in node:
+                    walk(child, parent_type)
+                return
+            if not isinstance(node, dict):
+                return
+            node_type = node.get("type")
+            if node_type == "text":
+                parts.append(node.get("text", ""))
+            elif node_type == "hardBreak":
+                parts.append("\n")
+            elif node_type == "mention":
+                parts.append(node.get("attrs", {}).get("text", ""))
+            elif node_type == "inlineCard":
+                parts.append(node.get("attrs", {}).get("url", ""))
+            if node_type == "listItem":
+                parts.append("- ")
+            walk(node.get("content", []), node_type)
+            # A paragraph is the list item's own line; the item adds the newline.
+            if node_type in blocks and not (node_type == "paragraph" and parent_type == "listItem"):
+                parts.append("\n")
+
+        walk(adf_content)
+        text = "".join(parts)
+        # Collapse runs of blank lines left by nested blocks.
+        lines = [line.rstrip() for line in text.split("\n")]
+        collapsed: List[str] = []
+        for line in lines:
+            if line or (collapsed and collapsed[-1]):
+                collapsed.append(line)
+        return "\n".join(collapsed).strip()
+
     async def get_projects(self) -> List[Dict[str, str]]:
         """Get list of accessible projects."""
         try:

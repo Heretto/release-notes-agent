@@ -2,14 +2,22 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../../environments/environment';
+import { ChunkingStrategy } from './jobs.service';
 
 export interface InstructionSet {
   id?: string;
   name: string;
   description?: string;
   jql_query: string;
-  jira_credential_id?: string;
-  agent_ids: string[];
+  jira_credential_id?: string | null;
+  writer_agent_id?: string | null;
+  analysis_agent_id?: string | null;
+  writer_agent_name?: string | null;
+  analysis_agent_name?: string | null;
+  product_name?: string | null;
+  relevance_guidance?: string | null;
+  organization_guidance?: string | null;
+  chunking_strategy: ChunkingStrategy;
   dita_template_id?: string;
   heretto_folder_id?: string;
   publish_to_heretto: boolean;

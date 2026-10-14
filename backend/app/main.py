@@ -43,6 +43,7 @@ app = create_hop_app(
     description="Automated DITA release notes generation from Jira tickets",
     version="1.0.0",
     include_credentials_router=False,
+    include_dita_router=True,
 )
 
 # Health checks are mounted outside api_prefix. create_hop_app puts every extra_router under

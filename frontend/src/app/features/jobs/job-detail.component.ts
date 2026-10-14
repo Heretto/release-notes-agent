@@ -1,1134 +1,520 @@
 import { Component, OnInit, OnDestroy, inject, ChangeDetectionStrategy } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { DatePipe } from '@angular/common';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatCardModule } from '@angular/material/card';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTabsModule } from '@angular/material/tabs';
-import { MatChipsModule } from '@angular/material/chips';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatExpansionModule } from '@angular/material/expansion';
-import { MatDividerModule } from '@angular/material/divider';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatTooltipModule } from '@angular/material/tooltip';
-import { JobsService, Job } from '../../core/services/jobs.service';
-import { CredentialsService, AICredential } from '../../core/services/credentials.service';
+import { MatDialog, MatDialogModule } from '@angular/material/dialog';
+import { HopConfirmDialogComponent } from '@heretto/hop-ui';
+import { JobsService, Job, JobIssue, JobRequestLog, ReleaseNoteTopic, JOB_STAGES, JobStage } from '../../core/services/jobs.service';
 import { InstructionsService, InstructionSet } from '../../core/services/instructions.service';
 import { interval, Subscription } from 'rxjs';
 import { switchMap, startWith } from 'rxjs/operators';
 
-interface JobLog {
-  timestamp: string;
-  level: 'info' | 'warning' | 'error' | 'debug';
-  message: string;
-  details?: any;
-}
-
-interface JobRequest {
-  id: string;
-  timestamp: string;
-  type: 'jira_query' | 'ai_generation' | 'heretto_publish';
-  request_data: any;
-  response_data?: any;
-  status: 'pending' | 'success' | 'failed';
-  error_message?: string;
-  duration_ms?: number;
-}
-
-interface JobArtifact {
-  id: string;
-  filename: string;
-  content_type: string;
-  size_bytes: number;
-  created_at: string;
-}
+type StepState = 'done' | 'current' | 'pending' | 'failed';
 
 @Component({
   selector: 'app-job-detail',
   standalone: true,
   imports: [
-    CommonModule,
-    RouterModule,
+    DatePipe,
+    RouterLink,
     MatCardModule,
     MatButtonModule,
     MatIconModule,
     MatTabsModule,
-    MatChipsModule,
     MatProgressSpinnerModule,
-    MatProgressBarModule,
     MatExpansionModule,
-    MatDividerModule,
     MatSnackBarModule,
-    MatTooltipModule
+    MatTooltipModule,
+    MatDialogModule
   ],
   template: `
-    <div class="job-detail-container">
-      <div class="header">
-        <button mat-icon-button (click)="navigateBack()" class="back-button">
-          <mat-icon>arrow_back</mat-icon>
-        </button>
-        <div class="header-content">
-          <h1>Job Details</h1>
-          @if (job) {
-            <p class="job-id">ID: {{ job.id }}</p>
-          }
-        </div>
-        @if (job) {
-          <div class="header-actions">
-            @if (job.status === 'completed' && artifacts.length > 0) {
-              <button mat-raised-button color="primary"
-                (click)="downloadArtifact()"
-                >
-                <mat-icon>download</mat-icon>
-                Download Output
-              </button>
-            }
-            @if (job.status === 'completed' || job.status === 'failed') {
-              <button mat-raised-button
-                (click)="rerunJob()"
-                matTooltip="Create a new job with the same parameters">
-                <mat-icon>replay</mat-icon>
-                Rerun Job
-              </button>
-            }
-            @if (job.status === 'failed') {
-              <button mat-raised-button color="accent"
-                (click)="retryJob()"
-                matTooltip="Retry the failed job">
-                <mat-icon>refresh</mat-icon>
-                Retry Job
-              </button>
-            }
-            @if (job.status === 'running' || job.status === 'pending') {
-              <button mat-raised-button color="warn"
-                (click)="cancelJob()"
-                >
-                <mat-icon>cancel</mat-icon>
-                Cancel Job
-              </button>
-            }
-          </div>
-        }
-      </div>
-    
+    <div class="hop-page">
       @if (loading) {
         <div class="loading-container">
           <mat-spinner></mat-spinner>
-          <p>Loading job details...</p>
+          <p>Loading release...</p>
         </div>
       }
-    
-      <!-- Retry Progress Bar -->
-      @if (retryInProgress) {
-        <div class="retry-progress-container">
-          <mat-card class="retry-card">
-            <mat-card-header>
-              <mat-card-title>
-                <mat-icon class="spinning">sync</mat-icon>
-                Retrying Job
-              </mat-card-title>
-            </mat-card-header>
-            <mat-card-content>
-              <p class="retry-message">{{ retryStatusMessage }}</p>
-              <mat-progress-bar
-                [mode]="retryJobStatus === 'running' ? 'indeterminate' : 'determinate'"
-                [value]="retryProgress"
-                [color]="retryJobStatus === 'failed' ? 'warn' : 'primary'">
-              </mat-progress-bar>
-              @if (retryJobData) {
-                <div class="retry-details">
-                  <span>New Job ID: {{ retryJobData.id }}</span>
-                  <span>Status: <strong>{{ retryJobData.status | uppercase }}</strong></span>
-                  @if (retryJobData.tickets_processed > 0) {
-                    <span>Tickets: {{ retryJobData.tickets_processed }}</span>
+
+      @if (!loading && job) {
+        <div class="header">
+          <button mat-icon-button (click)="navigateBack()" class="back-button" matTooltip="All releases">
+            <mat-icon>arrow_back</mat-icon>
+          </button>
+          <div class="header-content">
+            <h1>
+              {{ job.title || job.output_filename || 'Untitled release' }}
+              <span [class]="'hop-status-chip hop-status-chip-' + chipClass(job)">{{ statusLabel(job) }}</span>
+            </h1>
+            <p class="meta">
+              @if (instructionSet) { {{ instructionSet.name }} · }
+              Run {{ job.run_count || 1 }}
+              @if (job.last_run_at) { · last run {{ job.last_run_at | date:'short' }} }
+            </p>
+          </div>
+          <div class="header-actions">
+            @if (job.status === 'completed') {
+              <a mat-raised-button color="primary" [routerLink]="['/jobs', job.id, 'workspace']">
+                <mat-icon>edit_note</mat-icon>
+                Open workspace
+              </a>
+            }
+            @if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
+              <button mat-stroked-button (click)="rerunJob()"
+                      matTooltip="Check Jira for changes; unchanged issues keep their notes">
+                <mat-icon>replay</mat-icon>
+                Rerun
+              </button>
+            }
+            @if (job.status === 'running' || job.status === 'pending') {
+              <button mat-stroked-button (click)="cancelJob()">
+                <mat-icon>cancel</mat-icon>
+                Cancel
+              </button>
+            }
+            <button mat-icon-button (click)="deleteJob()" matTooltip="Delete release">
+              <mat-icon>delete</mat-icon>
+            </button>
+          </div>
+        </div>
+
+        <!-- Pipeline progress -->
+        <mat-card class="pipeline-card" [class.hop-shimmer]="job.status === 'running'">
+          <ol class="pipeline">
+            @for (step of steps; track step.key) {
+              <li [class]="'step step-' + step.state">
+                <span class="step-icon">
+                  @switch (step.state) {
+                    @case ('done') { <mat-icon>check</mat-icon> }
+                    @case ('current') { <mat-icon class="spinning">progress_activity</mat-icon> }
+                    @case ('failed') { <mat-icon>close</mat-icon> }
+                    @default { <mat-icon>circle</mat-icon> }
                   }
+                </span>
+                <span class="step-label">{{ step.label }}</span>
+              </li>
+            }
+          </ol>
+          <p class="pipeline-message" [class.error]="job.status === 'failed'">
+            @if (job.status === 'failed') {
+              {{ job.error_message || 'The run failed.' }}
+            } @else if (job.status === 'pending') {
+              Queued — the run starts in a moment.
+            } @else {
+              {{ job.stage_message || (job.status === 'completed' ? 'Ready for review' : '') }}
+            }
+          </p>
+        </mat-card>
+
+        <div class="columns">
+          <mat-card class="summary-card">
+            <h2>Summary</h2>
+            <dl class="facts">
+              <div class="fact">
+                <dt>Issues</dt>
+                <dd>{{ job.counts?.relevant_issues || 0 }} relevant of {{ job.counts?.issues || 0 }}</dd>
+              </div>
+              <div class="fact">
+                <dt>Release notes</dt>
+                <dd>
+                  {{ job.counts?.items || 0 }}
+                  @if (job.counts?.approved_items) { · {{ job.counts!.approved_items }} approved }
+                  @if (job.counts?.attention_items) { · <span class="attention">{{ job.counts!.attention_items }} need attention</span> }
+                </dd>
+              </div>
+              <div class="fact">
+                <dt>Topics</dt>
+                <dd>{{ job.counts?.topics || 0 }} ({{ chunkingLabel(job.chunking_strategy) }})</dd>
+              </div>
+              <div class="fact">
+                <dt>Output file</dt>
+                <dd>{{ job.output_filename || '—' }}</dd>
+              </div>
+              <div class="fact">
+                <dt>Created</dt>
+                <dd>{{ job.created_at | date:'medium' }}</dd>
+              </div>
+              <div class="fact">
+                <dt>Duration</dt>
+                <dd>{{ duration() }}</dd>
+              </div>
+              @if (instructionSet) {
+                <div class="fact">
+                  <dt>Agents</dt>
+                  <dd>Writer: {{ instructionSet.writer_agent_name || '—' }} · Analysis: {{ instructionSet.analysis_agent_name || 'same as writer' }}</dd>
                 </div>
               }
-            </mat-card-content>
+            </dl>
+            <div class="hop-query-block">
+              <span class="hop-query-block-label">JQL</span>
+              <code>{{ job.jql_query }}</code>
+            </div>
+          </mat-card>
+
+          <mat-card class="topics-card">
+            <h2>Topics</h2>
+            @if (topics.length === 0) {
+              <p class="muted">No topics yet. They appear when the run finishes.</p>
+            }
+            @for (topic of topics; track topic.id) {
+              <div class="topic-row">
+                <mat-icon>article</mat-icon>
+                <div class="topic-info">
+                  <span class="topic-title">{{ topic.title }}</span>
+                  <span class="muted">{{ topic.filename }} · {{ topic.item_ids.length }} notes
+                    @if (topic.published_at) { · published {{ topic.published_at | date:'short' }} }
+                  </span>
+                </div>
+                <button mat-icon-button matTooltip="Download DITA" (click)="downloadTopic(topic)">
+                  <mat-icon>download</mat-icon>
+                </button>
+              </div>
+            }
           </mat-card>
         </div>
-      }
-    
-      @if (!loading && job) {
-        <div class="job-content">
-          <!-- Summary Card -->
-          <mat-card class="summary-card">
-            <mat-card-header>
-              <mat-card-title>Job Summary</mat-card-title>
-            </mat-card-header>
-            <mat-card-content>
-              <div class="summary-grid">
-                <div class="summary-item">
-                  <span class="label">Status:</span>
-                  <mat-chip [class]="getStatusClass(job.status)">
-                    <mat-icon class="status-icon">{{ getStatusIcon(job.status) }}</mat-icon>
-                    {{ job.status | uppercase }}
-                  </mat-chip>
-                </div>
-                <div class="summary-item">
-                  <span class="label">Triggered By:</span>
-                  <span>{{ job.triggered_by | titlecase }}</span>
-                </div>
-                <div class="summary-item">
-                  <span class="label">Created:</span>
-                  <span>{{ formatDate(job.created_at) }}</span>
-                </div>
-                @if (job.started_at) {
-                  <div class="summary-item">
-                    <span class="label">Started:</span>
-                    <span>{{ formatDate(job.started_at) }}</span>
-                  </div>
+
+        <mat-card class="details-card">
+          <mat-tab-group>
+            <mat-tab label="Issues ({{ issues.length }})">
+              <div class="tab-content">
+                @if (issues.length === 0) {
+                  <div class="empty-state"><mat-icon>inbox</mat-icon><p>No issues fetched yet</p></div>
                 }
-                @if (job.completed_at) {
-                  <div class="summary-item">
-                    <span class="label">Completed:</span>
-                    <span>{{ formatDate(job.completed_at) }}</span>
-                  </div>
-                }
-                <div class="summary-item">
-                  <span class="label">Duration:</span>
-                  <span>{{ calculateDuration() }}</span>
-                </div>
-                <div class="summary-item">
-                  <span class="label">Tickets Processed:</span>
-                  <span class="ticket-count">{{ job.tickets_processed || 0 }}@if (job.max_tickets) {
-                    <span> / {{ job.max_tickets }}</span>
-                  }</span>
-                </div>
-                @if (aiCredential) {
-                  <div class="summary-item">
-                    <span class="label">AI Model:</span>
-                    <mat-chip class="ai-chip">
-                      <mat-icon class="chip-icon">smart_toy</mat-icon>
-                      {{ aiCredential.name }}
-                    </mat-chip>
-                  </div>
-                }
-                <div class="summary-item full-width">
-                  <span class="label">JQL Query:</span>
-                  <code class="jql-query">{{ job.jql_query }}</code>
-                </div>
-                @if (job.output_filename) {
-                  <div class="summary-item full-width">
-                    <span class="label">Output File:</span>
-                    <span>{{ job.output_filename }}</span>
-                  </div>
-                }
-                @if (herettoFolderUrl) {
-                  <div class="summary-item full-width">
-                    <span class="label">Heretto CCMS:</span>
-                    <a [href]="herettoFolderUrl" target="_blank" rel="noopener" class="heretto-link">
-                      <mat-icon class="heretto-link-icon">cloud_upload</mat-icon>
-                      {{ herettoFolderPath || 'View folder in Heretto' }}
-                      <mat-icon class="heretto-link-icon">open_in_new</mat-icon>
-                    </a>
-                  </div>
+                @if (issues.length > 0) {
+                  <table class="issues-table">
+                    <thead>
+                      <tr><th>Key</th><th>Summary</th><th>Type</th><th>Status</th><th>Release notes</th></tr>
+                    </thead>
+                    <tbody>
+                      @for (issue of issues; track issue.id) {
+                        <tr [class.dropped]="!issue.in_query">
+                          <td>
+                            <a [href]="issue.url" target="_blank" rel="noopener" class="issue-key">{{ issue.issue_key }}</a>
+                          </td>
+                          <td>
+                            {{ issue.summary }}
+                            @if (!issue.in_query) { <span class="muted"> (no longer matches the query)</span> }
+                          </td>
+                          <td class="muted">{{ issue.issue_type }}</td>
+                          <td class="muted">{{ issue.status }}</td>
+                          <td>
+                            @if (issue.relevance === 'relevant') {
+                              <span class="hop-status-chip hop-status-chip-completed">{{ issue.item_ids.length }} note{{ issue.item_ids.length === 1 ? '' : 's' }}</span>
+                            } @else if (issue.relevance === 'not_relevant') {
+                              <span class="hop-status-chip" [matTooltip]="issue.relevance_reason || ''">Not user-facing</span>
+                            } @else {
+                              <span class="hop-status-chip hop-status-chip-pending">Pending</span>
+                            }
+                          </td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
                 }
               </div>
-            </mat-card-content>
-          </mat-card>
-          <!-- Error Card (if failed) -->
-          @if (job.status === 'failed' && job.error_message) {
-            <mat-card class="error-card">
-              <mat-card-header>
-                <mat-card-title>
-                  <mat-icon color="warn">error</mat-icon>
-                  Error Details
-                </mat-card-title>
-              </mat-card-header>
-              <mat-card-content>
-                <pre class="error-message">{{ job.error_message }}</pre>
-              </mat-card-content>
-            </mat-card>
-          }
-          <!-- Tabs for detailed information -->
-          <mat-card class="details-card">
-            <mat-tab-group>
-              <!-- Requests Tab -->
-              <mat-tab label="Requests ({{ requests.length }})">
-                <div class="tab-content">
-                  @if (requests.length === 0) {
-                    <div class="empty-state">
-                      <mat-icon>http</mat-icon>
-                      <p>No requests recorded yet</p>
-                    </div>
-                  }
-                  @if (requests.length > 0) {
-                    <mat-accordion>
-                      @for (request of requests; track request; let i = $index) {
-                        <mat-expansion-panel
-                          [expanded]="i === 0">
-                          <mat-expansion-panel-header>
-                            <mat-panel-title>
-                              <mat-chip [class]="getRequestStatusClass(request.status)" class="small-chip">
-                                {{ request.status | uppercase }}
-                              </mat-chip>
-                              <span class="request-type">{{ formatRequestType(request.type) }}</span>
-                            </mat-panel-title>
-                            <mat-panel-description>
-                              {{ formatDate(request.timestamp) }}
-                              @if (request.duration_ms) {
-                                <span class="duration">
-                                  ({{ request.duration_ms }}ms)
-                                </span>
-                              }
-                            </mat-panel-description>
-                          </mat-expansion-panel-header>
-                          <div class="request-details">
-                            <div class="request-section">
-                              <h4>Request</h4>
-                              <pre class="code-block">{{ formatJson(request.request_data) }}</pre>
-                            </div>
-                            <mat-divider></mat-divider>
-                            @if (request.response_data) {
-                              <div class="request-section">
-                                <h4>Response</h4>
-                                <pre class="code-block">{{ formatJson(request.response_data) }}</pre>
-                              </div>
-                            }
-                            @if (request.error_message) {
-                              <div class="request-section">
-                                <h4>Error</h4>
-                                <pre class="error-block">{{ request.error_message }}</pre>
-                              </div>
-                            }
-                          </div>
-                        </mat-expansion-panel>
-                      }
-                    </mat-accordion>
-                  }
-                </div>
-              </mat-tab>
-              <!-- Logs Tab -->
-              <mat-tab label="Logs ({{ logs.length }})">
-                <div class="tab-content">
-                  @if (logs.length === 0) {
-                    <div class="empty-state">
-                      <mat-icon>description</mat-icon>
-                      <p>No logs available</p>
-                    </div>
-                  }
-                  @if (logs.length > 0) {
-                    <div class="logs-container">
-                      @for (log of logs; track log) {
-                        <div class="log-entry" [class]="'log-' + log.level">
-                          <span class="log-timestamp">{{ formatTimestamp(log.timestamp) }}</span>
-                          <mat-chip class="log-level" [class]="'level-' + log.level">
-                            {{ log.level | uppercase }}
-                          </mat-chip>
-                          <span class="log-message">{{ log.message }}</span>
-                          @if (log.details) {
-                            <pre class="log-details">{{ formatJson(log.details) }}</pre>
+            </mat-tab>
+            <mat-tab label="Run log ({{ requests.length }})">
+              <div class="tab-content">
+                @if (requests.length === 0) {
+                  <div class="empty-state"><mat-icon>http</mat-icon><p>No calls recorded yet</p></div>
+                }
+                @if (requests.length > 0) {
+                  <mat-accordion>
+                    @for (request of requests; track request.id) {
+                      <mat-expansion-panel>
+                        <mat-expansion-panel-header>
+                          <mat-panel-title>
+                            <span [class]="'hop-status-chip hop-status-chip-' + requestChip(request.status)">{{ request.status }}</span>
+                            <span class="request-type">{{ formatRequestType(request.type) }}</span>
+                            <span class="request-summary">{{ requestSummary(request) }}</span>
+                          </mat-panel-title>
+                          <mat-panel-description>
+                            {{ request.timestamp | date:'mediumTime' }}
+                            @if (request.duration_ms) { <span class="duration">({{ request.duration_ms }} ms)</span> }
+                          </mat-panel-description>
+                        </mat-expansion-panel-header>
+                        <div class="request-details">
+                          <h4>Request</h4>
+                          <div class="hop-code-panel"><pre>{{ formatJson(request.request_data) }}</pre></div>
+                          @if (request.response_data && hasKeys(request.response_data)) {
+                            <h4>Response</h4>
+                            <div class="hop-code-panel"><pre>{{ formatJson(request.response_data) }}</pre></div>
+                          }
+                          @if (request.error_message) {
+                            <h4>Error</h4>
+                            <pre class="error-block">{{ request.error_message }}</pre>
                           }
                         </div>
-                      }
-                    </div>
-                  }
-                </div>
-              </mat-tab>
-              <!-- Generated Content Tab -->
-              @if (artifacts.length > 0) {
-                <mat-tab label="Generated Content">
-                  <div class="tab-content">
-                    <div class="artifacts-header">
-                      <h3>Generated Files</h3>
-                      @if (artifacts.length > 0) {
-                        <button mat-raised-button color="warn" (click)="clearAllArtifacts()">
-                          <mat-icon>delete_sweep</mat-icon>
-                          Clear All Content
-                        </button>
-                      }
-                    </div>
-                    <div class="artifacts-list">
-                      @for (artifact of artifacts; track artifact) {
-                        <div class="artifact-item">
-                          <mat-icon>insert_drive_file</mat-icon>
-                          <div class="artifact-info">
-                            <span class="artifact-name">{{ artifact.filename }}</span>
-                            <span class="artifact-meta">
-                              {{ formatFileSize(artifact.size_bytes) }} •
-                              {{ artifact.content_type }} •
-                              {{ formatDate(artifact.created_at) }}
-                            </span>
-                          </div>
-                          <button mat-icon-button (click)="viewArtifact(artifact)" matTooltip="View">
-                            <mat-icon>visibility</mat-icon>
-                          </button>
-                          <button mat-icon-button (click)="downloadSpecificArtifact(artifact)" matTooltip="Download">
-                            <mat-icon>download</mat-icon>
-                          </button>
-                          <button mat-icon-button color="warn" (click)="deleteArtifact(artifact)" matTooltip="Delete">
-                            <mat-icon>delete</mat-icon>
-                          </button>
-                        </div>
-                      }
-                    </div>
-                    @if (contentPreview) {
-                      <div class="content-preview">
-                        <h4>Content Preview</h4>
-                        <pre class="code-block">{{ contentPreview }}</pre>
-                      </div>
+                      </mat-expansion-panel>
                     }
-                  </div>
-                </mat-tab>
-              }
-              <!-- Metrics Tab -->
-              @if (job.status === 'completed') {
-                <mat-tab label="Metrics">
-                  <div class="tab-content">
-                    <div class="metrics-grid">
-                      <mat-card class="metric-card">
-                        <mat-card-content>
-                          <mat-icon>timer</mat-icon>
-                          <div class="metric-value">{{ calculateDuration() }}</div>
-                          <div class="metric-label">Total Duration</div>
-                        </mat-card-content>
-                      </mat-card>
-                      <mat-card class="metric-card">
-                        <mat-card-content>
-                          <mat-icon>confirmation_number</mat-icon>
-                          <div class="metric-value">{{ job.tickets_processed || 0 }}</div>
-                          <div class="metric-label">Tickets Processed</div>
-                        </mat-card-content>
-                      </mat-card>
-                      <mat-card class="metric-card">
-                        <mat-card-content>
-                          <mat-icon>http</mat-icon>
-                          <div class="metric-value">{{ requests.length }}</div>
-                          <div class="metric-label">API Requests</div>
-                        </mat-card-content>
-                      </mat-card>
-                      <mat-card class="metric-card">
-                        <mat-card-content>
-                          <mat-icon>storage</mat-icon>
-                          <div class="metric-value">{{ calculateTotalSize() }}</div>
-                          <div class="metric-label">Output Size</div>
-                        </mat-card-content>
-                      </mat-card>
-                    </div>
-                  </div>
-                </mat-tab>
-              }
-            </mat-tab-group>
-          </mat-card>
-        </div>
+                  </mat-accordion>
+                }
+              </div>
+            </mat-tab>
+          </mat-tab-group>
+        </mat-card>
       }
     </div>
-    `,
+  `,
   changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
-    .job-detail-container{max-width:1400px;margin:0 auto;padding:20px}
-    .header{display:flex;align-items:center;gap:20px;margin-bottom:30px}
-    .header-content{flex:1}
-    .header-content h1{margin:0}
-    .job-id{color:var(--text-secondary);font-size:14px;margin:5px 0 0 0;font-family:var(--font-mono)}
-    .header-actions{display:flex;gap:10px}
-    .loading-container{display:flex;flex-direction:column;align-items:center;padding:60px}
-    .loading-container p{margin-top:20px;color:var(--text-secondary)}
-    .job-content{display:flex;flex-direction:column;gap:20px}
-    .summary-card{background:var(--hop-gradient);color:white}
-    .summary-card mat-card-title{color:white}
-    .summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:20px;margin-top:20px}
-    .summary-item{display:flex;flex-direction:column;gap:8px}
-    .summary-item.full-width{grid-column:1/-1}
-    .summary-item .label{font-weight:500;opacity:0.9;font-size:14px}
-    .ticket-count{background:rgba(255,255,255,0.2);padding:4px 12px;border-radius:12px;display:inline-block;font-weight:500}
-    .jql-query{background:#fff;color:#1a1a1a;padding:8px 12px;border-radius:4px;font-family:var(--font-mono);display:inline-block}
-    .heretto-link{color:white;display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,0.15);padding:6px 12px;border-radius:4px;text-decoration:none;font-size:14px;transition:background 0.2s}
-    .heretto-link:hover{background:rgba(255,255,255,0.3)}
-    .heretto-link-icon{font-size:16px;width:16px;height:16px}
-    .error-card{background:var(--color-warning-bg);border-left:4px solid var(--color-warning)}
-    .error-card mat-card-title{display:flex;align-items:center;gap:10px;color:var(--color-warning-text)}
-    .error-message{background:var(--bg-primary);padding:15px;border-radius:4px;border:1px solid var(--color-warning-border);white-space:pre-wrap;word-wrap:break-word;margin:0;font-family:var(--font-mono);font-size:13px}
-    .details-card{min-height:500px}
-    .tab-content{padding:20px;min-height:400px}
-    .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px;color:var(--text-tertiary)}
-    .empty-state mat-icon{font-size:48px;width:48px;height:48px;margin-bottom:10px}
-    mat-chip{font-size:12px}
-    mat-chip.pending{background-color:var(--color-warning)!important;color:white!important}
-    mat-chip.running{background-color:var(--color-info)!important;color:white!important}
-    mat-chip.completed{background-color:var(--color-success)!important;color:white!important}
-    mat-chip.failed{background-color:var(--color-error)!important;color:white!important}
-    .status-icon{font-size:16px;width:16px;height:16px;margin-right:4px}
-    .ai-chip{background:rgba(255,255,255,0.2)!important;color:white!important}
-    .chip-icon{font-size:16px;width:16px;height:16px;margin-right:4px}
-    .small-chip{height:20px;font-size:11px;margin-right:10px}
-    .request-type{font-weight:500}
-    .duration{color:var(--text-secondary);font-size:12px;margin-left:10px}
-    .request-details{padding:20px}
-    .request-section{margin:20px 0}
-    .request-section h4{color:var(--text-primary);margin-bottom:10px}
-    .code-block{background:var(--bg-secondary);border:1px solid var(--border-default);border-radius:4px;padding:15px;font-family:var(--font-mono);font-size:12px;white-space:pre-wrap;word-wrap:break-word;max-height:400px;overflow-y:auto}
-    .error-block{background:var(--color-error-bg);border:1px solid var(--color-error-bg);border-radius:4px;padding:15px;color:var(--color-error-text);font-family:var(--font-mono);font-size:12px;white-space:pre-wrap}
-    .logs-container{max-height:600px;overflow-y:auto}
-    .log-entry{padding:10px;border-bottom:1px solid var(--border-light);display:flex;align-items:flex-start;gap:10px}
-    .log-entry.log-error{background:var(--color-error-bg)}
-    .log-entry.log-warning{background:var(--color-warning-bg)}
-    .log-timestamp{font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);white-space:nowrap}
-    .log-level{height:18px;font-size:10px}
-    .level-info{background:var(--color-primary-bg)!important;color:var(--color-primary-text)!important}
-    .level-warning{background:var(--color-warning-bg)!important;color:var(--color-warning-text)!important}
-    .level-error{background:var(--color-error-bg)!important;color:var(--color-error-text)!important}
-    .level-debug{background:var(--bg-secondary)!important;color:var(--text-secondary)!important}
-    .log-message{flex:1;font-size:14px}
-    .log-details{background:rgba(0,0,0,0.05);padding:10px;border-radius:4px;margin-top:10px;font-size:12px;font-family:var(--font-mono)}
-    .artifacts-list{display:flex;flex-direction:column;gap:10px;margin-bottom:30px}
-    .artifact-item{display:flex;align-items:center;gap:15px;padding:15px;background:var(--bg-secondary);border-radius:8px}
-    .artifact-info{flex:1;display:flex;flex-direction:column;gap:5px}
-    .artifact-name{font-weight:500}
-    .artifact-meta{font-size:12px;color:var(--text-secondary)}
-    .content-preview{margin-top:30px}
-    .metrics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:20px}
-    .metric-card{text-align:center;background:var(--hop-gradient);color:white}
-    .metric-card mat-icon{font-size:36px;width:36px;height:36px;margin:0 auto 10px;opacity:0.8}
-    .metric-value{font-size:32px;font-weight:bold;margin:10px 0}
-    .metric-label{font-size:14px;opacity:0.9}
-    .request-success{background:var(--color-success)!important;color:white!important}
-    .request-failed{background:var(--color-error)!important;color:white!important}
-    .request-pending{background:var(--color-warning)!important;color:white!important}
-    .artifacts-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
-    .artifacts-header h3{margin:0;color:var(--text-primary)}
-    .retry-progress-container{margin:20px 0;animation:slideDown 0.3s ease-out}
-    .retry-card{background:var(--hop-gradient);color:white}
-    .retry-card mat-card-title{color:white;display:flex;align-items:center;gap:10px}
-    .retry-card .spinning{animation:spin 2s linear infinite}
-    @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
-    @keyframes slideDown{from{opacity:0;transform:translateY(-20px)}to{opacity:1;transform:translateY(0)}}
-    .retry-message{margin:10px 0;font-size:16px;font-weight:500}
-    .retry-details{display:flex;gap:20px;margin-top:15px;font-size:14px;opacity:0.9}
-    .retry-details strong{font-weight:600}
-    ::ng-deep .success-snackbar{background:var(--color-success)!important}
-    ::ng-deep .error-snackbar{background:var(--color-error)!important}
+    .loading-container { display: flex; flex-direction: column; align-items: center; padding: 60px; }
+    .loading-container p { margin-top: 20px; color: var(--text-secondary); }
+    .header { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 20px; }
+    .header-content { flex: 1; min-width: 0; }
+    .header-content h1 { margin: 0; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .meta { color: var(--text-secondary); font-size: 14px; margin: 4px 0 0 0; }
+    .header-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+    .pipeline-card { padding: 18px 24px; margin-bottom: 16px; }
+    .pipeline { list-style: none; display: flex; gap: 0; margin: 0; padding: 0; flex-wrap: wrap; }
+    .step { display: flex; align-items: center; gap: 8px; padding: 6px 18px 6px 0; margin-right: 14px; position: relative; color: var(--text-tertiary); font-size: 13px; }
+    .step::after { content: ''; position: absolute; right: 0; top: 50%; width: 10px; height: 1px; background: var(--border-strong); }
+    .step:last-child::after { display: none; }
+    .step-icon { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--border-strong); background: var(--bg-primary); }
+    .step-icon mat-icon { font-size: 16px; width: 16px; height: 16px; }
+    .step-done { color: var(--text-primary); }
+    .step-done .step-icon { background: var(--color-success); color: white; border-color: var(--color-success); }
+    .step-current { color: var(--text-primary); font-weight: 500; }
+    .step-current .step-icon { border-color: var(--color-accent); color: var(--text-link); }
+    .step-failed .step-icon { background: var(--color-error); color: white; border-color: var(--color-error); }
+    .spinning { animation: spin 1.2s linear infinite; }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    .pipeline-message { margin: 12px 0 0 0; color: var(--text-secondary); font-size: 14px; }
+    .pipeline-message.error { color: var(--color-error-text); }
+    .columns { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 16px; }
+    @media (max-width: 1024px) { .columns { grid-template-columns: 1fr; } }
+    .summary-card, .topics-card { padding: 18px 24px; }
+    .summary-card h2, .topics-card h2 { margin: 0 0 12px 0; font-size: 16px; }
+    .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px 24px; margin: 0 0 16px 0; }
+    .fact dt { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-tertiary); margin-bottom: 2px; }
+    .fact dd { margin: 0; font-size: 14px; }
+    .attention { color: var(--color-warning-text); }
+    .muted { color: var(--text-tertiary); font-size: 13px; }
+    .topic-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border-light); }
+    .topic-row:last-child { border-bottom: none; }
+    .topic-info { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    .topic-title { font-weight: 500; }
+    .details-card { min-height: 400px; }
+    .tab-content { padding: 20px; }
+    .empty-state { display: flex; flex-direction: column; align-items: center; padding: 48px; color: var(--text-tertiary); }
+    .empty-state mat-icon { font-size: 48px; width: 48px; height: 48px; margin-bottom: 10px; }
+    .issues-table { width: 100%; border-collapse: collapse; }
+    .issues-table th, .issues-table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border-default); vertical-align: top; }
+    .issues-table th { color: var(--text-tertiary); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+    .issues-table tr.dropped td { opacity: 0.6; }
+    .issue-key { font-family: var(--font-mono); font-size: 13px; }
+    mat-panel-title { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .request-type { font-weight: 500; white-space: nowrap; }
+    .request-summary { color: var(--text-secondary); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .duration { color: var(--text-secondary); font-size: 12px; margin-left: 10px; }
+    .request-details { padding: 8px 0 16px; }
+    .request-details h4 { margin: 12px 0 6px; }
+    .request-details pre { max-height: 320px; overflow: auto; font-size: 12px; white-space: pre-wrap; word-break: break-word; }
+    .error-block { background: var(--color-error-bg); border: 1px solid var(--color-error-bg); border-radius: 4px; padding: 12px; color: var(--color-error-text); font-family: var(--font-mono); font-size: 12px; white-space: pre-wrap; }
   `]
 })
 export class JobDetailComponent implements OnInit, OnDestroy {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private jobsService = inject(JobsService);
-  private credentialsService = inject(CredentialsService);
   private instructionsService = inject(InstructionsService);
   private snackBar = inject(MatSnackBar);
+  private dialog = inject(MatDialog);
 
   jobId: string | null = null;
   job: Job | null = null;
+  instructionSet: InstructionSet | null = null;
   loading = true;
-  aiCredential: AICredential | null = null;
-  herettoFolderUrl: string | null = null;
-  herettoFolderPath: string | null = null;
-  
-  logs: JobLog[] = [];
-  requests: JobRequest[] = [];
-  artifacts: JobArtifact[] = [];
-  contentPreview: string | null = null;
-
-  // Retry progress tracking
-  retryInProgress = false;
-  retryJobData: Job | null = null;
-  retryJobStatus = '';
-  retryProgress = 0;
-  retryStatusMessage = 'Initializing retry...';
+  issues: JobIssue[] = [];
+  requests: JobRequestLog[] = [];
+  topics: ReleaseNoteTopic[] = [];
+  steps: { key: JobStage; label: string; state: StepState }[] = [];
 
   private refreshSubscription?: Subscription;
-  private retrySubscription?: Subscription;
+  private lastStatus = '';
 
   ngOnInit() {
     this.jobId = this.route.snapshot.paramMap.get('id');
-    if (this.jobId) {
-      this.loadJobDetails();
-      
-      // Auto-refresh every 5 seconds if job is running
-      this.refreshSubscription = interval(5000)
-        .pipe(
-          startWith(0),
-          switchMap(() => this.jobsService.getJob(this.jobId!))
-        )
-        .subscribe({
-          next: (job) => {
-            this.job = job;
-            if (job.status === 'completed' || job.status === 'failed') {
-              // Stop refreshing once job is done
-              this.refreshSubscription?.unsubscribe();
-            }
-          },
-          error: (error) => {
-            console.error('Failed to refresh job:', error);
-          }
-        });
-    } else {
+    if (!this.jobId) {
       this.router.navigate(['/jobs']);
+      return;
     }
+    this.refreshSubscription = interval(4000)
+      .pipe(startWith(0), switchMap(() => this.jobsService.getJob(this.jobId!)))
+      .subscribe({
+        next: (job) => {
+          const changed = job.status !== this.lastStatus || job.status === 'running';
+          this.job = job;
+          this.steps = this.computeSteps(job);
+          if (this.loading) {
+            this.loading = false;
+            this.loadInstructionSet(job);
+          }
+          if (changed) {
+            this.lastStatus = job.status;
+            this.loadDetails();
+          }
+        },
+        error: () => {
+          this.snackBar.open('Failed to load the release', 'Close', { duration: 3000 });
+          this.router.navigate(['/jobs']);
+        }
+      });
   }
 
   ngOnDestroy() {
     this.refreshSubscription?.unsubscribe();
-    this.retrySubscription?.unsubscribe();
   }
 
-  loadJobDetails() {
+  private loadInstructionSet(job: Job) {
+    if (!job.instruction_set_id) return;
+    this.instructionsService.getInstructionSet(job.instruction_set_id).subscribe({
+      next: (set) => this.instructionSet = set,
+      error: () => { /* the set may have been deleted; the page still works without it */ }
+    });
+  }
+
+  private loadDetails() {
     if (!this.jobId) return;
-
-    this.loading = true;
-    this.jobsService.getJob(this.jobId).subscribe({
-      next: (job) => {
-        this.job = job;
-        this.loadAdditionalData();
-        // Load AI credential details if specified
-        if (job.ai_credential_id) {
-          this.loadAICredential(job.ai_credential_id);
-        }
-        // Load instruction set to check Heretto publish settings
-        if (job.instruction_set_id) {
-          this.loadHerettoInfo(job.instruction_set_id);
-        }
-      },
-      error: (error) => {
-        console.error('Failed to load job:', error);
-        this.snackBar.open('Failed to load job details', 'Close', {
-          duration: 3000
-        });
-        this.router.navigate(['/jobs']);
-      }
-    });
+    this.jobsService.getIssues(this.jobId).subscribe({ next: issues => this.issues = issues });
+    this.jobsService.getJobRequests(this.jobId).subscribe({ next: requests => this.requests = [...requests].reverse() });
+    this.jobsService.getTopics(this.jobId, false).subscribe({ next: topics => this.topics = topics });
   }
 
-  loadAICredential(credentialId: string) {
-    this.credentialsService.getAICredentials().subscribe({
-      next: (credentials) => {
-        this.aiCredential = credentials.find(c => c.id === credentialId) || null;
-      },
-      error: (error) => {
-        console.error('Failed to load AI credential details:', error);
+  private computeSteps(job: Job): { key: JobStage; label: string; state: StepState }[] {
+    const stages = JOB_STAGES;
+    const currentIndex = job.stage ? stages.findIndex(s => s.key === job.stage) : -1;
+    return stages.map((stage, index) => {
+      let state: StepState = 'pending';
+      if (job.status === 'completed') state = 'done';
+      else if (job.status === 'running') {
+        if (index < currentIndex) state = 'done';
+        else if (index === currentIndex) state = 'current';
+      } else if (job.status === 'failed' || job.status === 'cancelled') {
+        if (index < currentIndex) state = 'done';
+        else if (index === currentIndex) state = 'failed';
       }
+      return { ...stage, state };
     });
-  }
-
-  loadHerettoInfo(instructionSetId: string) {
-    this.instructionsService.getInstructionSet(instructionSetId).subscribe({
-      next: (instructionSet) => {
-        if (instructionSet.publish_to_heretto && instructionSet.heretto_folder_id) {
-          this.credentialsService.getHerettoFolderInfo(instructionSet.heretto_folder_id).subscribe({
-            next: (folderInfo) => {
-              this.herettoFolderUrl = folderInfo.url;
-              this.herettoFolderPath = folderInfo.path;
-            }
-          });
-        }
-      }
-    });
-  }
-
-  loadAdditionalData() {
-    if (!this.jobId) return;
-
-    // Load artifacts
-    this.jobsService.getJobArtifacts(this.jobId).subscribe({
-      next: (artifacts) => {
-        this.artifacts = artifacts;
-      },
-      error: (error) => {
-        console.error('Failed to load artifacts:', error);
-      }
-    });
-
-    // Load job requests from backend
-    this.jobsService.getJobRequests(this.jobId).subscribe({
-      next: (requests) => {
-        this.requests = requests;
-      },
-      error: (error) => {
-        console.error('Failed to load job requests:', error);
-        // Fall back to mock data if requests endpoint fails
-        this.loadMockRequests();
-      }
-    });
-
-    // Load logs (still using mock data for now)
-    this.loadMockLogs();
-    
-    this.loading = false;
-  }
-
-  loadMockLogs() {
-    // Mock logs for now - will be replaced with real logs API later
-    this.logs = [
-      {
-        timestamp: new Date().toISOString(),
-        level: 'info',
-        message: 'Job started'
-      },
-      {
-        timestamp: new Date().toISOString(),
-        level: 'info',
-        message: 'Fetching tickets from JIRA',
-        details: { query: this.job?.jql_query }
-      },
-      {
-        timestamp: new Date().toISOString(),
-        level: 'info',
-        message: `Found ${this.job?.tickets_processed || 0} tickets`
-      }
-    ];
-
-    if (this.job?.status === 'completed') {
-      this.logs.push({
-        timestamp: new Date().toISOString(),
-        level: 'info',
-        message: 'Release notes generated successfully'
-      });
-    } else if (this.job?.status === 'failed') {
-      this.logs.push({
-        timestamp: new Date().toISOString(),
-        level: 'error',
-        message: 'Job failed',
-        details: { error: this.job.error_message }
-      });
-    }
-  }
-
-  loadMockRequests() {
-    // Fallback mock requests if API fails
-    this.requests = [
-      {
-        id: '1',
-        timestamp: new Date().toISOString(),
-        type: 'jira_query',
-        request_data: {
-          method: 'POST',
-          url: '/rest/api/3/search/jql',
-          body: {
-            jql: this.job?.jql_query,
-            maxResults: 100,
-            fields: ['summary', 'description', 'status', 'issuetype']
-          }
-        },
-        response_data: {
-          total: this.job?.tickets_processed || 0,
-          issues: []
-        },
-        status: 'success',
-        duration_ms: 245
-      }
-    ];
-
-    if (this.job?.status === 'completed') {
-      this.requests.push({
-        id: '2',
-        timestamp: new Date().toISOString(),
-        type: 'ai_generation',
-        request_data: {
-          model: 'gpt-4',
-          prompt: 'Generate release notes...',
-          tickets: this.job?.tickets_processed || 0
-        },
-        response_data: {
-          content: 'Generated release notes content...'
-        },
-        status: 'success',
-        duration_ms: 3250
-      });
-    }
   }
 
   navigateBack() {
     this.router.navigate(['/jobs']);
   }
 
-  downloadArtifact() {
-    if (!this.job?.id || this.artifacts.length === 0) return;
-    
-    const artifact = this.artifacts[0];
-    this.jobsService.downloadArtifact(this.job.id, artifact.id).subscribe({
-      next: (blob) => {
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = artifact.filename;
-        a.click();
-        window.URL.revokeObjectURL(url);
-        
-        this.snackBar.open('Download started', 'Close', {
-          duration: 3000
-        });
-      },
-      error: (error) => {
-        this.snackBar.open('Failed to download artifact', 'Close', {
-          duration: 3000
-        });
-      }
-    });
+  chipClass(job: Job): string {
+    return job.status === 'cancelled' ? 'failed' : job.status;
   }
 
-  downloadSpecificArtifact(artifact: JobArtifact) {
-    if (!this.job?.id) return;
-    
-    this.jobsService.downloadArtifact(this.job.id, artifact.id).subscribe({
-      next: (blob) => {
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = artifact.filename;
-        a.click();
-        window.URL.revokeObjectURL(url);
-      },
-      error: (error) => {
-        this.snackBar.open('Failed to download artifact', 'Close', {
-          duration: 3000
-        });
-      }
-    });
+  statusLabel(job: Job): string {
+    if (job.status === 'completed') return 'Ready for review';
+    return job.status.charAt(0).toUpperCase() + job.status.slice(1);
   }
 
-  viewArtifact(artifact: JobArtifact) {
-    if (!this.job?.id) return;
-    
-    // Fetch the actual content
-    this.jobsService.getArtifactContent(this.job.id, artifact.id).subscribe({
-      next: (response) => {
-        this.contentPreview = response.content;
-      },
-      error: (error) => {
-        console.error('Failed to load artifact content:', error);
-        this.snackBar.open('Failed to load artifact content', 'Close', {
-          duration: 3000
-        });
-      }
-    });
+  chunkingLabel(strategy: string): string {
+    return { single: 'single topic', by_group: 'one per group', by_component: 'one per component' }[strategy] || strategy;
   }
 
-  retryJob() {
-    if (!this.job?.id) return;
-    
-    // Start retry progress tracking
-    this.retryInProgress = true;
-    this.retryProgress = 0;
-    this.retryStatusMessage = 'Creating retry job...';
-    
-    this.jobsService.retryJob(this.job.id).subscribe({
-      next: (newJob) => {
-        // Clear the error from the current job display since we're retrying
-        // Keep status as 'failed' but clear the error message for visual feedback
-        if (this.job) {
-          this.job.error_message = undefined;
-          // Note: We keep status as 'failed' since 'retrying' is not a valid status
-          // The retry progress bar will show that a retry is in progress
-        }
-        
-        this.retryJobData = newJob;
-        this.retryJobStatus = newJob.status;
-        this.retryProgress = 10;
-        this.retryStatusMessage = 'Retry job created. Starting execution...';
-        
-        // Start monitoring the new job
-        this.monitorRetryJob(newJob.id);
-        
-        this.snackBar.open('Job retry initiated', 'Close', {
-          duration: 3000
-        });
-      },
-      error: (error) => {
-        this.retryInProgress = false;
-        this.snackBar.open('Failed to retry job', 'Close', {
-          duration: 3000
-        });
-      }
-    });
+  duration(): string {
+    if (!this.job?.started_at) return '—';
+    const start = new Date(this.job.started_at).getTime();
+    const end = this.job.completed_at ? new Date(this.job.completed_at).getTime() : Date.now();
+    const seconds = Math.max(0, Math.floor((end - start) / 1000));
+    const minutes = Math.floor(seconds / 60);
+    return minutes > 0 ? `${minutes}m ${seconds % 60}s` : `${seconds}s`;
   }
 
   rerunJob() {
-    if (!this.job?.id) return;
-    
+    if (!this.job) return;
     this.jobsService.rerunJob(this.job.id).subscribe({
-      next: (newJob) => {
-        this.snackBar.open('New job created with same parameters', 'View', {
-          duration: 5000
-        }).onAction().subscribe(() => {
-          // Navigate to the new job
-          this.router.navigate(['/jobs', newJob.id]);
-        });
-        
-        // Optionally navigate directly to the new job
-        this.router.navigate(['/jobs', newJob.id]);
+      next: (job) => {
+        this.job = job;
+        this.lastStatus = '';
+        this.snackBar.open('Rerun started', 'Close', { duration: 3000 });
       },
-      error: (error) => {
-        this.snackBar.open('Failed to rerun job', 'Close', {
-          duration: 3000
-        });
-        console.error('Rerun job error:', error);
-      }
+      error: (error) => this.snackBar.open(error.error?.detail || 'Failed to rerun', 'Close', { duration: 5000 })
     });
   }
 
-  private monitorRetryJob(jobId: string) {
-    // Poll the retry job status every 2 seconds
-    this.retrySubscription = interval(2000)
-      .pipe(
-        startWith(0),
-        switchMap(() => this.jobsService.getJob(jobId))
-      )
-      .subscribe({
-        next: (job) => {
-          this.retryJobData = job;
-          this.retryJobStatus = job.status;
-          
-          // Update progress and message based on status
-          switch (job.status) {
-            case 'pending':
-              this.retryProgress = 20;
-              this.retryStatusMessage = 'Job queued for processing...';
-              break;
-            case 'running':
-              // For running jobs, estimate progress based on tickets processed
-              if (job.tickets_processed > 0 && this.job?.tickets_processed) {
-                const percentComplete = (job.tickets_processed / this.job.tickets_processed) * 60 + 30;
-                this.retryProgress = Math.min(percentComplete, 90);
-                this.retryStatusMessage = `Processing tickets... (${job.tickets_processed} processed)`;
-              } else {
-                this.retryProgress = 30;
-                this.retryStatusMessage = 'Processing release notes...';
-              }
-              break;
-            case 'completed':
-              this.retryProgress = 100;
-              this.retryStatusMessage = 'Job completed successfully!';
-              this.handleRetryComplete(job);
-              break;
-            case 'failed':
-              this.retryProgress = 100;
-              this.retryStatusMessage = `Job failed: ${job.error_message || 'Unknown error'}`;
-              this.handleRetryFailed(job);
-              break;
-          }
-        },
-        error: (error) => {
-          console.error('Error monitoring retry job:', error);
-          this.retryInProgress = false;
-          this.retrySubscription?.unsubscribe();
-        }
-      });
-  }
-
-  private handleRetryComplete(newJob: Job) {
-    // Stop monitoring
-    this.retrySubscription?.unsubscribe();
-    
-    // Show success for 2 seconds then navigate to new job
-    setTimeout(() => {
-      this.retryInProgress = false;
-      // Replace current job with the new one
-      this.job = newJob;
-      this.jobId = newJob.id;
-      // Update the URL without full navigation
-      window.history.replaceState({}, '', `/jobs/${newJob.id}`);
-      // Reload job details
-      this.loadJobDetails();
-      
-      this.snackBar.open('Job retry completed successfully!', 'Close', {
-        duration: 5000,
-        panelClass: ['success-snackbar']
-      });
-    }, 2000);
-  }
-
-  private handleRetryFailed(newJob: Job) {
-    // Stop monitoring
-    this.retrySubscription?.unsubscribe();
-    
-    // Update the original job display with the new failure info
-    if (this.job) {
-      this.job.status = 'failed';
-      this.job.error_message = newJob.error_message;
-      this.job.completed_at = newJob.completed_at;
-    }
-    
-    // Show error for 3 seconds then hide progress
-    setTimeout(() => {
-      this.retryInProgress = false;
-      
-      // Replace current job with the failed retry so we have the latest error
-      this.job = newJob;
-      this.jobId = newJob.id;
-      // Update the URL to the new job
-      window.history.replaceState({}, '', `/jobs/${newJob.id}`);
-      // Reload job details to get the latest data
-      this.loadJobDetails();
-      
-      this.snackBar.open(`Retry failed: ${newJob.error_message || 'Unknown error'}`, 'Close', {
-        duration: 5000,
-        panelClass: ['error-snackbar']
-      });
-    }, 3000);
-  }
-
   cancelJob() {
-    if (!this.job?.id) return;
-    
-    if (confirm('Are you sure you want to cancel this job?')) {
-      this.jobsService.cancelJob(this.job.id).subscribe({
-        next: () => {
-          this.job!.status = 'failed';
-          this.snackBar.open('Job cancelled', 'Close', {
-            duration: 3000
-          });
-        },
-        error: (error) => {
-          this.snackBar.open('Failed to cancel job', 'Close', {
-            duration: 3000
-          });
-        }
+    if (!this.job) return;
+    this.jobsService.cancelJob(this.job.id).subscribe({
+      next: () => this.snackBar.open('Cancelling…', 'Close', { duration: 3000 }),
+      error: () => this.snackBar.open('Failed to cancel', 'Close', { duration: 3000 })
+    });
+  }
+
+  deleteJob() {
+    if (!this.job) return;
+    const ref = this.dialog.open(HopConfirmDialogComponent, {
+      data: { title: 'Delete release', message: 'Delete this release with all its notes, history and chat? This cannot be undone.', confirmText: 'Delete' }
+    });
+    ref.afterClosed().subscribe(confirmed => {
+      if (!confirmed || !this.job) return;
+      this.jobsService.deleteJob(this.job.id).subscribe({
+        next: () => this.router.navigate(['/jobs']),
+        error: () => this.snackBar.open('Failed to delete', 'Close', { duration: 3000 })
       });
-    }
+    });
   }
 
-  getStatusClass(status: string): string {
-    return status.toLowerCase();
+  downloadTopic(topic: ReleaseNoteTopic) {
+    if (!this.job) return;
+    this.jobsService.downloadTopic(this.job.id, topic.id).subscribe({
+      next: (blob) => {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = topic.filename;
+        a.click();
+        window.URL.revokeObjectURL(url);
+      },
+      error: () => this.snackBar.open('Failed to download', 'Close', { duration: 3000 })
+    });
   }
 
-  getStatusIcon(status: string): string {
-    switch (status.toLowerCase()) {
-      case 'pending':
-        return 'schedule';
-      case 'running':
-        return 'sync';
-      case 'completed':
-        return 'check_circle';
-      case 'failed':
-        return 'error';
-      default:
-        return 'help';
-    }
-  }
-
-  getRequestStatusClass(status: string): string {
-    return `request-${status}`;
+  requestChip(status: string): string {
+    return status === 'success' ? 'completed' : status === 'failed' ? 'failed' : 'pending';
   }
 
   formatRequestType(type: string): string {
-    const typeMap: { [key: string]: string } = {
-      'jira_query': 'JIRA Query',
-      'ai_generation': 'AI Generation',
-      'heretto_publish': 'Heretto Publish'
+    const map: Record<string, string> = {
+      jira_query: 'Jira query', issue_snapshot: 'Issue snapshot', evaluate: 'Evaluate issues',
+      consolidate: 'Consolidate notes', organize: 'Organize notes', write: 'Write note',
+      heretto_publish: 'Publish to Heretto', agent_run: 'Agent run', ai_generation: 'AI generation',
     };
-    return typeMap[type] || type;
+    return map[type] || type;
   }
 
-  formatDate(dateStr: string): string {
-    if (!dateStr) return 'N/A';
-    const date = new Date(dateStr);
-    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+  requestSummary(request: JobRequestLog): string {
+    const data = request.request_data || {};
+    const response = request.response_data || {};
+    switch (request.type) {
+      case 'write': return data.title ? `“${data.title}”${data.rewrite ? ' (rewrite)' : ''}` : '';
+      case 'evaluate': return Array.isArray(data.issues) ? `${data.issues.length} issues → ${response.candidates ?? '?'} candidates` : '';
+      case 'consolidate': return `${data.candidates ?? '?'} candidates → ${response.items ?? '?'} notes`;
+      case 'organize': return `${data.items ?? '?'} notes into ${(response.groups || []).length || '?'} groups`;
+      case 'issue_snapshot': return `${(response.new || []).length} new, ${(response.changed || []).length} changed, ${response.unchanged ?? 0} unchanged`;
+      case 'jira_query': return `${response.ticket_count ?? '?'} tickets`;
+      case 'heretto_publish': return data.topic || '';
+      default: return '';
+    }
   }
 
-  formatTimestamp(timestamp: string): string {
-    const date = new Date(timestamp);
-    return date.toLocaleTimeString();
+  hasKeys(obj: any): boolean {
+    return obj && typeof obj === 'object' && Object.keys(obj).length > 0;
   }
 
   formatJson(obj: any): string {
     if (!obj) return '';
     if (typeof obj === 'string') return obj;
     return JSON.stringify(obj, null, 2);
-  }
-
-  formatFileSize(bytes: number): string {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
-  }
-
-  calculateDuration(): string {
-    if (!this.job?.started_at) return 'N/A';
-    
-    const start = new Date(this.job.started_at);
-    const end = this.job.completed_at ? new Date(this.job.completed_at) : new Date();
-    const duration = end.getTime() - start.getTime();
-    
-    const seconds = Math.floor(duration / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const hours = Math.floor(minutes / 60);
-    
-    if (hours > 0) {
-      return `${hours}h ${minutes % 60}m`;
-    } else if (minutes > 0) {
-      return `${minutes}m ${seconds % 60}s`;
-    } else {
-      return `${seconds}s`;
-    }
-  }
-
-  calculateTotalSize(): string {
-    const totalBytes = this.artifacts.reduce((sum, a) => sum + a.size_bytes, 0);
-    return this.formatFileSize(totalBytes);
-  }
-
-  deleteArtifact(artifact: JobArtifact) {
-    if (!this.job?.id) return;
-    
-    const confirmMessage = `Are you sure you want to delete "${artifact.filename}"? This action cannot be undone.`;
-    
-    if (confirm(confirmMessage)) {
-      this.jobsService.deleteArtifact(this.job.id, artifact.id).subscribe({
-        next: (response) => {
-          // Remove artifact from local array
-          this.artifacts = this.artifacts.filter(a => a.id !== artifact.id);
-          
-          // Clear preview if this artifact was being viewed
-          if (this.contentPreview) {
-            this.contentPreview = null;
-          }
-          
-          this.snackBar.open(`Deleted ${artifact.filename}`, 'Close', {
-            duration: 3000,
-            panelClass: ['success-snackbar']
-          });
-        },
-        error: (error) => {
-          console.error('Failed to delete artifact:', error);
-          this.snackBar.open('Failed to delete artifact', 'Close', {
-            duration: 3000,
-            panelClass: ['error-snackbar']
-          });
-        }
-      });
-    }
-  }
-
-  clearAllArtifacts() {
-    if (!this.job?.id) return;
-    
-    const confirmMessage = `Are you sure you want to delete ALL generated content for this job? This will permanently delete ${this.artifacts.length} file(s) and cannot be undone.`;
-    
-    if (confirm(confirmMessage)) {
-      const doubleConfirm = prompt('Type "DELETE" to confirm deletion of all artifacts:');
-      
-      if (doubleConfirm === 'DELETE') {
-        this.jobsService.deleteAllArtifacts(this.job.id).subscribe({
-          next: (response) => {
-            const deletedCount = response.deleted_count || this.artifacts.length;
-            
-            // Clear local artifacts array
-            this.artifacts = [];
-            this.contentPreview = null;
-            
-            this.snackBar.open(`Successfully deleted ${deletedCount} artifact(s)`, 'Close', {
-              duration: 3000,
-              panelClass: ['success-snackbar']
-            });
-          },
-          error: (error) => {
-            console.error('Failed to delete artifacts:', error);
-            this.snackBar.open('Failed to delete artifacts', 'Close', {
-              duration: 3000,
-              panelClass: ['error-snackbar']
-            });
-          }
-        });
-      } else {
-        this.snackBar.open('Deletion cancelled', 'Close', {
-          duration: 2000
-        });
-      }
-    }
   }
 }

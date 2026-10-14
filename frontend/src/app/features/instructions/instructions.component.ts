@@ -1,21 +1,16 @@
 import { Component, OnInit, inject, ChangeDetectionStrategy } from '@angular/core';
-
 import { Router } from '@angular/router';
 import { MatCardModule } from '@angular/material/card';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
-import { MatTableModule } from '@angular/material/table';
-import { MatChipsModule } from '@angular/material/chips';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { MatExpansionModule } from '@angular/material/expansion';
-import { 
-  InstructionsService, 
-  InstructionSet 
-} from '../../core/services/instructions.service';
-import { JobsService } from '../../core/services/jobs.service';
+import { MatMenuModule } from '@angular/material/menu';
+import { HopConfirmDialogComponent } from '@heretto/hop-ui';
+import { InstructionsService, InstructionSet } from '../../core/services/instructions.service';
+import { JobsService, CHUNKING_STRATEGIES } from '../../core/services/jobs.service';
 import { InstructionDialogComponent } from './instruction-dialog.component';
 import { TestQueryDialogComponent } from './test-query-dialog.component';
 import { JobCreateDialogComponent } from '../jobs/job-create-dialog.component';
@@ -27,350 +22,192 @@ import { JobCreateDialogComponent } from '../jobs/job-create-dialog.component';
     MatCardModule,
     MatButtonModule,
     MatIconModule,
-    MatTableModule,
-    MatChipsModule,
     MatTooltipModule,
     MatDialogModule,
     MatSnackBarModule,
     MatProgressSpinnerModule,
-    MatExpansionModule
-],
+    MatMenuModule
+  ],
   template: `
-    <div class="instructions-container">
+    <div class="hop-page">
       <div class="header">
         <div>
           <h1>Instruction Sets</h1>
-          <p class="subtitle">Configure JQL queries and AI prompts for generating release notes</p>
+          <p class="subtitle">Which issues to read, which agents write, and how the release notes are organized</p>
         </div>
         <button mat-raised-button color="primary" (click)="createInstructionSet()">
           <mat-icon>add</mat-icon>
           Create Instruction Set
         </button>
       </div>
-    
+
       @if (loading) {
-        <div class="loading-container">
-          <mat-spinner></mat-spinner>
-        </div>
+        <div class="loading-container"><mat-spinner></mat-spinner></div>
       }
-    
+
       @if (!loading && instructionSets.length === 0) {
         <div class="empty-state">
           <mat-card>
             <mat-card-content>
               <mat-icon class="empty-icon">description</mat-icon>
-              <h3>No Instruction Sets Yet</h3>
-              <p>Create your first instruction set to define how release notes should be generated.</p>
+              <h3>No instruction sets yet</h3>
+              <p>An instruction set tells a job which Jira issues to read and which agents turn them into release notes.</p>
               <button mat-raised-button color="primary" (click)="createInstructionSet()">
                 <mat-icon>add</mat-icon>
-                Create Your First Instruction Set
+                Create your first instruction set
               </button>
             </mat-card-content>
           </mat-card>
         </div>
       }
-    
+
       @if (!loading && instructionSets.length > 0) {
         <div class="instruction-list">
-          @for (instruction of instructionSets; track instruction) {
-            <mat-card class="instruction-card">
-              <mat-card-header>
-                <div class="card-header-content">
-                  <div class="title-section">
-                    <mat-card-title>
-                      {{ instruction.name }}
-                      @if (instruction.is_default) {
-                        <mat-chip color="primary" selected>
-                          Default
-                        </mat-chip>
-                      }
-                    </mat-card-title>
-                    @if (instruction.description) {
-                      <mat-card-subtitle>
-                        {{ instruction.description }}
-                      </mat-card-subtitle>
+          @for (instruction of instructionSets; track instruction.id) {
+            <mat-card class="instruction-card" [class.hop-card-accent]="instruction.is_default">
+              <div class="card-header-row">
+                <div class="title-section">
+                  <h2 class="card-title">
+                    {{ instruction.name }}
+                    @if (instruction.is_default) {
+                      <span class="hop-status-chip hop-status-chip-running">Default</span>
                     }
-                  </div>
-                  <div class="actions">
-                    <button mat-icon-button
-                      [matTooltip]="instruction.is_default ? 'Already default' : 'Set as default'"
-                      (click)="setAsDefault(instruction)"
-                      [disabled]="instruction.is_default">
-                      <mat-icon>star</mat-icon>
-                    </button>
-                    <button mat-icon-button
-                      matTooltip="Edit"
-                      (click)="editInstructionSet(instruction)">
-                      <mat-icon>edit</mat-icon>
-                    </button>
-                    <button mat-icon-button
-                      matTooltip="Duplicate"
-                      (click)="duplicateInstructionSet(instruction)">
-                      <mat-icon>content_copy</mat-icon>
-                    </button>
-                    <button mat-icon-button
-                      matTooltip="Delete"
-                      color="warn"
-                      (click)="deleteInstructionSet(instruction)">
-                      <mat-icon>delete</mat-icon>
-                    </button>
-                  </div>
-                </div>
-              </mat-card-header>
-              <mat-card-content>
-                <mat-expansion-panel>
-                  <mat-expansion-panel-header>
-                    <mat-panel-title>
-                      <mat-icon>search</mat-icon>
-                      JQL Query
-                    </mat-panel-title>
-                  </mat-expansion-panel-header>
-                  <pre class="jql-query">{{ instruction.jql_query }}</pre>
-                </mat-expansion-panel>
-                <div class="agent-chain-display">
-                  <mat-icon>smart_toy</mat-icon>
-                  @if (instruction.agent_ids?.length) {
-                    <span>{{ instruction.agent_ids.length }} agent(s) configured</span>
-                  } @else {
-                    <span class="no-agents-warning">No agents configured</span>
+                  </h2>
+                  @if (instruction.description) {
+                    <p class="card-subtitle">{{ instruction.description }}</p>
                   }
                 </div>
-                @if (instruction.publish_to_heretto) {
-                  <div class="heretto-folder-info">
-                    <mat-icon>cloud_upload</mat-icon>
-                    <span>Save to Heretto{{ instruction.heretto_folder_id ? ' — Folder: ' : '' }}@if (instruction.heretto_folder_id) {
-                      <code>{{ instruction.heretto_folder_id }}</code>
-                    }</span>
-                  </div>
-                }
-                <div class="metadata">
-                  <span class="meta-item">
-                    <mat-icon>schedule</mat-icon>
-                    Created: {{ formatDate(instruction.created_at) }}
-                  </span>
-                  @if (instruction.updated_at) {
-                    <span class="meta-item">
-                      <mat-icon>update</mat-icon>
-                      Updated: {{ formatDate(instruction.updated_at) }}
-                    </span>
+                <div class="actions">
+                  <button mat-icon-button
+                    [matTooltip]="instruction.is_default ? 'Already default' : 'Set as default'"
+                    (click)="setAsDefault(instruction)"
+                    [disabled]="instruction.is_default">
+                    <mat-icon>star</mat-icon>
+                  </button>
+                  <button mat-icon-button matTooltip="Edit" (click)="editInstructionSet(instruction)">
+                    <mat-icon>edit</mat-icon>
+                  </button>
+                  <button mat-icon-button [matMenuTriggerFor]="menu" matTooltip="More">
+                    <mat-icon>more_vert</mat-icon>
+                  </button>
+                  <mat-menu #menu="matMenu">
+                    <button mat-menu-item (click)="duplicateInstructionSet(instruction)">
+                      <mat-icon>content_copy</mat-icon><span>Duplicate</span>
+                    </button>
+                    <button mat-menu-item (click)="testInstructionSet(instruction)">
+                      <mat-icon>bug_report</mat-icon><span>Test JQL query</span>
+                    </button>
+                    <button mat-menu-item (click)="deleteInstructionSet(instruction)">
+                      <mat-icon>delete</mat-icon><span>Delete</span>
+                    </button>
+                  </mat-menu>
+                </div>
+              </div>
+
+              <div class="hop-query-block">
+                <span class="hop-query-block-label">JQL</span>
+                <code>{{ instruction.jql_query }}</code>
+              </div>
+
+              <dl class="facts">
+                <div class="fact">
+                  <dt>Product</dt>
+                  <dd>{{ instruction.product_name || '—' }}</dd>
+                </div>
+                <div class="fact">
+                  <dt>Writer agent</dt>
+                  <dd>
+                    @if (instruction.writer_agent_name) {
+                      {{ instruction.writer_agent_name }}
+                    } @else {
+                      <span class="warning-text"><mat-icon>warning</mat-icon> None — jobs cannot run</span>
+                    }
+                  </dd>
+                </div>
+                <div class="fact">
+                  <dt>Analysis agent</dt>
+                  <dd>{{ instruction.analysis_agent_name || 'Same as writer' }}</dd>
+                </div>
+                <div class="fact">
+                  <dt>Topics</dt>
+                  <dd>{{ chunkingLabel(instruction.chunking_strategy) }}</dd>
+                </div>
+                <div class="fact">
+                  <dt>Heretto</dt>
+                  <dd>
+                    @if (instruction.publish_to_heretto) {
+                      Publish to folder <code>{{ instruction.heretto_folder_id || '?' }}</code>
+                    } @else {
+                      Manual publish from the workspace
+                    }
+                  </dd>
+                </div>
+              </dl>
+
+              @if (instruction.relevance_guidance || instruction.organization_guidance) {
+                <div class="guidance">
+                  @if (instruction.relevance_guidance) {
+                    <p><strong>Relevance:</strong> {{ instruction.relevance_guidance }}</p>
+                  }
+                  @if (instruction.organization_guidance) {
+                    <p><strong>Organization:</strong> {{ instruction.organization_guidance }}</p>
                   }
                 </div>
-              </mat-card-content>
-              <mat-card-actions>
-                <button mat-raised-button color="primary" (click)="testInstructionSet(instruction)">
-                  <mat-icon>bug_report</mat-icon>
-                  TEST JQL QUERY
-                </button>
-                <button mat-raised-button color="accent" (click)="runJob(instruction)">
-                  <mat-icon>rocket_launch</mat-icon>
-                  Generate Release Notes
-                </button>
-              </mat-card-actions>
+              }
+
+              <div class="card-footer">
+                <span class="meta">
+                  Created {{ formatDate(instruction.created_at) }}
+                  @if (instruction.updated_at) { · Updated {{ formatDate(instruction.updated_at) }} }
+                </span>
+                <span class="footer-actions">
+                  <button mat-stroked-button (click)="testInstructionSet(instruction)">
+                    <mat-icon>bug_report</mat-icon>
+                    Test query
+                  </button>
+                  <button mat-raised-button color="primary" (click)="runJob(instruction)"
+                          [disabled]="!instruction.writer_agent_id"
+                          [matTooltip]="instruction.writer_agent_id ? '' : 'Pick a writer agent first'">
+                    <mat-icon>rocket_launch</mat-icon>
+                    Start a release
+                  </button>
+                </span>
+              </div>
             </mat-card>
           }
         </div>
       }
     </div>
-    `,
+  `,
   changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
-    .instructions-container {
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 20px;
-    }
-    
-    .header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 30px;
-    }
-
-    .header h1 {
-      margin: 0;
-    }
-
-    .subtitle {
-      color: var(--text-secondary);
-      margin: 5px 0 0 0;
-    }
-
-    .loading-container {
-      display: flex;
-      justify-content: center;
-      padding: 60px;
-    }
-
-    .empty-state {
-      text-align: center;
-      padding: 40px 20px;
-    }
-
-    .empty-state mat-card {
-      max-width: 500px;
-      margin: 0 auto;
-      padding: 40px;
-    }
-
-    .empty-icon {
-      font-size: 64px;
-      width: 64px;
-      height: 64px;
-      color: var(--border-default);
-      margin: 0 auto 20px;
-    }
-
-    .empty-state h3 {
-      color: var(--text-primary);
-      margin-bottom: 10px;
-    }
-
-    .empty-state p {
-      color: var(--text-secondary);
-      margin-bottom: 20px;
-    }
-
-    .instruction-list {
-      display: grid;
-      gap: 20px;
-    }
-
-    .instruction-card {
-      margin-bottom: 20px;
-    }
-
-    .card-header-content {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      width: 100%;
-    }
-
-    .title-section {
-      flex: 1;
-    }
-
-    .title-section mat-card-title {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 8px;
-    }
-
-    .actions {
-      display: flex;
-      gap: 4px;
-    }
-
-    mat-expansion-panel {
-      margin: 10px 0;
-      box-shadow: none !important;
-      border: 1px solid var(--border-default);
-    }
-
-    mat-expansion-panel:before {
-      display: none;
-    }
-
-    mat-panel-title {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 14px;
-    }
-
-    mat-panel-title mat-icon {
-      font-size: 20px;
-    }
-
-    .jql-query, .prompt-text {
-      background: var(--bg-secondary);
-      padding: 15px;
-      border-radius: 4px;
-      font-family: var(--font-mono);
-      font-size: 13px;
-      line-height: 1.5;
-      white-space: pre-wrap;
-      margin: 0;
-    }
-
-    .heretto-folder-info {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-top: 12px;
-      padding: 8px 12px;
-      background: var(--color-success-bg);
-      border-radius: 4px;
-      font-size: 13px;
-      color: var(--color-success-text);
-    }
-
-    .heretto-folder-info mat-icon {
-      font-size: 18px;
-      width: 18px;
-      height: 18px;
-    }
-
-    .agent-chain-display {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-top: 12px;
-      font-size: 13px;
-      color: var(--text-secondary);
-    }
-
-    .agent-chain-display mat-icon {
-      font-size: 18px;
-      width: 18px;
-      height: 18px;
-    }
-
-    .no-agents-warning {
-      color: var(--color-warning-text, #b45309);
-    }
-
-    .heretto-folder-info code {
-      background: rgba(0,0,0,0.06);
-      padding: 2px 6px;
-      border-radius: 3px;
-      font-family: var(--font-mono);
-    }
-
-    .metadata {
-      display: flex;
-      gap: 20px;
-      margin-top: 15px;
-      padding-top: 15px;
-      border-top: 1px solid var(--border-default);
-      font-size: 12px;
-      color: var(--text-tertiary);
-    }
-
-    .meta-item {
-      display: flex;
-      align-items: center;
-      gap: 5px;
-    }
-
-    .meta-item mat-icon {
-      font-size: 16px;
-      width: 16px;
-      height: 16px;
-    }
-
-    mat-card-actions {
-      padding: 16px;
-      border-top: 1px solid var(--border-default);
-    }
-
-    mat-chip {
-      font-size: 12px;
-      min-height: 24px;
-      padding: 4px 8px;
-    }
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; gap: 16px; flex-wrap: wrap; }
+    .header h1 { margin: 0; }
+    .subtitle { color: var(--text-secondary); margin: 5px 0 0 0; }
+    .loading-container { display: flex; justify-content: center; padding: 60px; }
+    .empty-state { text-align: center; padding: 40px 20px; }
+    .empty-state mat-card { max-width: 520px; margin: 0 auto; padding: 40px; }
+    .empty-icon { font-size: 64px; width: 64px; height: 64px; color: var(--border-default); margin: 0 auto 20px; }
+    .empty-state h3 { color: var(--text-primary); margin-bottom: 10px; }
+    .empty-state p { color: var(--text-secondary); margin-bottom: 20px; }
+    .instruction-list { display: grid; gap: 16px; }
+    .instruction-card { padding: 20px 24px; }
+    .card-header-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+    .card-title { display: flex; align-items: center; gap: 10px; margin: 0 0 4px 0; font-size: 18px; }
+    .card-subtitle { margin: 0; color: var(--text-secondary); }
+    .actions { display: flex; gap: 2px; flex-shrink: 0; }
+    .hop-query-block { margin: 16px 0; }
+    .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px 24px; margin: 0; }
+    .fact dt { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-tertiary); margin-bottom: 2px; }
+    .fact dd { margin: 0; font-size: 14px; }
+    .fact code { font-family: var(--font-mono); font-size: 12px; background: var(--bg-secondary); padding: 1px 5px; border-radius: 3px; }
+    .warning-text { color: var(--color-warning-text); display: inline-flex; align-items: center; gap: 4px; }
+    .warning-text mat-icon { font-size: 16px; width: 16px; height: 16px; }
+    .guidance { margin-top: 14px; padding: 10px 14px; background: var(--bg-secondary); border-radius: 8px; font-size: 13px; color: var(--text-secondary); }
+    .guidance p { margin: 4px 0; }
+    .card-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border-default); gap: 12px; flex-wrap: wrap; }
+    .meta { font-size: 12px; color: var(--text-tertiary); }
+    .footer-actions { display: flex; gap: 8px; }
   `]
 })
 export class InstructionsComponent implements OnInit {
@@ -397,207 +234,120 @@ export class InstructionsComponent implements OnInit {
       error: (error) => {
         console.error('Failed to load instruction sets:', error);
         this.loading = false;
-        this.snackBar.open('Failed to load instruction sets', 'Close', {
-          duration: 3000
-        });
+        this.snackBar.open('Failed to load instruction sets', 'Close', { duration: 3000 });
       }
     });
   }
 
-  createInstructionSet() {
-    const dialogRef = this.dialog.open(InstructionDialogComponent, {
-      width: '800px',
-      maxHeight: '90vh',
-      data: null
-    });
+  chunkingLabel(strategy: string | undefined): string {
+    return CHUNKING_STRATEGIES.find(s => s.value === strategy)?.label || 'Single topic';
+  }
 
+  createInstructionSet() {
+    const dialogRef = this.dialog.open(InstructionDialogComponent, { width: '800px', maxHeight: '90vh', data: null });
     dialogRef.afterClosed().subscribe(result => {
-      if (result) {
-        this.instructionsService.createInstructionSet(result).subscribe({
-          next: (instruction) => {
-            this.instructionSets.push(instruction);
-            this.snackBar.open('Instruction set created successfully', 'Close', {
-              duration: 3000
-            });
-          },
-          error: (error) => {
-            this.snackBar.open('Failed to create instruction set', 'Close', {
-              duration: 3000
-            });
-            console.error('Error creating instruction set:', error);
-          }
-        });
-      }
+      if (!result) return;
+      this.instructionsService.createInstructionSet(result).subscribe({
+        next: (instruction) => {
+          this.instructionSets.push(instruction);
+          this.snackBar.open('Instruction set created', 'Close', { duration: 3000 });
+        },
+        error: (error) => {
+          this.snackBar.open(error.error?.detail || 'Failed to create instruction set', 'Close', { duration: 5000 });
+        }
+      });
     });
   }
 
   editInstructionSet(instruction: InstructionSet) {
-    const dialogRef = this.dialog.open(InstructionDialogComponent, {
-      width: '800px',
-      maxHeight: '90vh',
-      data: instruction
-    });
-
+    const dialogRef = this.dialog.open(InstructionDialogComponent, { width: '800px', maxHeight: '90vh', data: instruction });
     dialogRef.afterClosed().subscribe(result => {
-      if (result && instruction.id) {
-        this.instructionsService.updateInstructionSet(instruction.id, result).subscribe({
-          next: (updated) => {
-            const index = this.instructionSets.findIndex(i => i.id === instruction.id);
-            if (index >= 0) {
-              this.instructionSets[index] = updated;
-            }
-            this.snackBar.open('Instruction set updated successfully', 'Close', {
-              duration: 3000
-            });
-          },
-          error: (error) => {
-            this.snackBar.open('Failed to update instruction set', 'Close', {
-              duration: 3000
-            });
-            console.error('Error updating instruction set:', error);
+      if (!result || !instruction.id) return;
+      this.instructionsService.updateInstructionSet(instruction.id, result).subscribe({
+        next: (updated) => {
+          const index = this.instructionSets.findIndex(i => i.id === instruction.id);
+          if (index >= 0) this.instructionSets[index] = updated;
+          if (updated.is_default) {
+            this.instructionSets.forEach(i => { if (i.id !== updated.id) i.is_default = false; });
           }
-        });
-      }
+          this.snackBar.open('Instruction set updated', 'Close', { duration: 3000 });
+        },
+        error: (error) => {
+          this.snackBar.open(error.error?.detail || 'Failed to update instruction set', 'Close', { duration: 5000 });
+        }
+      });
     });
   }
 
   duplicateInstructionSet(instruction: InstructionSet) {
-    const duplicate = {
-      ...instruction,
-      name: `${instruction.name} (Copy)`,
-      is_default: false
-    };
+    const duplicate: InstructionSet = { ...instruction, name: `${instruction.name} (Copy)`, is_default: false };
     delete duplicate.id;
     delete duplicate.created_at;
     delete duplicate.updated_at;
-
-    const dialogRef = this.dialog.open(InstructionDialogComponent, {
-      width: '800px',
-      maxHeight: '90vh',
-      data: duplicate
-    });
-
+    const dialogRef = this.dialog.open(InstructionDialogComponent, { width: '800px', maxHeight: '90vh', data: duplicate });
     dialogRef.afterClosed().subscribe(result => {
-      if (result) {
-        this.instructionsService.createInstructionSet(result).subscribe({
-          next: (newInstruction) => {
-            this.instructionSets.push(newInstruction);
-            this.snackBar.open('Instruction set duplicated successfully', 'Close', {
-              duration: 3000
-            });
-          },
-          error: (error) => {
-            this.snackBar.open('Failed to duplicate instruction set', 'Close', {
-              duration: 3000
-            });
-            console.error('Error duplicating instruction set:', error);
-          }
-        });
-      }
+      if (!result) return;
+      this.instructionsService.createInstructionSet(result).subscribe({
+        next: (created) => {
+          this.instructionSets.push(created);
+          this.snackBar.open('Instruction set duplicated', 'Close', { duration: 3000 });
+        },
+        error: (error) => {
+          this.snackBar.open(error.error?.detail || 'Failed to duplicate instruction set', 'Close', { duration: 5000 });
+        }
+      });
     });
   }
 
   deleteInstructionSet(instruction: InstructionSet) {
-    if (instruction.id && confirm(`Are you sure you want to delete "${instruction.name}"?`)) {
-      this.instructionsService.deleteInstructionSet(instruction.id).subscribe({
+    if (!instruction.id) return;
+    const ref = this.dialog.open(HopConfirmDialogComponent, {
+      data: { title: 'Delete instruction set', message: `Delete "${instruction.name}"? Jobs already run from it are kept.`, confirmText: 'Delete' }
+    });
+    ref.afterClosed().subscribe(confirmed => {
+      if (!confirmed) return;
+      this.instructionsService.deleteInstructionSet(instruction.id!).subscribe({
         next: () => {
           this.instructionSets = this.instructionSets.filter(i => i.id !== instruction.id);
-          this.snackBar.open('Instruction set deleted successfully', 'Close', {
-            duration: 3000
-          });
+          this.snackBar.open('Instruction set deleted', 'Close', { duration: 3000 });
         },
-        error: (error) => {
-          this.snackBar.open('Failed to delete instruction set', 'Close', {
-            duration: 3000
-          });
-          console.error('Error deleting instruction set:', error);
-        }
+        error: () => this.snackBar.open('Failed to delete instruction set', 'Close', { duration: 3000 })
       });
-    }
+    });
   }
 
   setAsDefault(instruction: InstructionSet) {
     if (!instruction.id || instruction.is_default) return;
-
     this.instructionsService.setAsDefault(instruction.id).subscribe({
       next: () => {
-        // Update all instruction sets to reflect new default
-        this.instructionSets.forEach(i => {
-          i.is_default = i.id === instruction.id;
-        });
-        this.snackBar.open('Default instruction set updated', 'Close', {
-          duration: 3000
-        });
+        this.instructionSets.forEach(i => { i.is_default = i.id === instruction.id; });
+        this.snackBar.open('Default instruction set updated', 'Close', { duration: 3000 });
       },
-      error: (error) => {
-        this.snackBar.open('Failed to set as default', 'Close', {
-          duration: 3000
-        });
-        console.error('Error setting default:', error);
-      }
+      error: () => this.snackBar.open('Failed to set as default', 'Close', { duration: 3000 })
     });
   }
 
   testInstructionSet(instruction: InstructionSet) {
-    // Debug: Show immediate feedback
-    this.snackBar.open('Opening test query dialog...', 'Close', {
-      duration: 1000
-    });
-    
-    console.log('Testing instruction set:', instruction);
-    
-    try {
-      const dialogRef = this.dialog.open(TestQueryDialogComponent, {
-        width: '900px',
-        maxHeight: '90vh',
-        data: instruction
-      });
-
-      dialogRef.afterClosed().subscribe(() => {
-        console.log('Test query dialog closed');
-      });
-    } catch (error) {
-      console.error('Error opening test query dialog:', error);
-      this.snackBar.open(`Error: ${error}`, 'Close', {
-        duration: 5000
-      });
-    }
+    this.dialog.open(TestQueryDialogComponent, { width: '900px', maxHeight: '90vh', data: instruction });
   }
 
   runJob(instruction: InstructionSet) {
-    if (!instruction.id) {
-      this.snackBar.open('Invalid instruction set', 'Close', { duration: 3000 });
-      return;
-    }
-
+    if (!instruction.id) return;
     const dialogRef = this.dialog.open(JobCreateDialogComponent, {
-      width: '600px',
-      data: instruction
+      width: '640px',
+      data: { instructionSets: this.instructionSets, selectedId: instruction.id }
     });
-
     dialogRef.afterClosed().subscribe(jobData => {
-      if (jobData) {
-        // Create the job
-        this.jobsService.createJob(jobData).subscribe({
-          next: (job) => {
-            this.snackBar.open('Job created successfully! Redirecting to jobs page...', 'Close', {
-              duration: 3000
-            });
-            // Navigate to jobs page to see the new job
-            setTimeout(() => {
-              this.router.navigate(['/jobs']);
-            }, 1500);
-          },
-          error: (error) => {
-            console.error('Failed to create job:', error);
-            this.snackBar.open(
-              error.error?.detail || 'Failed to create job. Please try again.',
-              'Close',
-              { duration: 5000 }
-            );
-          }
-        });
-      }
+      if (!jobData) return;
+      this.jobsService.createJob(jobData).subscribe({
+        next: (job) => {
+          this.snackBar.open('Release started', 'Close', { duration: 3000 });
+          this.router.navigate(['/jobs', job.id]);
+        },
+        error: (error) => {
+          this.snackBar.open(error.error?.detail || 'Failed to start the release', 'Close', { duration: 5000 });
+        }
+      });
     });
   }
 

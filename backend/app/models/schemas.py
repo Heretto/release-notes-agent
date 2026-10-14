@@ -164,6 +164,8 @@ class HerettoCredentialResponse(BaseModel):
         from_attributes = True
 
 # Instruction set schemas
+CHUNKING_STRATEGIES = ("single", "by_group", "by_component")
+
 class InstructionSetBase(BaseModel):
     name: str
     description: Optional[str] = None
@@ -173,9 +175,17 @@ class InstructionSetBase(BaseModel):
     heretto_folder_id: Optional[str] = None
     publish_to_heretto: bool = False
     is_default: bool = False
+    # Agents by role: the writer writes every note's DITA and runs the workspace chat; the
+    # analysis agent evaluates issues and organizes notes, falling back to the writer.
+    writer_agent_id: Optional[UUID] = None
+    analysis_agent_id: Optional[UUID] = None
+    product_name: Optional[str] = Field(None, max_length=255)
+    relevance_guidance: Optional[str] = Field(None, max_length=8000)
+    organization_guidance: Optional[str] = Field(None, max_length=8000)
+    chunking_strategy: str = Field("single", pattern=r'^(single|by_group|by_component)$')
 
 class InstructionSetCreate(InstructionSetBase):
-    agent_ids: List[UUID] = Field(default_factory=list)
+    pass
 
 class InstructionSetUpdate(BaseModel):
     name: Optional[str] = None
@@ -186,12 +196,18 @@ class InstructionSetUpdate(BaseModel):
     heretto_folder_id: Optional[str] = None
     publish_to_heretto: Optional[bool] = None
     is_default: Optional[bool] = None
-    agent_ids: Optional[List[UUID]] = None
+    writer_agent_id: Optional[UUID] = None
+    analysis_agent_id: Optional[UUID] = None
+    product_name: Optional[str] = Field(None, max_length=255)
+    relevance_guidance: Optional[str] = Field(None, max_length=8000)
+    organization_guidance: Optional[str] = Field(None, max_length=8000)
+    chunking_strategy: Optional[str] = Field(None, pattern=r'^(single|by_group|by_component)$')
 
 class InstructionSetResponse(InstructionSetBase):
     id: UUID
     user_id: UUID
-    agent_ids: List[UUID] = Field(default_factory=list)
+    writer_agent_name: Optional[str] = None
+    analysis_agent_name: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime]
 
@@ -203,10 +219,12 @@ class JobCreate(BaseModel):
     jql_query: str = Field(..., min_length=1, max_length=4096)
     instruction_set_id: UUID
     ai_credential_id: Optional[UUID] = None
-    output_filename: str
+    title: Optional[str] = Field(None, max_length=255)
+    output_filename: str = Field(..., min_length=1, max_length=255)
     publish_to_heretto: bool = False
     heretto_folder_id: Optional[str] = None
     max_tickets: Optional[int] = Field(None, ge=1, le=500)  # Capped by MAX_TICKETS_PER_JOB at runtime
+    chunking_strategy: Optional[str] = Field(None, pattern=r'^(single|by_group|by_component)$')
 
 class JobProgress(BaseModel):
     stage: str
@@ -214,11 +232,20 @@ class JobProgress(BaseModel):
     total: int
     message: str
 
+class JobCounts(BaseModel):
+    issues: int = 0
+    relevant_issues: int = 0
+    items: int = 0
+    approved_items: int = 0
+    attention_items: int = 0
+    topics: int = 0
+
 class JobResponse(BaseModel):
     id: UUID
     user_id: UUID
     instruction_set_id: Optional[UUID]
     ai_credential_id: Optional[UUID]
+    title: Optional[str] = None
     jql_query: str
     status: JobStatusEnum
     triggered_by: JobTriggerEnum
@@ -226,13 +253,131 @@ class JobResponse(BaseModel):
     tickets_processed: int
     max_tickets: Optional[int]
     error_message: Optional[str]
+    stage: Optional[str] = None
+    stage_message: Optional[str] = None
+    chunking_strategy: str = "single"
+    run_count: int = 0
+    last_run_at: Optional[datetime] = None
     created_at: datetime
     started_at: Optional[datetime]
     completed_at: Optional[datetime]
     progress: Optional[JobProgress] = None
-    
+    counts: Optional[JobCounts] = None
+
     class Config:
         from_attributes = True
+
+# ── Workspace: issues, notes, topics, chat ──────────────────────────────────────────
+class JobIssueResponse(BaseModel):
+    id: UUID
+    issue_key: str
+    url: Optional[str] = None
+    summary: str
+    description: Optional[str] = None
+    issue_type: Optional[str] = None
+    status: Optional[str] = None
+    priority: Optional[str] = None
+    labels: List[str] = Field(default_factory=list)
+    components: List[str] = Field(default_factory=list)
+    fix_versions: List[str] = Field(default_factory=list)
+    comments: List[str] = Field(default_factory=list)
+    assignee: Optional[str] = None
+    reporter: Optional[str] = None
+    jira_created: Optional[str] = None
+    jira_updated: Optional[str] = None
+    relevance: str
+    relevance_reason: Optional[str] = None
+    in_query: bool = True
+    item_ids: List[UUID] = Field(default_factory=list)
+    changed_at: Optional[datetime] = None
+
+class ItemReferenceCreate(BaseModel):
+    url: str = Field(..., min_length=1, max_length=2048)
+    label: Optional[str] = Field(None, max_length=255)
+
+class ItemReferenceResponse(BaseModel):
+    id: UUID
+    url: str
+    label: Optional[str] = None
+    user_id: Optional[UUID] = None
+    created_at: Optional[datetime] = None
+
+class ItemHistoryResponse(BaseModel):
+    id: UUID
+    event_type: str
+    actor: str
+    user_id: Optional[UUID] = None
+    summary: str
+    details: Optional[Dict[str, Any]] = None
+    created_at: Optional[datetime] = None
+
+class ReleaseNoteItemResponse(BaseModel):
+    id: UUID
+    job_id: UUID
+    topic_id: Optional[UUID] = None
+    fragment_id: str
+    position: int
+    group_name: Optional[str] = None
+    title: str
+    summary: str
+    dita_content: str
+    status: str
+    needs_attention: bool = False
+    attention_reason: Optional[str] = None
+    user_edited: bool = False
+    issue_keys: List[str] = Field(default_factory=list)
+    reference_count: int = 0
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+class ReleaseNoteItemDetailResponse(ReleaseNoteItemResponse):
+    issues: List[JobIssueResponse] = Field(default_factory=list)
+    references: List[ItemReferenceResponse] = Field(default_factory=list)
+    history: List[ItemHistoryResponse] = Field(default_factory=list)
+
+class ReleaseNoteItemUpdate(BaseModel):
+    title: Optional[str] = Field(None, min_length=1, max_length=500)
+    summary: Optional[str] = Field(None, max_length=8000)
+    dita_content: Optional[str] = Field(None, max_length=200_000)
+    status: Optional[str] = Field(None, pattern=r'^(draft|review|approved|rejected)$')
+    group_name: Optional[str] = Field(None, max_length=255)
+    clear_attention: Optional[bool] = None
+
+class ReleaseNoteTopicResponse(BaseModel):
+    id: UUID
+    position: int
+    slug: str
+    title: str
+    filename: str
+    dita_content: str
+    html: Optional[str] = None
+    render_warnings: List[str] = Field(default_factory=list)
+    heretto_doc_id: Optional[str] = None
+    published_at: Optional[datetime] = None
+    item_ids: List[UUID] = Field(default_factory=list)
+    updated_at: Optional[datetime] = None
+
+class ReassembleRequest(BaseModel):
+    chunking_strategy: str = Field(..., pattern=r'^(single|by_group|by_component)$')
+
+class ChatMessageResponse(BaseModel):
+    id: UUID
+    role: str
+    content: str
+    actions: Optional[List[Dict[str, Any]]] = None
+    user_id: Optional[UUID] = None
+    created_at: Optional[datetime] = None
+
+class ChatSendRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=8000)
+    # The note the person is looking at, so "this one" means something.
+    selected_item_id: Optional[UUID] = None
+
+class ChatSendResponse(BaseModel):
+    user_message: ChatMessageResponse
+    assistant_message: ChatMessageResponse
+    changed_item_ids: List[UUID] = Field(default_factory=list)
+    topics_changed: bool = False
 
 # Job artifact schemas
 class JobArtifactResponse(BaseModel):
@@ -307,6 +452,11 @@ class JiraTicket(BaseModel):
     fix_versions: List[str]
     comments: List[str]
     custom_fields: Dict[str, str]
+    assignee: Optional[str] = None
+    reporter: Optional[str] = None
+    created: Optional[str] = None
+    updated: Optional[str] = None
+    url: Optional[str] = None
 
 class JiraPreviewRequest(BaseModel):
     jql_query: str = Field(..., min_length=1, max_length=4096)

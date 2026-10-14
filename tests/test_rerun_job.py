@@ -78,6 +78,7 @@ def test_rerun_job():
         print(f"   Response: {rerun_resp.text}")
         return False
     
+    # A rerun runs the pipeline again on the SAME job (unchanged issues keep their notes).
     new_job = rerun_resp.json()
     print(f"   ✓ New job created: {new_job['id']}")
     
@@ -149,7 +150,7 @@ def test_rerun_job():
     print("\nFrontend features added:")
     print("• Rerun button in job detail view")
     print("• Rerun option in jobs list menu")
-    print("• Navigation to new job after rerun")
+    print("• The same job is re-queued (no new job is created)")
     print("="*60)
     
     return True

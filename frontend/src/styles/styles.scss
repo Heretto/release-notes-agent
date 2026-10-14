@@ -51,3 +51,20 @@
   gap: 12px;
   margin-top: 20px;
 }
+
+// ─── Release-notes workspace ──────────────────────────────────────────────────
+// The rendered topic is inserted as sanitized HTML, so the selected-note highlight
+// cannot live in a component stylesheet.
+
+.topic-render .release-note {
+  padding: 6px 10px;
+  margin: 2px -10px;
+  border-radius: 8px;
+  border-left: 3px solid transparent;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.topic-render .release-note.rn-selected {
+  background: var(--color-accent-bg, rgba(121, 236, 221, 0.18));
+  border-left-color: var(--color-accent);
+}

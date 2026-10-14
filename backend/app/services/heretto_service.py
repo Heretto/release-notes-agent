@@ -154,6 +154,47 @@ class HerettoService:
                     url=None
                 )
 
+    async def update_dita_topic(self, document_id: str, content: str) -> HerettoUploadResult:
+        """Replace the content of a document that was uploaded before (a republish)."""
+        try:
+            _validate_heretto_id(document_id, "document ID")
+        except ValueError as e:
+            return HerettoUploadResult(success=False, document_id=document_id, message=str(e), url=None)
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            try:
+                content_url = f"{self.base_url}/rest/all-files/{document_id}/content"
+                put_resp = await client.put(
+                    content_url,
+                    headers=self._headers(),
+                    content=content.encode("utf-8"),
+                )
+                if put_resp.status_code not in (200, 201, 204):
+                    logger.error("Heretto content update failed: HTTP %s — %s", put_resp.status_code, put_resp.text)
+                    return HerettoUploadResult(
+                        success=False,
+                        document_id=document_id,
+                        message=f"Content update failed: HTTP {put_resp.status_code}",
+                        url=None,
+                    )
+                return HerettoUploadResult(
+                    success=True,
+                    document_id=document_id,
+                    message="Update successful",
+                    url=f"{self.base_url}/rest/all-files/{document_id}",
+                )
+            except httpx.TimeoutException:
+                return HerettoUploadResult(
+                    success=False, document_id=document_id,
+                    message="Update timed out — the Heretto server took too long to respond", url=None,
+                )
+            except Exception as e:
+                logger.error("Heretto update error: %s", e, exc_info=True)
+                return HerettoUploadResult(
+                    success=False, document_id=document_id,
+                    message="Update failed — check your Heretto credentials", url=None,
+                )
+
     async def validate_connection(self) -> bool:
         """Test Heretto API connectivity by listing branches."""
         async with httpx.AsyncClient(timeout=10.0) as client:

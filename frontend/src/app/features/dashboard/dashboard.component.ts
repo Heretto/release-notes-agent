@@ -1,293 +1,238 @@
-import { Component, OnInit, inject, ChangeDetectionStrategy } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, OnInit, OnDestroy, inject, ChangeDetectionStrategy } from '@angular/core';
+import { DatePipe } from '@angular/common';
 import { MatCardModule } from '@angular/material/card';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
-import { RouterLink } from '@angular/router';
-import { JobsService, Job } from '../../core/services/jobs.service';
+import { MatDialog, MatDialogModule } from '@angular/material/dialog';
+import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
+import { Router, RouterLink } from '@angular/router';
+import { interval, Subscription } from 'rxjs';
+import { startWith, switchMap } from 'rxjs/operators';
+import { JobsService, Job, JOB_STAGES } from '../../core/services/jobs.service';
+import { InstructionsService } from '../../core/services/instructions.service';
+import { JobCreateDialogComponent } from '../jobs/job-create-dialog.component';
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
   imports: [
-    CommonModule,
+    DatePipe,
     MatCardModule,
     MatIconModule,
     MatButtonModule,
+    MatDialogModule,
+    MatSnackBarModule,
     RouterLink
   ],
   template: `
-    <div class="dashboard-container">
-      <h1>Dashboard</h1>
-    
+    <div class="hop-page">
+      <div class="header">
+        <div>
+          <h1>Dashboard</h1>
+          <p class="subtitle">Releases in progress and what is waiting on you</p>
+        </div>
+        <button mat-raised-button color="primary" (click)="startRelease()">
+          <mat-icon>rocket_launch</mat-icon>
+          Start a release
+        </button>
+      </div>
+
       <div class="stats-grid">
-        <mat-card class="stat-card">
-          <mat-card-content>
-            <div class="stat-icon">
-              <mat-icon>work</mat-icon>
-            </div>
-            <div class="stat-content">
-              <h3>Total Jobs</h3>
-              <p class="stat-number">{{ totalJobs }}</p>
-            </div>
-          </mat-card-content>
+        <mat-card class="hop-stat-card">
+          <span class="hop-icon-badge"><mat-icon>work</mat-icon></span>
+          <div>
+            <span class="hop-stat-value">{{ totalJobs }}</span>
+            <span class="hop-stat-label">Releases</span>
+          </div>
         </mat-card>
-    
-        <mat-card class="stat-card">
-          <mat-card-content>
-            <div class="stat-icon success">
-              <mat-icon>check_circle</mat-icon>
-            </div>
-            <div class="stat-content">
-              <h3>Completed</h3>
-              <p class="stat-number">{{ completedJobs }}</p>
-            </div>
-          </mat-card-content>
+        <mat-card class="hop-stat-card">
+          <span class="hop-icon-badge accent"><mat-icon>rate_review</mat-icon></span>
+          <div>
+            <span class="hop-stat-value">{{ notesToReview }}</span>
+            <span class="hop-stat-label">Notes to review</span>
+          </div>
         </mat-card>
-    
-        <mat-card class="stat-card">
-          <mat-card-content>
-            <div class="stat-icon warning">
-              <mat-icon>schedule</mat-icon>
-            </div>
-            <div class="stat-content">
-              <h3>Running</h3>
-              <p class="stat-number">{{ runningJobs }}</p>
-            </div>
-          </mat-card-content>
+        <mat-card class="hop-stat-card">
+          <span class="hop-icon-badge warning"><mat-icon>flag</mat-icon></span>
+          <div>
+            <span class="hop-stat-value">{{ notesNeedingAttention }}</span>
+            <span class="hop-stat-label">Need attention</span>
+          </div>
         </mat-card>
-    
-        <mat-card class="stat-card">
-          <mat-card-content>
-            <div class="stat-icon error">
-              <mat-icon>error</mat-icon>
-            </div>
-            <div class="stat-content">
-              <h3>Failed</h3>
-              <p class="stat-number">{{ failedJobs }}</p>
-            </div>
-          </mat-card-content>
+        <mat-card class="hop-stat-card">
+          <span class="hop-icon-badge" [class.info]="runningJobs > 0" [class.error]="runningJobs === 0 && failedJobs > 0" [class.success]="runningJobs === 0 && failedJobs === 0">
+            <mat-icon>{{ runningJobs > 0 ? 'sync' : (failedJobs > 0 ? 'error' : 'check_circle') }}</mat-icon>
+          </span>
+          <div>
+            <span class="hop-stat-value">{{ runningJobs > 0 ? runningJobs : failedJobs }}</span>
+            <span class="hop-stat-label">{{ runningJobs > 0 ? 'Running' : 'Failed' }}</span>
+          </div>
         </mat-card>
       </div>
-    
+
+      <mat-card class="recent-jobs">
+        <div class="card-head">
+          <h2>Recent releases</h2>
+          <a mat-button routerLink="/jobs">All releases</a>
+        </div>
+        @if (recentJobs.length === 0) {
+          <p class="no-data">No releases yet. Start one from an instruction set.</p>
+        }
+        @if (recentJobs.length > 0) {
+          <table class="jobs-table">
+            <thead>
+              <tr>
+                <th>Status</th>
+                <th>Release</th>
+                <th>Progress</th>
+                <th>Notes</th>
+                <th>Updated</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (job of recentJobs; track job.id) {
+                <tr [class.hop-shimmer]="job.status === 'running'">
+                  <td><span [class]="'hop-status-chip hop-status-chip-' + chipClass(job)">{{ statusLabel(job) }}</span></td>
+                  <td>
+                    <a [routerLink]="['/jobs', job.id]" class="release-link">{{ job.title || job.output_filename || 'Untitled' }}</a>
+                  </td>
+                  <td class="muted">{{ progressText(job) }}</td>
+                  <td>
+                    @if (job.counts) {
+                      {{ job.counts.approved_items }}/{{ job.counts.items }} approved
+                      @if (job.counts.attention_items) { <span class="attention">· {{ job.counts.attention_items }} flagged</span> }
+                    }
+                  </td>
+                  <td class="muted">{{ (job.completed_at || job.started_at || job.created_at) | date:'short' }}</td>
+                  <td class="row-actions">
+                    @if (job.status === 'completed') {
+                      <a mat-stroked-button [routerLink]="['/jobs', job.id, 'workspace']">
+                        <mat-icon>edit_note</mat-icon> Workspace
+                      </a>
+                    } @else {
+                      <a mat-button [routerLink]="['/jobs', job.id]">Details</a>
+                    }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        }
+      </mat-card>
+
       <div class="actions-section">
-        <h2>Quick Actions</h2>
+        <h2>Set up</h2>
         <div class="action-buttons">
-          <button mat-raised-button color="primary" routerLink="/jobs">
-            <mat-icon>add</mat-icon>
-            Create New Job
-          </button>
-    
-          <button mat-raised-button routerLink="/credentials">
-            <mat-icon>vpn_key</mat-icon>
-            Manage Credentials
-          </button>
-    
-          <button mat-raised-button routerLink="/instructions">
+          <button mat-stroked-button routerLink="/instructions">
             <mat-icon>description</mat-icon>
-            Configure Instructions
+            Instruction sets
+          </button>
+          <button mat-stroked-button routerLink="/agents">
+            <mat-icon>smart_toy</mat-icon>
+            Agents
+          </button>
+          <button mat-stroked-button routerLink="/credentials">
+            <mat-icon>vpn_key</mat-icon>
+            Credentials
           </button>
         </div>
       </div>
-    
-      <mat-card class="recent-jobs">
-        <mat-card-header>
-          <mat-card-title>Recent Jobs</mat-card-title>
-        </mat-card-header>
-        <mat-card-content>
-          @if (recentJobs.length === 0) {
-            <p class="no-data">No recent jobs to display</p>
-          }
-          @if (recentJobs.length > 0) {
-            <table class="jobs-table">
-              <thead>
-                <tr>
-                  <th>Status</th>
-                  <th>Output File</th>
-                  <th>Tickets</th>
-                  <th>Created</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                @for (job of recentJobs; track job) {
-                  <tr>
-                    <td>
-                      <span class="status-badge" [ngClass]="job.status">
-                        {{ job.status }}
-                      </span>
-                    </td>
-                    <td>{{ job.output_filename || '—' }}</td>
-                    <td>{{ job.tickets_processed }}</td>
-                    <td>{{ job.created_at | date:'short' }}</td>
-                    <td>
-                      <a mat-button [routerLink]="'/jobs/' + job.id">View</a>
-                    </td>
-                  </tr>
-                }
-              </tbody>
-            </table>
-          }
-        </mat-card-content>
-      </mat-card>
     </div>
-    `,
+  `,
   changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
-    .dashboard-container {
-      max-width: 1200px;
-      margin: 0 auto;
-    }
-
-    h1 {
-      margin-bottom: 30px;
-    }
-
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-      gap: 20px;
-      margin-bottom: 40px;
-    }
-
-    .stat-card {
-      .mat-mdc-card-content {
-        display: flex;
-        align-items: center;
-        padding: 20px !important;
-      }
-    }
-
-    .stat-icon {
-      font-size: 48px;
-      margin-right: 20px;
-      color: var(--color-primary-text);
-
-      &.success {
-        color: var(--color-success);
-      }
-
-      &.warning {
-        color: var(--color-warning);
-      }
-
-      &.error {
-        color: var(--color-error);
-      }
-
-      mat-icon {
-        font-size: 48px;
-        height: 48px;
-        width: 48px;
-      }
-    }
-
-    .stat-content {
-      h3 {
-        margin: 0;
-        color: var(--text-secondary);
-        font-size: 14px;
-      }
-
-      .stat-number {
-        margin: 5px 0 0 0;
-        font-size: 32px;
-        font-weight: bold;
-      }
-    }
-
-    .actions-section {
-      margin-bottom: 40px;
-
-      h2 {
-        margin-bottom: 20px;
-      }
-    }
-
-    .action-buttons {
-      display: flex;
-      gap: 15px;
-
-      button {
-        mat-icon {
-          margin-right: 8px;
-        }
-      }
-    }
-
-    .recent-jobs {
-      .no-data {
-        text-align: center;
-        color: var(--text-tertiary);
-        padding: 40px 0;
-      }
-    }
-
-    .jobs-table {
-      width: 100%;
-      border-collapse: collapse;
-
-      th, td {
-        text-align: left;
-        padding: 10px 12px;
-        border-bottom: 1px solid var(--border-default);
-      }
-
-      th {
-        color: var(--text-secondary);
-        font-weight: 500;
-        font-size: 13px;
-      }
-    }
-
-    .status-badge {
-      display: inline-block;
-      padding: 3px 10px;
-      border-radius: 12px;
-      font-size: 12px;
-      font-weight: 500;
-      text-transform: capitalize;
-
-      &.completed {
-        background: var(--color-success-bg);
-        color: var(--color-success-text);
-      }
-
-      &.running, &.pending {
-        background: var(--color-warning-bg);
-        color: var(--color-warning-text);
-      }
-
-      &.failed {
-        background: var(--color-error-bg);
-        color: var(--color-error-text);
-      }
-
-      &.cancelled {
-        background: var(--bg-secondary);
-        color: var(--text-tertiary);
-      }
-    }
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; gap: 16px; flex-wrap: wrap; }
+    .header h1 { margin: 0; }
+    .subtitle { color: var(--text-secondary); margin: 5px 0 0 0; }
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 28px; }
+    .recent-jobs { padding: 20px 24px; margin-bottom: 28px; }
+    .card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .card-head h2 { margin: 0; font-size: 18px; }
+    .no-data { text-align: center; color: var(--text-tertiary); padding: 32px 0; }
+    .jobs-table { width: 100%; border-collapse: collapse; }
+    .jobs-table th, .jobs-table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border-default); vertical-align: middle; }
+    .jobs-table th { color: var(--text-tertiary); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+    .jobs-table tbody tr:last-child td { border-bottom: none; }
+    .release-link { color: var(--text-primary); text-decoration: none; font-weight: 500; }
+    .release-link:hover { text-decoration: underline; }
+    .muted { color: var(--text-secondary); font-size: 13px; }
+    .attention { color: var(--color-warning-text); }
+    .row-actions { text-align: right; white-space: nowrap; }
+    .actions-section h2 { font-size: 18px; margin-bottom: 12px; }
+    .action-buttons { display: flex; gap: 12px; flex-wrap: wrap; }
   `]
 })
-export class DashboardComponent implements OnInit {
+export class DashboardComponent implements OnInit, OnDestroy {
   private jobsService = inject(JobsService);
+  private instructionsService = inject(InstructionsService);
+  private dialog = inject(MatDialog);
+  private snackBar = inject(MatSnackBar);
+  private router = inject(Router);
 
   totalJobs = 0;
-  completedJobs = 0;
   runningJobs = 0;
   failedJobs = 0;
+  notesToReview = 0;
+  notesNeedingAttention = 0;
   recentJobs: Job[] = [];
 
+  private refresh?: Subscription;
+
   ngOnInit(): void {
-    this.jobsService.getJobs().subscribe({
+    this.refresh = interval(10000).pipe(
+      startWith(0),
+      switchMap(() => this.jobsService.getJobs())
+    ).subscribe({
       next: (jobs) => {
         this.totalJobs = jobs.length;
-        this.completedJobs = jobs.filter(j => j.status === 'completed').length;
         this.runningJobs = jobs.filter(j => j.status === 'running' || j.status === 'pending').length;
         this.failedJobs = jobs.filter(j => j.status === 'failed').length;
-        this.recentJobs = jobs.slice(0, 5);
+        const completed = jobs.filter(j => j.status === 'completed' && j.counts);
+        this.notesToReview = completed.reduce((sum, j) => sum + (j.counts!.items - j.counts!.approved_items), 0);
+        this.notesNeedingAttention = completed.reduce((sum, j) => sum + j.counts!.attention_items, 0);
+        this.recentJobs = jobs.slice(0, 6);
       }
+    });
+  }
+
+  ngOnDestroy(): void {
+    this.refresh?.unsubscribe();
+  }
+
+  chipClass(job: Job): string {
+    return job.status === 'cancelled' ? 'failed' : job.status;
+  }
+
+  statusLabel(job: Job): string {
+    if (job.status === 'completed') return 'Ready';
+    return job.status.charAt(0).toUpperCase() + job.status.slice(1);
+  }
+
+  progressText(job: Job): string {
+    if (job.status === 'running' && job.stage) {
+      const stage = JOB_STAGES.find(s => s.key === job.stage);
+      return `${stage?.label || job.stage}${job.stage_message ? ' — ' + job.stage_message : ''}`;
+    }
+    if (job.status === 'failed') return job.error_message || 'Failed';
+    return job.stage_message || '';
+  }
+
+  startRelease(): void {
+    this.instructionsService.getInstructionSets().subscribe(instructionSets => {
+      if (instructionSets.length === 0) {
+        this.snackBar.open('Create an instruction set first', 'Go', { duration: 5000 })
+          .onAction().subscribe(() => this.router.navigate(['/instructions']));
+        return;
+      }
+      const ref = this.dialog.open(JobCreateDialogComponent, { width: '640px', data: { instructionSets } });
+      ref.afterClosed().subscribe(jobData => {
+        if (!jobData) return;
+        this.jobsService.createJob(jobData).subscribe({
+          next: (job) => this.router.navigate(['/jobs', job.id]),
+          error: (error) => this.snackBar.open(error.error?.detail || 'Failed to start the release', 'Close', { duration: 5000 })
+        });
+      });
     });
   }
 }
