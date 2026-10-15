@@ -39,8 +39,8 @@ const PANES_KEY = 'rn-workspace-panes';
  */
 const PANE_LIMITS = { leftMin: 200, leftMax: 480, rightMin: 280, rightMax: 600, middleMin: 380 };
 
-/** Matches the `gap` on .columns; the handles sit in the gaps and take no track width. */
-const COLUMN_GAP = 12;
+/** Each drag handle occupies a track of its own, so two of these come off the usable width. */
+const HANDLE_WIDTH = 12;
 
 @Component({
   selector: 'app-workspace',
@@ -223,9 +223,12 @@ const COLUMN_GAP = 12;
     .attention { color: var(--color-warning-text); }
     .running-banner { display: flex; align-items: center; gap: 8px; padding: 8px 14px; margin-bottom: 10px; border-radius: 8px; background: var(--color-info-bg); color: var(--color-info-text); font-size: 13px; }
     /* Widths come from gridTemplate so the handles can drive them; see startResize(). */
-    .columns { display: grid; gap: 12px; flex: 1; min-height: 0; }
-    .pane-handle { cursor: col-resize; border-radius: 3px; margin: 0 -4px; width: 9px; position: relative; z-index: 1; touch-action: none; }
-    .pane-handle::after { content: ''; position: absolute; inset: 0 3px; border-radius: 3px; background: transparent; transition: background 120ms; }
+    .columns { display: grid; flex: 1; min-height: 0; }
+    /* Each handle is its own 12px track, matching the design; no grid gap. */
+    .pane-handle { cursor: col-resize; display: flex; align-items: center; justify-content: center;
+      touch-action: none; }
+    .pane-handle::after { content: ''; width: 2px; height: 36px; border-radius: 1px;
+      background: var(--border-default); transition: background 120ms; }
     .pane-handle:hover::after, .pane-handle.dragging::after { background: var(--color-primary); }
     @media (max-width: 1024px) { .workspace { height: auto; } .columns { grid-template-columns: 1fr; }
       .pane-handle { display: none; }
@@ -294,13 +297,12 @@ export class WorkspaceComponent implements OnInit, OnDestroy {
 
   // ── Resizable panes ───────────────────────────────────────────────────────────────
 
-  panes: PaneWidths = { left: 300, right: 380 };
+  panes: PaneWidths = { left: 260, right: 340 };
   private dragging: { side: 'left' | 'right'; startX: number; startLeft: number; startRight: number } | null = null;
   private stopDrag: (() => void) | null = null;
 
   get gridTemplate(): string {
-    // Handles live in the grid gaps, so they get their own zero-ish tracks.
-    return `${this.panes.left}px 0 minmax(0, 1fr) 0 ${this.panes.right}px`;
+    return `${this.panes.left}px ${HANDLE_WIDTH}px minmax(0, 1fr) ${HANDLE_WIDTH}px ${this.panes.right}px`;
   }
 
   private restorePanes(): void {
@@ -358,7 +360,7 @@ export class WorkspaceComponent implements OnInit, OnDestroy {
     const container = this.columnsRef?.nativeElement;
     if (!drag || !container) return;
 
-    const total = container.clientWidth - COLUMN_GAP * 2;
+    const total = container.clientWidth - HANDLE_WIDTH * 2;
     const delta = event.clientX - drag.startX;
 
     if (drag.side === 'left') {
