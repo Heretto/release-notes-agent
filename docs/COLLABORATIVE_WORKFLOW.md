@@ -39,8 +39,10 @@ Topics are re-assembled afterwards with the job's current chunking strategy.
   rendered topic and opens its details.
 - Centre: the assembled topic(s), rendered with `<hop-dita-content>` (server-side
   `DitaRenderer`), or the raw XML. A chunking selector re-splits the notes into topics.
-- Right: the chat with the writer agent, or the selected note's details (linked issues with
-  summaries and links, personal reference links, status, DITA source editor, history).
+- Right: the chat with the writer agent, or the selected note's details (status, group, the
+  writer's own notes — context, open questions, links — kept out of the output but shown to
+  the chat agent, the linked issues with the agent's reason for including them, the DITA
+  source editor, and the history).
 
 The chat agent edits through tools (`update_note`, `set_note_status`, `move_note`,
 `reorganize_topics`, `create_note`, `read_issue`), so every change it makes is a recorded,

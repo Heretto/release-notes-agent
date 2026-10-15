@@ -191,10 +191,13 @@ class WorkspaceChat:
             )
         selected_block = ""
         if selected is not None:
+            writer_notes = (selected.notes or "").strip()
             selected_block = (
                 f"\n\n## The note the person is looking at: {selected.fragment_id}\n\n"
                 f"Title: {selected.title}\nSummary: {selected.summary}\n\n{selected.dita_content}"
             )
+            if writer_notes:
+                selected_block += f"\n\nThe person's own notes about it (context, not content to publish):\n{writer_notes}"
         strategy_labels = {
             ChunkingStrategy.SINGLE: "single (all notes in one topic)",
             ChunkingStrategy.BY_GROUP: "by_group (one topic per group)",
@@ -284,6 +287,7 @@ Groups in order: {', '.join(groups) if groups else '(none yet)'}.
         return json.dumps({
             "id": item.fragment_id, "title": item.title, "summary": item.summary, "group": item.group_name,
             "status": item.status, "dita_content": item.dita_content,
+            "writer_notes": item.notes or "",
             "issues": [issue_record(link.issue) for link in item.issue_links],
         }, ensure_ascii=False, indent=1)
 

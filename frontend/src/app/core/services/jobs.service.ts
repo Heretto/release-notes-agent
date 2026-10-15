@@ -101,14 +101,6 @@ export interface JobIssue {
   changed_at?: string | null;
 }
 
-export interface ItemReference {
-  id: string;
-  url: string;
-  label?: string | null;
-  user_id?: string | null;
-  created_at?: string | null;
-}
-
 export interface ItemHistoryEntry {
   id: string;
   event_type: string;
@@ -134,14 +126,14 @@ export interface ReleaseNoteItem {
   attention_reason?: string | null;
   user_edited: boolean;
   issue_keys: string[];
-  reference_count: number;
+  /** The writer's own notes: context, open questions, links. Empty when there are none. */
+  notes: string;
   created_at?: string | null;
   updated_at?: string | null;
 }
 
 export interface ReleaseNoteItemDetail extends ReleaseNoteItem {
   issues: JobIssue[];
-  references: ItemReference[];
   history: ItemHistoryEntry[];
 }
 
@@ -151,6 +143,8 @@ export interface ReleaseNoteItemUpdate {
   dita_content?: string;
   status?: ItemStatus;
   group_name?: string;
+  /** Replaces the writer's notes; an empty string clears them. */
+  notes?: string;
   clear_attention?: boolean;
 }
 
@@ -287,14 +281,6 @@ export class JobsService {
 
   moveItem(jobId: string, itemId: string, move: { group_name?: string; position?: number }): Observable<ReleaseNoteItem[]> {
     return this.http.post<ReleaseNoteItem[]>(`${this.apiUrl}/${jobId}/items/${itemId}/move`, move);
-  }
-
-  addReference(jobId: string, itemId: string, reference: { url: string; label?: string }): Observable<ItemReference> {
-    return this.http.post<ItemReference>(`${this.apiUrl}/${jobId}/items/${itemId}/references`, reference);
-  }
-
-  removeReference(jobId: string, itemId: string, referenceId: string): Observable<any> {
-    return this.http.delete(`${this.apiUrl}/${jobId}/items/${itemId}/references/${referenceId}`);
   }
 
   getTopics(jobId: string, render = true): Observable<ReleaseNoteTopic[]> {

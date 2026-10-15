@@ -59,12 +59,12 @@
 .topic-render .release-note {
   padding: 6px 10px;
   margin: 2px -10px;
-  border-radius: 8px;
+  border-radius: 6px;
   border-left: 3px solid transparent;
-  transition: background-color 0.2s, border-color 0.2s;
+  transition: background-color 180ms cubic-bezier(0.2, 0, 0, 1), border-color 180ms cubic-bezier(0.2, 0, 0, 1);
 }
 
 .topic-render .release-note.rn-selected {
-  background: var(--color-accent-bg, rgba(121, 236, 221, 0.18));
+  background: var(--color-primary-bg);
   border-left-color: var(--color-accent);
 }
