@@ -23,7 +23,7 @@ headers = {"Authorization": f"Bearer {token}"}
 print("✅ Logged in successfully")
 
 # Get Jira credentials
-list_url = "http://localhost:8000/api/v1/credentials/jira"
+list_url = "http://localhost:8000/api/v1/credentials"
 print("\n📋 Getting Jira credentials...")
 list_response = requests.get(list_url, headers=headers)
 

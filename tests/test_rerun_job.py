@@ -89,7 +89,6 @@ def test_rerun_job():
     params_to_check = [
         "jql_query",
         "instruction_set_id",
-        "ai_credential_id",
         "output_filename",
         "auto_publish",
         "max_tickets"

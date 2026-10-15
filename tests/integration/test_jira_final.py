@@ -49,14 +49,17 @@ def test_jira_v3_final():
     # Test with real credentials from .env
     print("\n2. Testing v3 endpoint with real Jira credentials...")
     cred_data = {
+        "type": "jira",
         "name": "Jira V3 Final Test",
-        "server_url": TEST_JIRA_URL,
-        "email": TEST_JIRA_USERNAME,
-        "api_token": TEST_JIRA_API_TOKEN,
+        "credentials": {
+            "server_url": TEST_JIRA_URL,
+            "email": TEST_JIRA_USERNAME,
+            "api_token": TEST_JIRA_API_TOKEN,
+        },
     }
 
     create_resp = requests.post(
-        f"{BASE_URL}/credentials/jira",
+        f"{BASE_URL}/credentials",
         json=cred_data,
         headers=headers
     )
@@ -64,7 +67,7 @@ def test_jira_v3_final():
     if create_resp.status_code == 200:
         cred_id = create_resp.json()["id"]
     elif create_resp.status_code == 400 and "already exists" in create_resp.json().get("detail", ""):
-        list_resp = requests.get(f"{BASE_URL}/credentials/jira", headers=headers)
+        list_resp = requests.get(f"{BASE_URL}/credentials", headers=headers)
         cred_id = None
         for cred in list_resp.json():
             if cred["name"] == "Jira V3 Final Test":
@@ -98,7 +101,7 @@ def test_jira_v3_final():
         print(f"   ⚠ Connection issue: {result.get('message', '')}")
 
     # Clean up
-    requests.delete(f"{BASE_URL}/credentials/jira/{cred_id}", headers=headers)
+    requests.delete(f"{BASE_URL}/credentials/{cred_id}", headers=headers)
 
     print("\n3. Endpoint verification summary:")
     print("   ✓ Authentication test: /rest/api/3/myself")

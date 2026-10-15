@@ -127,7 +127,6 @@ class InstructionSetResponse(InstructionSetBase):
 class JobCreate(BaseModel):
     jql_query: str = Field(..., min_length=1, max_length=4096)
     instruction_set_id: UUID
-    ai_credential_id: Optional[UUID] = None
     title: Optional[str] = Field(None, max_length=255)
     output_filename: str = Field(..., min_length=1, max_length=255)
     publish_to_heretto: bool = False
@@ -153,7 +152,6 @@ class JobResponse(BaseModel):
     id: UUID
     user_id: UUID
     instruction_set_id: Optional[UUID]
-    ai_credential_id: Optional[UUID]
     title: Optional[str] = None
     jql_query: str
     status: JobStatusEnum

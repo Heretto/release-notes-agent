@@ -10,7 +10,7 @@ setup_test_paths()
 import json
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from app.models.database import Credential, Job
+from app.models.database import Credential
 from app.core.security import decrypt_credentials
 from app.config import get_settings
 
@@ -43,27 +43,10 @@ def inspect_gemini_credentials():
             except Exception as e:
                 print(f"  Error decrypting: {e}")
         
-        print("\n" + "="*60)
-        print("Recent Jobs using Gemini:")
-        print("="*60)
-        
-        # Get recent jobs with Gemini credentials
-        recent_jobs = session.query(Job).filter(
-            Job.ai_credential_id.in_([c.id for c in credentials])
-        ).order_by(Job.created_at.desc()).limit(5).all()
-        
-        for job in recent_jobs:
-            print(f"\nJob ID: {job.id}")
-            print(f"  Created: {job.created_at}")
-            print(f"  Status: {job.status}")
-            print(f"  AI Credential ID: {job.ai_credential_id}")
-            
-            # Find which credential was used
-            for cred in credentials:
-                if str(cred.id) == str(job.ai_credential_id):
-                    print(f"  Used credential: {cred.name}")
-                    break
-        
+        # The "recent jobs using this credential" section is gone: a job no longer names
+        # an AI credential. An instruction set names its agents and each agent names the AI
+        # configuration it runs on, so the correlation now goes through agents.
+
         return True
         
     except Exception as e:
@@ -111,7 +94,7 @@ def inspect_all_ai_credentials():
         session.close()
 
 if __name__ == "__main__":
-    print("Job Model and AI Credential Inspection")
+    print("AI Credential Inspection")
     print("="*60)
     
     success = inspect_gemini_credentials()

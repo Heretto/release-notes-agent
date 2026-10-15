@@ -41,19 +41,19 @@ def test_ai_provider(headers, provider, name, api_key, model, max_retries=3):
 
     # Create credential
     create_resp = requests.post(
-        f"{BASE_URL}/credentials/ai",
+        f"{BASE_URL}/credentials",
         json={
-            "provider": provider,
+            # The provider is the credential's type, per hop-core's built-in specs.
+            "type": provider,
             "name": name,
-            "api_key": api_key,
-            "model": model
+            "credentials": {"api_key": api_key, "model": model},
         },
         headers=headers
     )
 
     if create_resp.status_code == 400 and "already exists" in create_resp.json().get("detail", ""):
         # Credential with this name already exists; find it
-        list_resp = requests.get(f"{BASE_URL}/credentials/ai", headers=headers)
+        list_resp = requests.get(f"{BASE_URL}/credentials", headers=headers)
         cred_id = None
         for cred in list_resp.json():
             if cred["name"] == name:
