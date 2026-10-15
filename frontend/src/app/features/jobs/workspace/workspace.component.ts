@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, inject, ChangeDetectionStrategy } from '@angular/core';
+import { Component, OnInit, OnDestroy, ViewChild, ElementRef, inject, ChangeDetectionStrategy } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
@@ -26,6 +26,21 @@ interface ItemGroup {
 }
 
 type ListFilter = 'all' | 'attention' | ItemStatus;
+
+/** Pane widths, in pixels. The middle pane takes whatever is left. */
+interface PaneWidths { left: number; right: number; }
+
+/** Where the dragged pane widths are remembered between visits. */
+const PANES_KEY = 'rn-workspace-panes';
+
+/**
+ * What a pane may be dragged to. Dragging squeezes the middle pane first; once it is down to
+ * MIDDLE_MIN the opposite side pane gives way instead, so a drag never collapses the topic.
+ */
+const PANE_LIMITS = { leftMin: 200, leftMax: 480, rightMin: 280, rightMax: 600, middleMin: 380 };
+
+/** Matches the `gap` on .columns; the handles sit in the gaps and take no track width. */
+const COLUMN_GAP = 12;
 
 @Component({
   selector: 'app-workspace',
@@ -83,7 +98,7 @@ type ListFilter = 'all' | 'attention' | ItemStatus;
           </div>
         }
 
-        <div class="columns">
+        <div class="columns" #columns [style.grid-template-columns]="gridTemplate">
           <!-- Notes -->
           <aside class="notes-pane">
             <div class="pane-head">
@@ -125,6 +140,9 @@ type ListFilter = 'all' | 'attention' | ItemStatus;
             </div>
           </aside>
 
+          <div class="pane-handle" role="separator" aria-orientation="vertical"
+               aria-label="Resize the notes list" (pointerdown)="startResize($event, 'left')"></div>
+
           <!-- Topic -->
           <section class="topic-pane">
             <div class="pane-head topic-head">
@@ -162,6 +180,9 @@ type ListFilter = 'all' | 'attention' | ItemStatus;
               }
             </div>
           </section>
+
+          <div class="pane-handle" role="separator" aria-orientation="vertical"
+               aria-label="Resize the details pane" (pointerdown)="startResize($event, 'right')"></div>
 
           <!-- Chat / note details -->
           <aside class="side-pane">
@@ -201,9 +222,14 @@ type ListFilter = 'all' | 'attention' | ItemStatus;
     .muted { color: var(--text-tertiary); font-size: 12px; }
     .attention { color: var(--color-warning-text); }
     .running-banner { display: flex; align-items: center; gap: 8px; padding: 8px 14px; margin-bottom: 10px; border-radius: 8px; background: var(--color-info-bg); color: var(--color-info-text); font-size: 13px; }
-    .columns { display: grid; grid-template-columns: 300px minmax(0, 1fr) 380px; gap: 12px; flex: 1; min-height: 0; }
-    @media (max-width: 1280px) { .columns { grid-template-columns: 260px minmax(0, 1fr) 340px; } }
-    @media (max-width: 1024px) { .workspace { height: auto; } .columns { grid-template-columns: 1fr; } .notes-pane, .topic-pane, .side-pane { height: 60vh; } }
+    /* Widths come from gridTemplate so the handles can drive them; see startResize(). */
+    .columns { display: grid; gap: 12px; flex: 1; min-height: 0; }
+    .pane-handle { cursor: col-resize; border-radius: 3px; margin: 0 -4px; width: 9px; position: relative; z-index: 1; touch-action: none; }
+    .pane-handle::after { content: ''; position: absolute; inset: 0 3px; border-radius: 3px; background: transparent; transition: background 120ms; }
+    .pane-handle:hover::after, .pane-handle.dragging::after { background: var(--color-primary); }
+    @media (max-width: 1024px) { .workspace { height: auto; } .columns { grid-template-columns: 1fr; }
+      .pane-handle { display: none; }
+      .notes-pane, .topic-pane, .side-pane { height: 60vh; } }
     .notes-pane, .topic-pane, .side-pane { display: flex; flex-direction: column; min-height: 0; border: 1px solid var(--border-default); border-radius: 12px; background: var(--card-bg); overflow: hidden; }
     .pane-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--border-default); min-height: 44px; }
     .spacer { flex: 1; }
@@ -243,6 +269,7 @@ type ListFilter = 'all' | 'attention' | ItemStatus;
   `]
 })
 export class WorkspaceComponent implements OnInit, OnDestroy {
+  @ViewChild('columns') columnsRef?: ElementRef<HTMLElement>;
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private jobsService = inject(JobsService);
@@ -265,7 +292,100 @@ export class WorkspaceComponent implements OnInit, OnDestroy {
 
   private jobPoll?: Subscription;
 
+  // ── Resizable panes ───────────────────────────────────────────────────────────────
+
+  panes: PaneWidths = { left: 300, right: 380 };
+  private dragging: { side: 'left' | 'right'; startX: number; startLeft: number; startRight: number } | null = null;
+  private stopDrag: (() => void) | null = null;
+
+  get gridTemplate(): string {
+    // Handles live in the grid gaps, so they get their own zero-ish tracks.
+    return `${this.panes.left}px 0 minmax(0, 1fr) 0 ${this.panes.right}px`;
+  }
+
+  private restorePanes(): void {
+    try {
+      const raw = localStorage.getItem(PANES_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as Partial<PaneWidths>;
+      if (typeof saved.left === 'number' && typeof saved.right === 'number') {
+        this.panes = {
+          left: this.clamp(saved.left, PANE_LIMITS.leftMin, PANE_LIMITS.leftMax),
+          right: this.clamp(saved.right, PANE_LIMITS.rightMin, PANE_LIMITS.rightMax),
+        };
+      }
+    } catch {
+      // A private window, cleared site data, or storage the browser refuses: keep defaults.
+    }
+  }
+
+  private persistPanes(): void {
+    try {
+      localStorage.setItem(PANES_KEY, JSON.stringify(this.panes));
+    } catch {
+      // Not worth telling anyone about — the layout simply will not be remembered.
+    }
+  }
+
+  private clamp(value: number, min: number, max: number): number {
+    return Math.min(max, Math.max(min, value));
+  }
+
+  startResize(event: PointerEvent, side: 'left' | 'right'): void {
+    event.preventDefault();
+    const handle = event.target as HTMLElement;
+    handle.classList.add('dragging');
+    this.dragging = { side, startX: event.clientX, startLeft: this.panes.left, startRight: this.panes.right };
+
+    const move = (e: PointerEvent) => this.onResizeMove(e);
+    const up = () => {
+      handle.classList.remove('dragging');
+      this.dragging = null;
+      this.persistPanes();
+      this.stopDrag?.();
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up, { once: true });
+    this.stopDrag = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      this.stopDrag = null;
+    };
+  }
+
+  private onResizeMove(event: PointerEvent): void {
+    const drag = this.dragging;
+    const container = this.columnsRef?.nativeElement;
+    if (!drag || !container) return;
+
+    const total = container.clientWidth - COLUMN_GAP * 2;
+    const delta = event.clientX - drag.startX;
+
+    if (drag.side === 'left') {
+      let left = this.clamp(drag.startLeft + delta, PANE_LIMITS.leftMin, PANE_LIMITS.leftMax);
+      let right = drag.startRight;
+      // Squeeze the middle first; when it runs out, take it from the right pane.
+      const overflow = PANE_LIMITS.middleMin - (total - left - right);
+      if (overflow > 0) {
+        right = Math.max(PANE_LIMITS.rightMin, right - overflow);
+        left = Math.min(left, total - right - PANE_LIMITS.middleMin);
+      }
+      this.panes = { left: Math.round(left), right: Math.round(right) };
+    } else {
+      // The right handle grows the pane as the pointer moves left, hence the negated delta.
+      let right = this.clamp(drag.startRight - delta, PANE_LIMITS.rightMin, PANE_LIMITS.rightMax);
+      let left = drag.startLeft;
+      const overflow = PANE_LIMITS.middleMin - (total - left - right);
+      if (overflow > 0) {
+        left = Math.max(PANE_LIMITS.leftMin, left - overflow);
+        right = Math.min(right, total - left - PANE_LIMITS.middleMin);
+      }
+      this.panes = { left: Math.round(left), right: Math.round(right) };
+    }
+  }
+
   ngOnInit(): void {
+    this.restorePanes();
     const jobId = this.route.snapshot.paramMap.get('id');
     if (!jobId) { this.router.navigate(['/releases']); return; }
     this.jobsService.getJob(jobId).subscribe({
@@ -283,6 +403,8 @@ export class WorkspaceComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.jobPoll?.unsubscribe();
+    // A drag in progress keeps window listeners alive past this component otherwise.
+    this.stopDrag?.();
   }
 
   // ── Derived state ────────────────────────────────────────────────────────

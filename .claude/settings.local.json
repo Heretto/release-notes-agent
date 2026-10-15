@@ -102,7 +102,9 @@
       "Bash(venv/bin/hop-doctor)",
       "Bash(venv/bin/python -m pytest tests/unit tests/integration/test_pipeline_with_fakes.py -q)",
       "Bash(npx tsc *)",
-      "Bash(echo \"tsc exit: $?\")"
+      "Bash(echo \"tsc exit: $?\")",
+      "Bash(venv/bin/python -c ' *)",
+      "Bash(venv/bin/alembic current *)"
     ],
     "deny": [],
     "ask": [],

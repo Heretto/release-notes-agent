@@ -40,13 +40,21 @@ import {
             }
             <div class="muted">
               {{ item.group_name || 'No group' }}
-              @for (key of item.issue_keys; track key) { · {{ key }} }
+              @if (item.issues.length) {
+                ·
+                @for (issue of item.issues; track issue.id; let last = $last) {
+                  <a [href]="issue.url" target="_blank" rel="noopener" class="issue-link">{{ issue.issue_key }}</a>@if (!last) {, }
+                }
+              }
               @if (item.user_edited) { · <mat-icon class="inline-icon" matTooltip="Edited by a person">edit</mat-icon> }
             </div>
           </div>
           <button mat-icon-button matTooltip="Back to chat" (click)="closed.emit()"><mat-icon>close</mat-icon></button>
         </div>
 
+        <!-- Everything below the pinned header scrolls as one unit: the fields, the notes
+             and the tab content move together rather than each tab scrolling on its own. -->
+        <div class="detail-body">
         <div class="status-row">
           <mat-form-field appearance="outline" class="status-field" subscriptSizing="dynamic">
             <mat-label>Status</mat-label>
@@ -216,6 +224,7 @@ import {
             </div>
           </mat-tab>
         </mat-tab-group>
+        </div>
       }
     </div>
   `,
@@ -224,7 +233,12 @@ import {
     :host { display: block; height: 100%; }
     .detail { display: flex; flex-direction: column; height: 100%; min-height: 0; }
     .loading { display: flex; justify-content: center; padding: 40px; }
-    .detail-head { display: flex; align-items: flex-start; gap: 8px; padding: 12px 16px 8px; }
+    /* Pinned: the title and the Jira keys stay put while the body scrolls under them. */
+    .detail-head { display: flex; align-items: flex-start; gap: 8px; padding: 12px 16px 8px;
+      flex-shrink: 0; border-bottom: 1px solid var(--border-subtle); background: var(--bg-primary); }
+    .detail-body { flex: 1; min-height: 0; overflow-y: auto; }
+    .issue-link { color: inherit; text-decoration: underline; }
+    .issue-link:hover { color: var(--color-primary); }
     .title-block { flex: 1; min-width: 0; }
     .title-block h3 { margin: 0 0 2px; font-size: 16px; cursor: text; line-height: 1.3; }
     .title-input { width: 100%; font: inherit; font-size: 16px; font-weight: 600; padding: 4px 8px; border: 1px solid var(--border-focus); border-radius: 6px; }
@@ -249,9 +263,7 @@ import {
     .attention-banner { display: flex; align-items: center; gap: 10px; margin: 0 16px 8px; padding: 10px 12px; background: var(--color-warning-bg); color: var(--color-warning-text); border-radius: 8px; font-size: 13px; }
     .attention-banner mat-icon { color: var(--color-warning); }
     .attention-text { flex: 1; }
-    .detail-tabs { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-    .detail-tabs ::ng-deep .mat-mdc-tab-body-wrapper { flex: 1; min-height: 0; }
-    .detail-tabs ::ng-deep .mat-mdc-tab-body-content { overflow-y: auto; }
+    .detail-tabs ::ng-deep .mat-mdc-tab-body-content { overflow: visible; }
     .tab-body { padding: 12px 16px 16px; font-size: 14px; }
     .summary { margin: 0 0 12px; color: var(--text-secondary); }
     .issue-card { border: 1px solid var(--border-default); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
