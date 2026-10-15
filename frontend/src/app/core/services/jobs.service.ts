@@ -35,7 +35,6 @@ export const ITEM_STATUSES: { value: ItemStatus; label: string }[] = [
 export interface JobCreate {
   jql_query: string;
   instruction_set_id: string;
-  ai_credential_id?: string;
   title?: string;
   output_filename: string;
   publish_to_heretto: boolean;
@@ -57,7 +56,6 @@ export interface Job {
   id: string;
   user_id: string;
   instruction_set_id?: string;
-  ai_credential_id?: string;
   title?: string | null;
   jql_query: string;
   status: JobStatus;

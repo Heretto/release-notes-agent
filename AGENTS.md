@@ -72,6 +72,19 @@ stored credentials and **cannot be rotated** — changing it orphans every encry
 Postgres/Redis/Mailpit in Docker and runs both servers with live reload). `./reset.sh` wipes
 local state.
 
+**Credentials are entirely hop-core's.** `register_builtin_types("jira", "heretto",
+"anthropic", "openai", "gemini")` in `app/models/database.py` is the whole registration: it
+brings the field specs the generic UI renders forms from, the connection testers behind the
+Test button, and the `AiProviderRegistry` generators `AgentRunner` needs. The API is
+hop-core's generic `/credentials` router (`include_credentials_router` left at its default)
+and the page is `HopCredentialsComponent`. Do not add a per-type route or dialog back: this
+app used to carry ~3,400 lines of both, and the duplication is what let the AI dialog offer a
+`custom` provider the backend's regex rejected. `core/services/credentials.service.ts` is a
+thin adapter over `HopCredentialService` for the one picker that lives outside that page (an
+instruction set's Jira connection); it holds no CRUD. Payload keys match hop-core's specs
+(`api_key`/`model`, `server_url`/`email`/`api_token`, `server_url`/`username`/`token`), so
+credentials stored by the old routes keep working.
+
 ### Worked out the hard way — do not "fix" these back
 
 - **Health lives outside `api_prefix`**, at `/health` and `/health/db`, mounted directly on

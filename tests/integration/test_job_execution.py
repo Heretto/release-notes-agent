@@ -54,7 +54,7 @@ def wait_for_job(headers, job_id, timeout=120):
     raise TimeoutError(f"Job {job_id} did not complete within {timeout}s")
 
 
-def _ensure_agent(headers, ai_credential_id=None):
+def _ensure_agent(headers, ai_configuration_id=None):
     """Create a minimal Agent for testing.  Returns (agent_id, created)."""
     name = "Test Agent (env)"
     resp = requests.get(f"{BASE_URL}/agents", headers=headers)
@@ -68,7 +68,7 @@ def _ensure_agent(headers, ai_credential_id=None):
         json={
             "name": name,
             "description": "Generate release notes from the provided Jira tickets.",
-            "ai_configuration_id": ai_credential_id,
+            "ai_configuration_id": ai_configuration_id,
         },
         headers=headers,
     )
@@ -77,7 +77,7 @@ def _ensure_agent(headers, ai_credential_id=None):
     return None, False
 
 
-def get_instruction_set(headers, ai_credential_id=None):
+def get_instruction_set(headers, ai_configuration_id=None):
     """Get the first available instruction set, creating one (with an agent) if needed."""
     resp = requests.get(f"{BASE_URL}/instructions", headers=headers)
     assert resp.status_code == 200, f"Failed to list instructions: {resp.status_code}"
@@ -85,7 +85,7 @@ def get_instruction_set(headers, ai_credential_id=None):
     if instruction_sets:
         return instruction_sets[0]["id"]
 
-    agent_id, _ = _ensure_agent(headers, ai_credential_id)
+    agent_id, _ = _ensure_agent(headers, ai_configuration_id)
 
     # Create a minimal instruction set for testing
     create_resp = requests.post(
@@ -108,33 +108,52 @@ def get_instruction_set(headers, ai_credential_id=None):
 # Credential helpers — create from .env, return ID, clean up after
 # ---------------------------------------------------------------------------
 
-def _ensure_jira_credential(headers):
-    """Create a Jira credential from .env vars.  Returns (cred_id, created)."""
-    name = "Test Jira (env)"
+def _find_credential(headers, cred_type, name):
+    """An existing credential of this type and name, or None."""
+    resp = requests.get(f"{BASE_URL}/credentials", headers=headers)
+    if resp.status_code != 200:
+        return None
+    for credential in resp.json():
+        if credential["type"] == cred_type and credential["name"] == name:
+            return credential["id"]
+    return None
+
+
+def _ensure_credential(headers, cred_type, name, payload):
+    """Create a credential through hop-core's generic API.  Returns (cred_id, created).
+
+    Credentials are type-agnostic server-side: the type key picks the registered spec, and
+    `credentials` carries that spec's fields.
+    """
+    existing = _find_credential(headers, cred_type, name)
+    if existing:
+        return existing, False
+
     resp = requests.post(
-        f"{BASE_URL}/credentials/jira",
-        json={
-            "name": name,
-            "server_url": TEST_JIRA_URL,
-            "email": TEST_JIRA_USERNAME,
-            "api_token": TEST_JIRA_API_TOKEN,
-        },
+        f"{BASE_URL}/credentials",
+        json={"type": cred_type, "name": name, "credentials": payload},
         headers=headers,
     )
     if resp.status_code == 200:
         return resp.json()["id"], True
-    if resp.status_code == 400 and "already exists" in resp.json().get("detail", ""):
-        # Find existing
-        list_resp = requests.get(f"{BASE_URL}/credentials/jira", headers=headers)
-        for cred in list_resp.json():
-            if cred["name"] == name:
-                return cred["id"], False
     return None, False
 
 
+def _ensure_jira_credential(headers):
+    """Create a Jira credential from .env vars.  Returns (cred_id, created)."""
+    return _ensure_credential(headers, "jira", "Test Jira (env)", {
+        "server_url": TEST_JIRA_URL,
+        "email": TEST_JIRA_USERNAME,
+        "api_token": TEST_JIRA_API_TOKEN,
+    })
+
+
 def _ensure_ai_credential(headers):
-    """Create an AI credential from .env vars.  Returns (cred_id, created)."""
-    # Pick the first available AI provider
+    """Create an AI credential from .env vars.  Returns (cred_id, created).
+
+    The provider is the credential's type — anthropic, openai or gemini are all registered
+    from hop-core's built-in specs, each taking api_key and model.
+    """
     if TEST_CLAUDE_API_KEY:
         provider, key, model = "anthropic", TEST_CLAUDE_API_KEY, TEST_CLAUDE_MODEL
     elif TEST_OPENAI_API_KEY:
@@ -144,33 +163,15 @@ def _ensure_ai_credential(headers):
     else:
         return None, False
 
-    name = f"Test AI {provider} (env)"
-    resp = requests.post(
-        f"{BASE_URL}/credentials/ai",
-        json={
-            "provider": provider,
-            "name": name,
-            "api_key": key,
-            "model": model,
-        },
-        headers=headers,
-    )
-    if resp.status_code == 200:
-        return resp.json()["id"], True
-    if resp.status_code == 400 and "already exists" in resp.json().get("detail", ""):
-        list_resp = requests.get(f"{BASE_URL}/credentials/ai", headers=headers)
-        for cred in list_resp.json():
-            if cred["name"] == name:
-                return cred["id"], False
-    return None, False
+    return _ensure_credential(headers, provider, f"Test AI {provider} (env)", {
+        "api_key": key,
+        "model": model,
+    })
 
 
-def _cleanup_credential(headers, cred_id, cred_type):
+def _cleanup_credential(headers, cred_id, cred_type=None):
     """Delete a credential.  Best-effort."""
-    if cred_type == "jira":
-        requests.delete(f"{BASE_URL}/credentials/jira/{cred_id}", headers=headers)
-    else:
-        requests.delete(f"{BASE_URL}/credentials/{cred_id}", headers=headers)
+    requests.delete(f"{BASE_URL}/credentials/{cred_id}", headers=headers)
 
 
 # ---------------------------------------------------------------------------
@@ -192,7 +193,7 @@ def test_job_completes_successfully(headers, max_retries=3):
         return True
 
     ai_id, ai_created = _ensure_ai_credential(headers)
-    instruction_set_id = get_instruction_set(headers, ai_credential_id=ai_id)
+    instruction_set_id = get_instruction_set(headers, ai_configuration_id=ai_id)
 
     try:
         for attempt in range(1, max_retries + 1):
@@ -202,8 +203,6 @@ def test_job_completes_successfully(headers, max_retries=3):
                 "max_tickets": 2,
                 "output_filename": "test-job-execution.dita"
             }
-            if ai_id:
-                job_data["ai_credential_id"] = ai_id
 
             resp = requests.post(f"{BASE_URL}/jobs", json=job_data, headers=headers)
             assert resp.status_code == 200, f"Job creation failed: {resp.status_code} {resp.text}"
@@ -271,20 +270,18 @@ def test_job_error_message_not_empty(headers):
 
     instruction_set_id = get_instruction_set(headers)
 
-    fake_ai_id = str(uuid.uuid4())
+    # Previously this passed a fake ai_credential_id and expected a 404. Jobs no longer name
+    # a credential — agents do — so the failure is provoked with JQL Jira cannot parse. Any
+    # route to a failed job works here: what is being tested is that a failed job explains
+    # itself, not which thing went wrong.
     job_data = {
         "instruction_set_id": instruction_set_id,
-        "ai_credential_id": fake_ai_id,
-        "jql_query": "project = EZDNXTGEN ORDER BY created DESC",
+        "jql_query": "project = ((( not valid jql",
         "max_tickets": 1,
         "output_filename": "test-error-message.dita"
     }
 
     resp = requests.post(f"{BASE_URL}/jobs", json=job_data, headers=headers)
-
-    if resp.status_code == 404:
-        print(f"  ✓ API correctly rejected fake AI credential at creation (404)")
-        return True
 
     if resp.status_code == 200:
         job_id = resp.json()["id"]
@@ -305,8 +302,9 @@ def test_org_shared_credentials_used(headers):
     """Test that the orchestrator can use organization-shared credentials.
 
     Creates Jira + AI credentials from .env, then runs a job WITHOUT
-    specifying ai_credential_id to verify the orchestrator discovers
-    org-shared credentials automatically.
+    verify the pipeline discovers org-shared credentials automatically. The AI
+    configuration comes from the instruction set's agents, the Jira credential
+    from the organization.
     """
     print("\nTest: Organization-shared credentials are used")
     print("-" * 40)
@@ -323,7 +321,7 @@ def test_org_shared_credentials_used(headers):
         return True
 
     try:
-        instruction_set_id = get_instruction_set(headers, ai_credential_id=ai_id)
+        instruction_set_id = get_instruction_set(headers, ai_configuration_id=ai_id)
         job_data = {
             "instruction_set_id": instruction_set_id,
             "jql_query": "project = EZDNXTGEN ORDER BY created DESC",
@@ -334,7 +332,6 @@ def test_org_shared_credentials_used(headers):
         resp = requests.post(f"{BASE_URL}/jobs", json=job_data, headers=headers)
         assert resp.status_code == 200, f"Job creation failed: {resp.status_code}"
         job_id = resp.json()["id"]
-        assert resp.json()["ai_credential_id"] is None, "Expected no AI credential on job"
         print(f"  Created job {job_id} (no AI credential specified)")
 
         job = wait_for_job(headers, job_id)

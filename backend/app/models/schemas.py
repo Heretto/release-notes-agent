@@ -72,97 +72,6 @@ class ResetPasswordRequest(BaseModel):
     token: str
     new_password: str = Field(..., min_length=8)
 
-# Credential schemas
-class JiraCredentials(BaseModel):
-    server_url: str
-    email: EmailStr
-    api_token: str
-
-class HerettoCredentials(BaseModel):
-    server_url: str
-    username: str
-    token: str
-
-class AICredentials(BaseModel):
-    api_key: str
-    model: Optional[str] = None
-
-# Typed request models for credential create/update endpoints
-class JiraCredentialCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=255)
-    server_url: str = Field(..., min_length=1, max_length=2048)
-    email: EmailStr
-    api_token: str = Field(..., min_length=1, max_length=1024)
-
-class JiraCredentialUpdate(BaseModel):
-    name: Optional[str] = Field(None, min_length=1, max_length=255)
-    server_url: Optional[str] = Field(None, min_length=1, max_length=2048)
-    email: Optional[EmailStr] = None
-    api_token: Optional[str] = Field(None, max_length=1024)
-
-class HerettoCredentialCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=255)
-    server_url: str = Field(..., min_length=1, max_length=2048)
-    username: str = Field(..., min_length=1, max_length=255)
-    token: str = Field(..., min_length=1, max_length=1024)
-
-class HerettoCredentialUpdate(BaseModel):
-    name: Optional[str] = Field(None, min_length=1, max_length=255)
-    server_url: Optional[str] = Field(None, min_length=1, max_length=2048)
-    username: Optional[str] = Field(None, min_length=1, max_length=255)
-    token: Optional[str] = Field(None, max_length=1024)
-
-class AICredentialCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=255)
-    provider: str = Field(..., pattern=r'^(gemini|openai|anthropic)$')
-    api_key: str = Field(..., min_length=1, max_length=1024)
-    model: Optional[str] = Field(None, max_length=255)
-
-class CredentialCreate(BaseModel):
-    type: CredentialTypeEnum
-    name: str
-    credentials: Dict[str, Any]
-
-class CredentialUpdate(BaseModel):
-    name: Optional[str] = None
-    credentials: Optional[Dict[str, Any]] = None
-
-class CredentialResponse(BaseModel):
-    id: UUID
-    type: CredentialTypeEnum
-    name: str
-    created_at: datetime
-    updated_at: Optional[datetime]
-    
-    class Config:
-        from_attributes = True
-
-class JiraCredentialResponse(BaseModel):
-    id: UUID
-    type: CredentialTypeEnum
-    name: str
-    server_url: str
-    email: str
-    api_token: str
-    created_at: datetime
-    updated_at: Optional[datetime]
-    
-    class Config:
-        from_attributes = True
-
-class HerettoCredentialResponse(BaseModel):
-    id: UUID
-    type: CredentialTypeEnum
-    name: str
-    server_url: str
-    username: str
-    token: str
-    created_at: datetime
-    updated_at: Optional[datetime]
-
-    class Config:
-        from_attributes = True
-
 # Instruction set schemas
 CHUNKING_STRATEGIES = ("single", "by_group", "by_component")
 
@@ -218,7 +127,6 @@ class InstructionSetResponse(InstructionSetBase):
 class JobCreate(BaseModel):
     jql_query: str = Field(..., min_length=1, max_length=4096)
     instruction_set_id: UUID
-    ai_credential_id: Optional[UUID] = None
     title: Optional[str] = Field(None, max_length=255)
     output_filename: str = Field(..., min_length=1, max_length=255)
     publish_to_heretto: bool = False
@@ -244,7 +152,6 @@ class JobResponse(BaseModel):
     id: UUID
     user_id: UUID
     instruction_set_id: Optional[UUID]
-    ai_credential_id: Optional[UUID]
     title: Optional[str] = None
     jql_query: str
     status: JobStatusEnum

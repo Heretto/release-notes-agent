@@ -31,6 +31,7 @@ from hop_core.models.organization import Organization, OrganizationMember, Organ
 from hop_core.models.credential import Credential
 from hop_core.models.enums import OrganizationRole, CredentialTypeRegistry
 from hop_core.models.agent import Agent
+from hop_core.credentials.builtin import register_builtin_types
 
 # Legacy CredentialType enum — used by existing code that references CredentialType.JIRA, etc.
 # New code should use string types via CredentialTypeRegistry instead.
@@ -41,20 +42,12 @@ class CredentialType(str, enum.Enum):
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
 
-# Register credential types with hop-core
-CredentialTypeRegistry.register("jira", label="Jira")
-CredentialTypeRegistry.register("heretto", label="Heretto")
-CredentialTypeRegistry.register("gemini", label="Gemini", is_ai_configuration=True)
-CredentialTypeRegistry.register("openai", label="OpenAI", is_ai_configuration=True)
-CredentialTypeRegistry.register("anthropic", label="Anthropic", is_ai_configuration=True)
-
-# hop-core's Agent runner resolves a provider's generator via AiProviderRegistry, which is
-# only populated automatically for hop-core's own built-in credential specs. Our three
-# provider types are registered above, not through that path, so register their generators
-# ourselves — the provider keys match hop_core.agents.providers.BUILTIN_GENERATORS exactly.
-from hop_core.agents.providers import register_builtin_generator
-for _provider in ("gemini", "openai", "anthropic"):
-    register_builtin_generator(_provider)
+# Every credential type this app uses is a hop-core built-in, so register them from there
+# rather than by hand. One call brings the field specs the generic credentials UI renders
+# forms from, the connection testers behind the Test button, and — for the AI providers —
+# the AiProviderRegistry generators AgentRunner needs. Registering the types bare, as this
+# used to, left the UI with no fields to render and the testers unregistered.
+register_builtin_types("jira", "heretto", "anthropic", "openai", "gemini")
 
 # Domain enums
 class JobStatus(str, enum.Enum):
@@ -171,7 +164,6 @@ class Job(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True)
     instruction_set_id = Column(UUID(as_uuid=True), ForeignKey("instruction_sets.id"))
-    ai_credential_id = Column(UUID(as_uuid=True), ForeignKey("credentials.id", ondelete="SET NULL"), nullable=True)
     title = Column(String(255), nullable=True)
     jql_query = Column(Text, nullable=False)
     status = Column(SQLEnum(JobStatus), nullable=False, default=JobStatus.PENDING)
@@ -197,7 +189,6 @@ class Job(Base):
     user = relationship("User", foreign_keys=[user_id])
     organization = relationship("Organization", foreign_keys=[organization_id])
     instruction_set = relationship("InstructionSet", back_populates="jobs")
-    ai_credential = relationship("Credential", foreign_keys=[ai_credential_id])
     artifacts = relationship("JobArtifact", back_populates="job", cascade="all, delete-orphan")
     requests = relationship("JobRequest", back_populates="job", cascade="all, delete-orphan")
     issues = relationship("JobJiraIssue", back_populates="job", cascade="all, delete-orphan", order_by="JobJiraIssue.issue_key")

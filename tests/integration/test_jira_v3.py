@@ -52,7 +52,7 @@ def test_jira_v3_upgrade():
     }
 
     create_resp = requests.post(
-        f"{BASE_URL}/credentials/jira",
+        f"{BASE_URL}/credentials",
         json=test_cred,
         headers=headers
     )
@@ -62,7 +62,7 @@ def test_jira_v3_upgrade():
         cred_id = create_resp.json()["id"]
         print(f"   ✓ Created credential with ID: {cred_id}")
     elif create_resp.status_code == 400 and "already exists" in create_resp.json().get("detail", ""):
-        list_resp = requests.get(f"{BASE_URL}/credentials/jira", headers=headers)
+        list_resp = requests.get(f"{BASE_URL}/credentials", headers=headers)
         if list_resp.status_code == 200:
             for cred in list_resp.json():
                 if cred["name"] == "V3 API Test":
@@ -99,13 +99,13 @@ def test_jira_v3_upgrade():
     else:
         print(f"   ✗ Connection test failed: {message}")
         # Clean up
-        requests.delete(f"{BASE_URL}/credentials/jira/{cred_id}", headers=headers)
+        requests.delete(f"{BASE_URL}/credentials/{cred_id}", headers=headers)
         return False
 
     # Clean up
     print("\n4. Cleaning up test credential...")
     delete_resp = requests.delete(
-        f"{BASE_URL}/credentials/jira/{cred_id}",
+        f"{BASE_URL}/credentials/{cred_id}",
         headers=headers
     )
 

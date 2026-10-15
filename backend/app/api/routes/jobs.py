@@ -141,20 +141,11 @@ async def create_job(
             detail="The instruction set has no writer agent. Pick one before running a job.",
         )
 
-    if job_data.ai_credential_id:
-        ai_credential = db.query(Credential).filter(
-            Credential.id == job_data.ai_credential_id,
-            Credential.organization_id == context.organization_id,
-            Credential.type.in_([CredentialType.GEMINI, CredentialType.OPENAI, CredentialType.ANTHROPIC]),
-        ).first()
-        if not ai_credential:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="AI credential not found")
 
     job = Job(
         user_id=context.user.id,
         organization_id=context.organization_id,
         instruction_set_id=job_data.instruction_set_id,
-        ai_credential_id=job_data.ai_credential_id,
         title=(job_data.title or "").strip() or None,
         jql_query=job_data.jql_query,
         output_filename=job_data.output_filename,
