@@ -291,17 +291,6 @@ class JobIssueResponse(BaseModel):
     item_ids: List[UUID] = Field(default_factory=list)
     changed_at: Optional[datetime] = None
 
-class ItemReferenceCreate(BaseModel):
-    url: str = Field(..., min_length=1, max_length=2048)
-    label: Optional[str] = Field(None, max_length=255)
-
-class ItemReferenceResponse(BaseModel):
-    id: UUID
-    url: str
-    label: Optional[str] = None
-    user_id: Optional[UUID] = None
-    created_at: Optional[datetime] = None
-
 class ItemHistoryResponse(BaseModel):
     id: UUID
     event_type: str
@@ -326,13 +315,13 @@ class ReleaseNoteItemResponse(BaseModel):
     attention_reason: Optional[str] = None
     user_edited: bool = False
     issue_keys: List[str] = Field(default_factory=list)
-    reference_count: int = 0
+    has_notes: bool = False
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
 class ReleaseNoteItemDetailResponse(ReleaseNoteItemResponse):
     issues: List[JobIssueResponse] = Field(default_factory=list)
-    references: List[ItemReferenceResponse] = Field(default_factory=list)
+    notes: str = ""
     history: List[ItemHistoryResponse] = Field(default_factory=list)
 
 class ReleaseNoteItemUpdate(BaseModel):
@@ -341,6 +330,7 @@ class ReleaseNoteItemUpdate(BaseModel):
     dita_content: Optional[str] = Field(None, max_length=200_000)
     status: Optional[str] = Field(None, pattern=r'^(draft|review|approved|rejected)$')
     group_name: Optional[str] = Field(None, max_length=255)
+    notes: Optional[str] = Field(None, max_length=20_000)
     clear_attention: Optional[bool] = None
 
 class ReleaseNoteTopicResponse(BaseModel):

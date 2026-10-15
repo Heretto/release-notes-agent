@@ -33,14 +33,17 @@ Topics are re-assembled afterwards with the job's current chunking strategy.
 
 ## Workspace
 
-`/jobs/{id}/workspace` — the collaboration UI:
+`/releases/{id}/workspace` — the collaboration UI (the route was `/jobs/...` before the
+rename; the old paths still redirect). The REST API keeps its `/jobs` prefix:
 
 - Left: the notes, grouped, with status and attention badges. Clicking a note highlights it in the
   rendered topic and opens its details.
 - Centre: the assembled topic(s), rendered with `<hop-dita-content>` (server-side
   `DitaRenderer`), or the raw XML. A chunking selector re-splits the notes into topics.
-- Right: the chat with the writer agent, or the selected note's details (linked issues with
-  summaries and links, personal reference links, status, DITA source editor, history).
+- Right: `Chat | Details`. Chat talks to the writer agent; Details shows the selected note —
+  Status and Group fields, then a free-text **Notes** field (a person's own context, open
+  questions and links; URLs in it are linked, and it never reaches the assembled topic),
+  then tabs for `Jira`, `DITA` and `History`.
 
 The chat agent edits through tools (`update_note`, `set_note_status`, `move_note`,
 `reorganize_topics`, `create_note`, `read_issue`), so every change it makes is a recorded,

@@ -25,10 +25,10 @@ from app.core.security import decrypt_credentials
 from app.models.database import (
     ChunkingStrategy, Credential, CredentialType, HistoryEvent, IssueRelevance, ItemStatus, Job,
     JobArtifact, JobJiraIssue, JobRequest, ReleaseNoteItem, ReleaseNoteItemHistory,
-    ReleaseNoteItemReference, ReleaseNoteTopic,
+    ReleaseNoteTopic,
 )
 from app.models.schemas import (
-    ChatMessageResponse, ItemHistoryResponse, ItemReferenceResponse, JobCounts, JobIssueResponse,
+    ChatMessageResponse, ItemHistoryResponse, JobCounts, JobIssueResponse,
     JobResponse, ReleaseNoteItemDetailResponse, ReleaseNoteItemResponse, ReleaseNoteTopicResponse,
     HerettoUploadResult,
 )
@@ -311,7 +311,7 @@ def _item_fields(item: ReleaseNoteItem) -> dict:
         dita_content=item.dita_content or "", status=item.status, needs_attention=bool(item.needs_attention),
         attention_reason=item.attention_reason, user_edited=bool(item.user_edited),
         issue_keys=[link.issue.issue_key for link in item.issue_links],
-        reference_count=len(item.references), created_at=item.created_at, updated_at=item.updated_at,
+        has_notes=bool((item.notes or "").strip()), created_at=item.created_at, updated_at=item.updated_at,
     )
 
 
@@ -323,10 +323,7 @@ def item_to_detail(item: ReleaseNoteItem) -> ReleaseNoteItemDetailResponse:
     return ReleaseNoteItemDetailResponse(
         **_item_fields(item),
         issues=[issue_to_response(link.issue) for link in item.issue_links],
-        references=[
-            ItemReferenceResponse(id=r.id, url=r.url, label=r.label, user_id=r.user_id, created_at=r.created_at)
-            for r in item.references
-        ],
+        notes=item.notes or "",
         history=[
             ItemHistoryResponse(
                 id=h.id, event_type=h.event_type, actor=h.actor, user_id=h.user_id,

@@ -38,6 +38,18 @@ Postgres with fake Jira and fake agents; keep it green when touching the stages.
 ordered chain; the `instruction_set_agents` table is gone (migration
 `add_collaborative_workflow` moved the first chain agent into the writer slot).
 
+**A job is a "Release" in the UI, a `job` in the API.** The nav item, headings and copy all
+say Releases, and the routes are `/releases`, `/releases/:id`, `/releases/:id/workspace` (the
+old `/jobs/...` paths redirect). The REST API, the `Job` model and the service/table names are
+deliberately unchanged — renaming them would be a breaking API change for no user-visible gain.
+
+**A note's `notes` field is free text, and is never published.** It holds a person's own
+context, open questions and links; URLs in it are linked on render. It replaced a structured
+`release_note_item_references` table (migration `add_item_notes_drop_references` folded each
+item's links into its notes, one per line, then dropped the table). Editing it records a
+`notes_edited` history entry but deliberately does **not** reassemble topics — notes never
+reach the assembled DITA.
+
 **Three environment files, not interchangeable.** `backend/.env` for host runs (uvicorn,
 celery, alembic — it carries localhost `DATABASE_URL`/`REDIS_URL`); the repository-root
 `.env` for `docker compose` variable substitution; `.env.production` for production compose.

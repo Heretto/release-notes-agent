@@ -78,7 +78,7 @@ import { switchMap, startWith } from 'rxjs/operators';
                     [class.hop-shimmer]="job.status === 'running'">{{ statusLabel(job) }}</span>
             </ng-template>
             <ng-template hopCell="title" let-job>
-              <a [routerLink]="['/jobs', job.id]" class="release-link">{{ titleOf(job) }}</a>
+              <a [routerLink]="['/releases', job.id]" class="release-link">{{ titleOf(job) }}</a>
               <div class="query-preview" [matTooltip]="job.jql_query">{{ job.jql_query }}</div>
             </ng-template>
             <ng-template hopCell="progress" let-job>
@@ -108,7 +108,7 @@ import { switchMap, startWith } from 'rxjs/operators';
             <ng-template hopCell="actions" let-job>
               <div class="row-actions">
                 @if (job.status === 'completed') {
-                  <a mat-stroked-button [routerLink]="['/jobs', job.id, 'workspace']">
+                  <a mat-stroked-button [routerLink]="['/releases', job.id, 'workspace']">
                     <mat-icon>edit_note</mat-icon> Workspace
                   </a>
                 }
@@ -116,7 +116,7 @@ import { switchMap, startWith } from 'rxjs/operators';
                   <mat-icon>more_vert</mat-icon>
                 </button>
                 <mat-menu #menu="matMenu">
-                  <a mat-menu-item [routerLink]="['/jobs', job.id]">
+                  <a mat-menu-item [routerLink]="['/releases', job.id]">
                     <mat-icon>info</mat-icon><span>Details and run log</span>
                   </a>
                   @if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
@@ -240,7 +240,7 @@ export class JobsComponent implements OnInit, OnDestroy {
           this.jobsService.createJob(jobData).subscribe({
             next: (job) => {
               this.jobs = [job, ...this.jobs];
-              this.router.navigate(['/jobs', job.id]);
+              this.router.navigate(['/releases', job.id]);
             },
             error: (error) => {
               this.snackBar.open(error.error?.detail || 'Failed to start the release', 'Close', { duration: 5000 });
@@ -262,7 +262,7 @@ export class JobsComponent implements OnInit, OnDestroy {
       next: (updated) => {
         this.jobs = this.jobs.map(j => j.id === updated.id ? updated : j);
         this.snackBar.open('Rerun started — unchanged issues keep their notes', 'View', { duration: 5000 })
-          .onAction().subscribe(() => this.router.navigate(['/jobs', job.id]));
+          .onAction().subscribe(() => this.router.navigate(['/releases', job.id]));
       },
       error: (error) => this.snackBar.open(error.error?.detail || 'Failed to rerun', 'Close', { duration: 5000 })
     });

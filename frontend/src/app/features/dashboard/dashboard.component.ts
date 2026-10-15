@@ -73,7 +73,7 @@ import { JobCreateDialogComponent } from '../jobs/job-create-dialog.component';
       <mat-card class="recent-jobs">
         <div class="card-head">
           <h2>Recent releases</h2>
-          <a mat-button routerLink="/jobs">All releases</a>
+          <a mat-button routerLink="/releases">All releases</a>
         </div>
         @if (recentJobs.length === 0) {
           <p class="no-data">No releases yet. Start one from an instruction set.</p>
@@ -95,7 +95,7 @@ import { JobCreateDialogComponent } from '../jobs/job-create-dialog.component';
                 <tr [class.hop-shimmer]="job.status === 'running'">
                   <td><span [class]="'hop-status-chip hop-status-chip-' + chipClass(job)">{{ statusLabel(job) }}</span></td>
                   <td>
-                    <a [routerLink]="['/jobs', job.id]" class="release-link">{{ job.title || job.output_filename || 'Untitled' }}</a>
+                    <a [routerLink]="['/releases', job.id]" class="release-link">{{ job.title || job.output_filename || 'Untitled' }}</a>
                   </td>
                   <td class="muted">{{ progressText(job) }}</td>
                   <td>
@@ -107,11 +107,11 @@ import { JobCreateDialogComponent } from '../jobs/job-create-dialog.component';
                   <td class="muted">{{ (job.completed_at || job.started_at || job.created_at) | date:'short' }}</td>
                   <td class="row-actions">
                     @if (job.status === 'completed') {
-                      <a mat-stroked-button [routerLink]="['/jobs', job.id, 'workspace']">
+                      <a mat-stroked-button [routerLink]="['/releases', job.id, 'workspace']">
                         <mat-icon>edit_note</mat-icon> Workspace
                       </a>
                     } @else {
-                      <a mat-button [routerLink]="['/jobs', job.id]">Details</a>
+                      <a mat-button [routerLink]="['/releases', job.id]">Details</a>
                     }
                   </td>
                 </tr>
@@ -229,7 +229,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
       ref.afterClosed().subscribe(jobData => {
         if (!jobData) return;
         this.jobsService.createJob(jobData).subscribe({
-          next: (job) => this.router.navigate(['/jobs', job.id]),
+          next: (job) => this.router.navigate(['/releases', job.id]),
           error: (error) => this.snackBar.open(error.error?.detail || 'Failed to start the release', 'Close', { duration: 5000 })
         });
       });
