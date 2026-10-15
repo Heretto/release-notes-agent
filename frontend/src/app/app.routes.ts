@@ -21,7 +21,7 @@ export const routes: Routes = [
       },
       {
         path: 'credentials',
-        loadComponent: () => import('./features/credentials/credentials.component').then(m => m.CredentialsComponent),
+        loadComponent: () => import('@heretto/hop-ui').then(m => m.HopCredentialsComponent),
       },
       {
         path: 'instructions',

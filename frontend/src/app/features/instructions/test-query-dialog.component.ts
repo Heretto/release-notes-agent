@@ -12,7 +12,7 @@ import { MatDividerModule } from '@angular/material/divider';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { FormsModule } from '@angular/forms';
 import { InstructionSet, InstructionsService } from '../../core/services/instructions.service';
-import { CredentialsService, JiraCredential } from '../../core/services/credentials.service';
+import { CredentialsService, JiraCredentialOption } from '../../core/services/credentials.service';
 
 interface TestResult {
   success: boolean;
@@ -546,7 +546,7 @@ export class TestQueryDialogComponent implements OnInit {
   private credentialsService = inject(CredentialsService);
   private snackBar = inject(MatSnackBar);
 
-  jiraCredentials: JiraCredential[] = [];
+  jiraCredentials: JiraCredentialOption[] = [];
   selectedCredentialId: string | null = null;
   loadingCredentials = false;
   testing = false;

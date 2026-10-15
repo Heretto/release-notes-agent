@@ -13,7 +13,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatSelectModule } from '@angular/material/select';
 import { HopAgentService, AgentSummary } from '@heretto/hop-ui';
 import { InstructionSet } from '../../core/services/instructions.service';
-import { CredentialsService, JiraCredential } from '../../core/services/credentials.service';
+import { CredentialsService, JiraCredentialOption } from '../../core/services/credentials.service';
 import { CHUNKING_STRATEGIES } from '../../core/services/jobs.service';
 
 @Component({
@@ -252,7 +252,7 @@ import { CHUNKING_STRATEGIES } from '../../core/services/jobs.service';
 export class InstructionDialogComponent implements OnInit {
   form: FormGroup;
   agents: AgentSummary[] = [];
-  jiraCredentials: JiraCredential[] = [];
+  jiraCredentials: JiraCredentialOption[] = [];
   chunkingStrategies = CHUNKING_STRATEGIES;
 
   constructor(

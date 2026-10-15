@@ -8,7 +8,7 @@ from app.config import get_settings
 # Import domain models to register them on Base (must happen before app starts)
 import app.models.database  # noqa: F401
 
-from app.api.routes import credentials, instructions, jobs, webhooks, health
+from app.api.routes import instructions, jobs, webhooks, health
 
 
 # Register domain-specific org stats for superadmin endpoints
@@ -34,7 +34,6 @@ register_org_stats_hook(_org_stats)
 app = create_hop_app(
     settings_factory=get_settings,
     extra_routers=[
-        credentials.router,
         instructions.router,
         jobs.router,
         webhooks.router,
@@ -42,7 +41,6 @@ app = create_hop_app(
     title="AI Release Notes Agent API",
     description="Automated DITA release notes generation from Jira tickets",
     version="1.0.0",
-    include_credentials_router=False,
     include_dita_router=True,
 )
 
