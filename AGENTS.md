@@ -50,6 +50,18 @@ item's links into its notes, one per line, then dropped the table). Editing it r
 `notes_edited` history entry but deliberately does **not** reassemble topics — notes never
 reach the assembled DITA.
 
+**Migrations run themselves, from a one-shot `migrate` service.** `docker compose up` starts
+`backend` (and in dev `celery-worker`) only after `migrate` exits 0, so a deploy never needs a
+manual `alembic upgrade head` and never serves traffic against a schema the code does not
+match. The work is in `backend/scripts/startup_migrate.py` rather than an entrypoint because
+those services share one image, and two containers running DDL at once half-applies a
+migration. It handles three cases, mirroring `install.sh`: an empty database gets
+`create_all()` + `stamp head` (this project's baseline schema is **not** built by Alembic —
+the migrations are incremental patches on top, so replaying them over current-shape tables
+fails); a stamped database gets `upgrade head`; a database with tables but no
+`alembic_version` is **refused**, because neither stamping nor upgrading is safe to guess.
+Running on the host still means `backend/venv/bin/alembic upgrade head` by hand.
+
 **Three environment files, not interchangeable.** `backend/.env` for host runs (uvicorn,
 celery, alembic — it carries localhost `DATABASE_URL`/`REDIS_URL`); the repository-root
 `.env` for `docker compose` variable substitution; `.env.production` for production compose.

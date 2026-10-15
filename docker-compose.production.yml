@@ -64,6 +64,35 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # One-shot: brings the schema to head, then exits. backend waits for it to succeed, so a
+  # deploy never needs a manual `alembic upgrade head` and never serves traffic against a
+  # schema the code does not match. See backend/scripts/startup_migrate.py for the three
+  # cases it handles.
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: python scripts/startup_migrate.py
+    container_name: release-notes-migrate
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-produser}:${POSTGRES_PASSWORD:?error}@postgres:5432/${POSTGRES_DB:-release_notes_production}
+      REDIS_URL: redis://:${REDIS_PASSWORD:?error}@redis:6379/0
+      APP_ENV: production
+      APP_SECRET_KEY: ${APP_SECRET_KEY:?error}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?error}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?error}
+    networks:
+      - app-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   backend:
     build:
       context: ./backend
@@ -78,6 +107,8 @@ services:
         condition: service_healthy
       smtp:
         condition: service_started
+      migrate:
+        condition: service_completed_successfully
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-produser}:${POSTGRES_PASSWORD:?error}@postgres:5432/${POSTGRES_DB:-release_notes_production}
       REDIS_URL: redis://:${REDIS_PASSWORD:?error}@redis:6379/0
