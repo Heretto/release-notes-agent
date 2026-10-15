@@ -74,12 +74,19 @@ local state.
   `app/models/database.py`) and let autogenerate write migrations against a hop-core table.
   `backend/alembic/env.py` derives `OUR_TABLES` from mappers only. The reasoning is in a
   comment there — read it before changing the filter.
-- **The production frontend build fails its 1 MB `initial` bundle budget** (~1.36 MB on
-  hop-core v0.1.8 / Angular 22; was ~1.14 MB on v0.1.4 / Angular 19). This
-  is not caused by anything in this repo: an eager `hopAuthInterceptor` import pins the whole
+- **The `initial` bundle budget is deliberately 2 MB, not Angular's default 1 MB.** The real
+  bundle is ~1.39 MB (was ~1.36 MB on v0.1.8 / Angular 22, ~1.14 MB on v0.1.4 / Angular 19),
+  and nothing in this repo can shrink it: an eager `hopAuthInterceptor` import pins the whole
   flat `@heretto/hop-ui` bundle and its Angular Material tree into the initial chunk, and
-  hop-ui has no secondary entry points to split it. `docker compose build frontend` fails on
-  this. Open upstream.
+  hop-ui has no secondary entry points to split it. At the default budget `ng build` — and so
+  `docker compose build frontend`, since `ng build` defaults to the production configuration —
+  failed outright, which blocked server deploys. The budget was raised rather than removed, so
+  a genuine regression still trips it. Root cause is open upstream; drop the budget back when
+  hop-ui ships entry points.
+- **`frontend/Dockerfile` must stay on a Node that satisfies Angular 22** (`^22.22.3 ||
+  ^24.15.0 || >=26`). It sat on `node:18-alpine` after the Angular 22 upgrade and every image
+  build died with "The Angular CLI requires a minimum Node.js version of v22.22.3...". The
+  `install.sh` check and `package.json` engines field do **not** cover the image build.
 - **`npm audit` reports ~11 high findings in the frontend. Do NOT run `npm audit fix
   --force`** — it "fixes" them by installing `karma@4.0.0`, a two-major downgrade that breaks
   the test setup and resolves nothing real. Every package in the report is a

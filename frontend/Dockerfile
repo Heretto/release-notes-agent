@@ -1,13 +1,17 @@
 # Build stage
-FROM node:18-alpine AS builder
+# Node must satisfy Angular 22's engine constraint: ^22.22.3 || ^24.15.0 || >=26.
+# node:18-alpine fails the build with "The Angular CLI requires a minimum Node.js
+# version of v22.22.3 or v24.15.0 or v26.0.0."
+FROM node:24-alpine AS builder
 
 WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm install
+# Install dependencies. `npm ci` installs exactly what package-lock.json pins, instead of
+# re-resolving like `npm install` does — the image then matches what was tested locally.
+RUN npm ci
 
 # Copy source code
 COPY . .
