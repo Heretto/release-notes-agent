@@ -61,7 +61,7 @@ type StepState = 'done' | 'current' | 'pending' | 'failed';
           </div>
           <div class="header-actions">
             @if (job.status === 'completed') {
-              <a mat-raised-button color="primary" [routerLink]="['/jobs', job.id, 'workspace']">
+              <a mat-raised-button color="primary" [routerLink]="['/releases', job.id, 'workspace']">
                 <mat-icon>edit_note</mat-icon>
                 Open workspace
               </a>
@@ -343,7 +343,7 @@ export class JobDetailComponent implements OnInit, OnDestroy {
   ngOnInit() {
     this.jobId = this.route.snapshot.paramMap.get('id');
     if (!this.jobId) {
-      this.router.navigate(['/jobs']);
+      this.router.navigate(['/releases']);
       return;
     }
     this.refreshSubscription = interval(4000)
@@ -364,7 +364,7 @@ export class JobDetailComponent implements OnInit, OnDestroy {
         },
         error: () => {
           this.snackBar.open('Failed to load the release', 'Close', { duration: 3000 });
-          this.router.navigate(['/jobs']);
+          this.router.navigate(['/releases']);
         }
       });
   }
@@ -406,7 +406,7 @@ export class JobDetailComponent implements OnInit, OnDestroy {
   }
 
   navigateBack() {
-    this.router.navigate(['/jobs']);
+    this.router.navigate(['/releases']);
   }
 
   chipClass(job: Job): string {
@@ -459,7 +459,7 @@ export class JobDetailComponent implements OnInit, OnDestroy {
     ref.afterClosed().subscribe(confirmed => {
       if (!confirmed || !this.job) return;
       this.jobsService.deleteJob(this.job.id).subscribe({
-        next: () => this.router.navigate(['/jobs']),
+        next: () => this.router.navigate(['/releases']),
         error: () => this.snackBar.open('Failed to delete', 'Close', { duration: 3000 })
       });
     });

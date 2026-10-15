@@ -65,6 +65,35 @@ import {
           </mat-form-field>
         </div>
 
+        <div class="notes-block">
+          <span class="notes-label">Notes</span>
+          @if (editingNotes) {
+            <textarea class="notes-editor" [(ngModel)]="notesDraft" rows="5" [disabled]="saving"
+                      placeholder="Context, open questions, links to a Slack thread or design doc…"></textarea>
+            <div class="notes-actions">
+              <button mat-button (click)="cancelNotes()" [disabled]="saving">Cancel</button>
+              <button mat-flat-button color="primary" (click)="saveNotes()" [disabled]="saving">Save</button>
+            </div>
+          } @else if (item.notes) {
+            <p class="notes-body">
+              @for (part of noteParts; track $index) {
+                @if (part.isLink) {
+                  <a [href]="part.text" target="_blank" rel="noopener">{{ part.text }}</a>
+                } @else {
+                  <span>{{ part.text }}</span>
+                }
+              }
+            </p>
+            <div class="notes-actions">
+              <button mat-button (click)="startNotesEdit()" [disabled]="disabled || saving">Edit notes</button>
+            </div>
+          } @else {
+            <button class="notes-empty" (click)="startNotesEdit()" [disabled]="disabled || saving">
+              Add notes — context, open questions, links…
+            </button>
+          }
+        </div>
+
         @if (item.needs_attention) {
           <div class="attention-banner">
             <mat-icon>flag</mat-icon>
@@ -145,33 +174,6 @@ import {
             </div>
           </mat-tab>
 
-          <mat-tab label="Links ({{ item.references.length }})">
-            <div class="tab-body">
-              <p class="muted">Your own references for this note: a Slack thread, a design doc, a support case.</p>
-              @for (reference of item.references; track reference.id) {
-                <div class="reference-row">
-                  <mat-icon>link</mat-icon>
-                  <a [href]="reference.url" target="_blank" rel="noopener">{{ reference.label || reference.url }}</a>
-                  <span class="spacer"></span>
-                  <button mat-icon-button matTooltip="Remove" (click)="removeReference(reference.id)" [disabled]="saving">
-                    <mat-icon>close</mat-icon>
-                  </button>
-                </div>
-              }
-              <form class="reference-form" (ngSubmit)="addReference()">
-                <mat-form-field appearance="outline" subscriptSizing="dynamic" class="grow">
-                  <mat-label>URL</mat-label>
-                  <input matInput [(ngModel)]="referenceUrl" name="url" placeholder="https://…" [disabled]="saving">
-                </mat-form-field>
-                <mat-form-field appearance="outline" subscriptSizing="dynamic" class="grow">
-                  <mat-label>Label</mat-label>
-                  <input matInput [(ngModel)]="referenceLabel" name="label" placeholder="Slack thread" [disabled]="saving">
-                </mat-form-field>
-                <button mat-flat-button color="primary" type="submit" [disabled]="!referenceUrl.trim() || saving">Add</button>
-              </form>
-            </div>
-          </mat-tab>
-
           <mat-tab label="History ({{ item.history.length }})">
             <div class="tab-body">
               <ol class="timeline">
@@ -230,6 +232,18 @@ import {
     .muted { color: var(--text-tertiary); font-size: 12px; }
     .inline-icon { font-size: 14px; width: 14px; height: 14px; vertical-align: middle; }
     .status-row { display: flex; gap: 8px; padding: 4px 16px 8px; }
+    .notes-block { padding: 0 16px 12px; display: flex; flex-direction: column; gap: 6px; }
+    .notes-label { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+    .notes-editor { width: 100%; box-sizing: border-box; resize: vertical; padding: 8px 10px;
+      border: 1px solid var(--border-default); border-radius: 4px; font: inherit; font-size: 13px; }
+    .notes-editor:focus { outline: none; border-color: var(--color-primary); }
+    .notes-body { margin: 0; font-size: 13px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+    .notes-body a { word-break: break-all; }
+    .notes-actions { display: flex; justify-content: flex-end; gap: 4px; }
+    .notes-empty { align-self: flex-start; background: none; border: none; padding: 0; cursor: pointer;
+      font: inherit; font-size: 13px; color: var(--text-tertiary); text-align: left; }
+    .notes-empty:hover:not(:disabled) { color: var(--color-primary); }
+    .notes-empty:disabled { cursor: default; }
     .status-field { width: 150px; }
     .group-field { flex: 1; }
     .attention-banner { display: flex; align-items: center; gap: 10px; margin: 0 16px 8px; padding: 10px 12px; background: var(--color-warning-bg); color: var(--color-warning-text); border-radius: 8px; font-size: 13px; }
@@ -257,10 +271,6 @@ import {
     .editor-actions { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
     .editor-actions code { font-family: var(--font-mono); }
     .spacer { flex: 1; }
-    .reference-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border-light); }
-    .reference-row a { word-break: break-all; }
-    .reference-form { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
-    .reference-form .grow { flex: 1; min-width: 140px; }
     .timeline { list-style: none; margin: 0; padding: 0; }
     .event { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border-light); }
     .event-icon { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; background: var(--bg-secondary); flex-shrink: 0; }
@@ -296,11 +306,21 @@ export class WorkspaceItemDetailComponent implements OnChanges {
   groupDraft = '';
   ditaDraft = '';
   ditaErrors: string[] = [];
-  referenceUrl = '';
-  referenceLabel = '';
+  editingNotes = false;
+  notesDraft = '';
 
   get ditaDirty(): boolean {
     return !!this.item && this.ditaDraft.trim() !== (this.item.dita_content || '').trim();
+  }
+
+  /** The notes split into plain text and bare URLs, so URLs render as links. */
+  get noteParts(): { text: string; isLink: boolean }[] {
+    const notes = this.item?.notes || '';
+    if (!notes) return [];
+    return notes
+      .split(/(https?:\/\/[^\s]+)/g)
+      .filter(part => part !== '')
+      .map(part => ({ text: part, isLink: /^https?:\/\//.test(part) }));
   }
 
   ngOnChanges(changes: SimpleChanges): void {
@@ -330,6 +350,7 @@ export class WorkspaceItemDetailComponent implements OnChanges {
     this.ditaDraft = item.dita_content;
     this.ditaErrors = [];
     this.editingTitle = false;
+    this.editingNotes = false;
   }
 
   private save(update: Parameters<JobsService['updateItem']>[2], success?: string): void {
@@ -395,39 +416,24 @@ export class WorkspaceItemDetailComponent implements OnChanges {
     this.save({ dita_content: dita }, 'Previous version restored');
   }
 
-  addReference(): void {
-    const url = this.referenceUrl.trim();
-    if (!url || !this.item) return;
-    this.saving = true;
-    this.jobsService.addReference(this.jobId, this.item.id, { url, label: this.referenceLabel.trim() || undefined }).subscribe({
-      next: () => {
-        this.saving = false;
-        this.referenceUrl = '';
-        this.referenceLabel = '';
-        this.load();
-        this.updated.emit(this.item!);
-      },
-      error: (error) => {
-        this.saving = false;
-        this.snackBar.open(error.error?.detail || 'Failed to add the link', 'Close', { duration: 4000 });
-      }
-    });
+  startNotesEdit(): void {
+    if (this.disabled) return;
+    this.notesDraft = this.item?.notes || '';
+    this.editingNotes = true;
   }
 
-  removeReference(referenceId: string): void {
-    if (!this.item) return;
-    this.saving = true;
-    this.jobsService.removeReference(this.jobId, this.item.id, referenceId).subscribe({
-      next: () => {
-        this.saving = false;
-        this.load();
-        this.updated.emit(this.item!);
-      },
-      error: () => {
-        this.saving = false;
-        this.snackBar.open('Failed to remove the link', 'Close', { duration: 3000 });
-      }
-    });
+  cancelNotes(): void {
+    this.editingNotes = false;
+    this.notesDraft = this.item?.notes || '';
+  }
+
+  saveNotes(): void {
+    const notes = this.notesDraft.trim();
+    if (!this.item || notes === (this.item.notes || '').trim()) {
+      this.editingNotes = false;
+      return;
+    }
+    this.save({ notes }, notes ? 'Notes saved' : 'Notes cleared');
   }
 
   isDone(issue: JobIssue): boolean {
@@ -438,7 +444,7 @@ export class WorkspaceItemDetailComponent implements OnChanges {
     const icons: Record<string, string> = {
       created: 'add_circle', jira_changed: 'sync_problem', regenerated: 'auto_fix_high', content_edited: 'edit',
       status_changed: 'flag_circle', moved: 'low_priority', flagged: 'flag', issue_removed: 'link_off',
-      reference_added: 'add_link', reference_removed: 'link_off',
+      notes_edited: 'sticky_note_2',
     };
     return icons[entry.event_type] || 'history';
   }

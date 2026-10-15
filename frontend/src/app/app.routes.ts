@@ -32,17 +32,21 @@ export const routes: Routes = [
         children: HOP_AGENT_ROUTES,
       },
       {
-        path: 'jobs',
+        path: 'releases',
         loadComponent: () => import('./features/jobs/jobs.component').then(m => m.JobsComponent),
       },
       {
-        path: 'jobs/:id',
+        path: 'releases/:id',
         loadComponent: () => import('./features/jobs/job-detail.component').then(m => m.JobDetailComponent),
       },
       {
-        path: 'jobs/:id/workspace',
+        path: 'releases/:id/workspace',
         loadComponent: () => import('./features/jobs/workspace/workspace.component').then(m => m.WorkspaceComponent),
       },
+      // Redirects so links handed out while these lived at /jobs keep working.
+      { path: 'jobs', redirectTo: 'releases', pathMatch: 'full' },
+      { path: 'jobs/:id', redirectTo: 'releases/:id' },
+      { path: 'jobs/:id/workspace', redirectTo: 'releases/:id/workspace' },
       {
         path: 'settings',
         loadComponent: () => import('./features/settings/settings.component').then(m => m.SettingsComponent),

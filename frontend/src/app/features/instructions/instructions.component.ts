@@ -302,7 +302,7 @@ export class InstructionsComponent implements OnInit {
   deleteInstructionSet(instruction: InstructionSet) {
     if (!instruction.id) return;
     const ref = this.dialog.open(HopConfirmDialogComponent, {
-      data: { title: 'Delete instruction set', message: `Delete "${instruction.name}"? Jobs already run from it are kept.`, confirmText: 'Delete' }
+      data: { title: 'Delete instruction set', message: `Delete "${instruction.name}"? Releases already run from it are kept.`, confirmText: 'Delete' }
     });
     ref.afterClosed().subscribe(confirmed => {
       if (!confirmed) return;
@@ -342,7 +342,7 @@ export class InstructionsComponent implements OnInit {
       this.jobsService.createJob(jobData).subscribe({
         next: (job) => {
           this.snackBar.open('Release started', 'Close', { duration: 3000 });
-          this.router.navigate(['/jobs', job.id]);
+          this.router.navigate(['/releases', job.id]);
         },
         error: (error) => {
           this.snackBar.open(error.error?.detail || 'Failed to start the release', 'Close', { duration: 5000 });

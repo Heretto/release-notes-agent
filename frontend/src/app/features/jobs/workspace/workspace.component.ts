@@ -43,7 +43,7 @@ type ListFilter = 'all' | 'attention' | ItemStatus;
 
       @if (!loading && job) {
         <header class="ws-header">
-          <a mat-icon-button [routerLink]="['/jobs', job.id]" matTooltip="Release details"><mat-icon>arrow_back</mat-icon></a>
+          <a mat-icon-button [routerLink]="['/releases', job.id]" matTooltip="Release details"><mat-icon>arrow_back</mat-icon></a>
           <div class="ws-title">
             <h1>{{ job.title || job.output_filename || 'Release notes' }}</h1>
             <span class="muted">
@@ -112,7 +112,7 @@ type ListFilter = 'all' | 'attention' | ItemStatus;
                         <span class="note-meta muted">
                           {{ item.issue_keys.join(', ') || 'no issue' }}
                           @if (item.user_edited) { · <mat-icon class="mini-icon" matTooltip="Edited by a person">edit</mat-icon> }
-                          @if (item.reference_count) { · <mat-icon class="mini-icon">link</mat-icon>{{ item.reference_count }} }
+                          @if (item.has_notes) { · <mat-icon class="mini-icon" matTooltip="Has notes">sticky_note_2</mat-icon> }
                         </span>
                       </span>
                       @if (item.needs_attention) {
@@ -170,7 +170,7 @@ type ListFilter = 'all' | 'attention' | ItemStatus;
                 <mat-icon>forum</mat-icon> Chat
               </button>
               <button class="side-tab" [class.active]="rightPane === 'item'" (click)="rightPane = 'item'" [disabled]="!selectedItemId">
-                <mat-icon>info</mat-icon> Note
+                <mat-icon>info</mat-icon> Details
               </button>
             </div>
             <div class="side-body">
@@ -267,7 +267,7 @@ export class WorkspaceComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     const jobId = this.route.snapshot.paramMap.get('id');
-    if (!jobId) { this.router.navigate(['/jobs']); return; }
+    if (!jobId) { this.router.navigate(['/releases']); return; }
     this.jobsService.getJob(jobId).subscribe({
       next: (job) => {
         this.job = job;
@@ -277,7 +277,7 @@ export class WorkspaceComponent implements OnInit, OnDestroy {
         this.reload(true);
         this.watchRuns();
       },
-      error: () => this.router.navigate(['/jobs'])
+      error: () => this.router.navigate(['/releases'])
     });
   }
 
@@ -523,7 +523,7 @@ export class WorkspaceComponent implements OnInit, OnDestroy {
     ref.afterClosed().subscribe(confirmed => {
       if (!confirmed) return;
       this.jobsService.rerunJob(this.job!.id).subscribe({
-        next: (job) => { this.job = job; this.router.navigate(['/jobs', job.id]); },
+        next: (job) => { this.job = job; this.router.navigate(['/releases', job.id]); },
         error: (error) => this.snackBar.open(error.error?.detail || 'Failed to rerun', 'Close', { duration: 5000 })
       });
     });

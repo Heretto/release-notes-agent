@@ -74,7 +74,7 @@ import { SuperadminAddMemberDialogComponent, AddMemberDialogResult } from './sup
             <mat-card class="stat-card">
               <mat-card-content>
                 <div class="stat-value">{{ org.job_count }}</div>
-                <div class="stat-label">Jobs</div>
+                <div class="stat-label">Releases</div>
               </mat-card-content>
             </mat-card>
             <mat-card class="stat-card">

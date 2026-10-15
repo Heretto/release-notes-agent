@@ -39,6 +39,27 @@ services:
       - "127.0.0.1:8025:8025"
       - "127.0.0.1:1025:1025"
 
+  # One-shot: brings the schema to head, then exits. backend and celery-worker both wait for
+  # it to succeed — they share this image, and two containers running DDL at once is how you
+  # get a half-applied migration. See backend/scripts/startup_migrate.py.
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: python scripts/startup_migrate.py
+    container_name: release-notes-migrate
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://user:password@postgres:5432/release_notes_db
+      REDIS_URL: redis://:devpassword@redis:6379/0
+      APP_ENV: development
+      APP_SECRET_KEY: ${APP_SECRET_KEY:?not set — see .env.example}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?not set — see .env.example}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?not set — see .env.example}
+
   backend:
     build:
       context: ./backend
@@ -51,6 +72,8 @@ services:
         condition: service_healthy
       mailpit:
         condition: service_started
+      migrate:
+        condition: service_completed_successfully
     environment:
       DATABASE_URL: postgresql://user:password@postgres:5432/release_notes_db
       REDIS_URL: redis://:devpassword@redis:6379/0
@@ -96,6 +119,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     environment:
       DATABASE_URL: postgresql://user:password@postgres:5432/release_notes_db
       REDIS_URL: redis://:devpassword@redis:6379/0
