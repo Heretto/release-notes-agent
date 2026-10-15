@@ -20,11 +20,10 @@ from app.core.security import decrypt_credentials
 from app.models.database import (
     ChunkingStrategy, Credential, CredentialType, HistoryEvent, InstructionSet, ItemStatus, Job,
     JobArtifact, JobRequest, JobStatus, JobTrigger,
-    ReleaseNoteItem, ReleaseNoteItemReference, ReleaseNoteTopic, get_db,
+    ReleaseNoteItem, ReleaseNoteTopic, get_db,
 )
 from app.models.schemas import (
-    ChatMessageResponse, ChatSendRequest, ChatSendResponse, ItemReferenceCreate, ItemReferenceResponse,
-    JiraPreviewRequest, JiraPreviewResponse, JobArtifactResponse, JobCreate, JobIssueResponse, JobResponse,
+    ChatMessageResponse, ChatSendRequest, ChatSendResponse, JiraPreviewRequest, JiraPreviewResponse, JobArtifactResponse, JobCreate, JobIssueResponse, JobResponse,
     JobStatusEnum, ReassembleRequest, ReleaseNoteItemDetailResponse, ReleaseNoteItemResponse,
     ReleaseNoteItemUpdate, ReleaseNoteTopicResponse,
 )
@@ -379,7 +378,7 @@ async def update_job_item(
     context: CurrentUserContext = Depends(get_current_active_user_with_org),
     db: Session = Depends(get_db),
 ):
-    """Edit a note: headline, summary, DITA content, status, group, or clear its attention flag."""
+    """Edit a note: headline, summary, DITA content, status, group, the writer's notes, or clear its attention flag."""
     job = _get_job(job_id, context, db)
     _require_idle(job)
     item = _get_item(job, item_id)
@@ -420,6 +419,12 @@ async def update_job_item(
         record_history(db, item, HistoryEvent.MOVED, f"Moved to group “{item.group_name or '(none)'}”",
                        actor="user", user_id=user_id, details={"from_group": previous, "to_group": item.group_name})
         changed = True
+    if update.notes is not None and update.notes.strip() != (item.notes or "").strip():
+        # The writer's notes are not part of the output, so no reassembly and no user_edited.
+        previous = item.notes or ""
+        item.notes = update.notes.strip() or None
+        record_history(db, item, HistoryEvent.NOTES_EDITED, "Notes edited" if item.notes else "Notes cleared",
+                       actor="user", user_id=user_id, details={"from": previous, "to": item.notes or ""})
     if update.clear_attention and item.needs_attention:
         item.needs_attention = False
         item.attention_reason = None
@@ -459,51 +464,6 @@ async def move_job_item(
     _reassemble(db, job)
     db.commit()
     return [item_to_response(i) for i in sorted(job.items, key=lambda i: i.position)]
-
-
-@router.post("/{job_id}/items/{item_id}/references", response_model=ItemReferenceResponse)
-async def add_item_reference(
-    job_id: UUID,
-    item_id: UUID,
-    data: ItemReferenceCreate,
-    context: CurrentUserContext = Depends(get_current_active_user_with_org),
-    db: Session = Depends(get_db),
-):
-    job = _get_job(job_id, context, db)
-    item = _get_item(job, item_id)
-    url = data.url.strip()
-    if not re.match(r"^https?://", url, re.IGNORECASE):
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="The link must start with http:// or https://")
-    reference = ReleaseNoteItemReference(item_id=item.id, user_id=context.user.id, url=url,
-                                         label=(data.label or "").strip() or None)
-    db.add(reference)
-    record_history(db, item, HistoryEvent.REFERENCE_ADDED, f"Link added: {reference.label or url}",
-                   actor="user", user_id=context.user.id, details={"url": url, "label": reference.label})
-    db.commit()
-    db.refresh(reference)
-    return ItemReferenceResponse(id=reference.id, url=reference.url, label=reference.label,
-                                 user_id=reference.user_id, created_at=reference.created_at)
-
-
-@router.delete("/{job_id}/items/{item_id}/references/{reference_id}")
-async def delete_item_reference(
-    job_id: UUID,
-    item_id: UUID,
-    reference_id: UUID,
-    context: CurrentUserContext = Depends(get_current_active_user_with_org),
-    db: Session = Depends(get_db),
-):
-    job = _get_job(job_id, context, db)
-    item = _get_item(job, item_id)
-    reference = next((r for r in item.references if r.id == reference_id), None)
-    if reference is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Link not found")
-    label = reference.label or reference.url
-    db.delete(reference)
-    record_history(db, item, HistoryEvent.REFERENCE_REMOVED, f"Link removed: {label}",
-                   actor="user", user_id=context.user.id, details={"url": reference.url})
-    db.commit()
-    return {"message": "Link removed"}
 
 
 # ── Workspace: topics ────────────────────────────────────────────────────────────────

@@ -6,7 +6,6 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { HopDitaContentComponent, HopDitaLinkEvent, HopConfirmDialogComponent } from '@heretto/hop-ui';
@@ -32,7 +31,7 @@ type ListFilter = 'all' | 'attention' | ItemStatus;
   standalone: true,
   imports: [
     DatePipe, RouterLink, MatButtonModule, MatIconModule, MatTooltipModule, MatMenuModule,
-    MatProgressSpinnerModule, MatButtonToggleModule, MatSnackBarModule, MatDialogModule,
+    MatProgressSpinnerModule, MatSnackBarModule, MatDialogModule,
     HopDitaContentComponent, WorkspaceChatComponent, WorkspaceItemDetailComponent
   ],
   template: `
@@ -43,18 +42,18 @@ type ListFilter = 'all' | 'attention' | ItemStatus;
 
       @if (!loading && job) {
         <header class="ws-header">
-          <a mat-icon-button [routerLink]="['/jobs', job.id]" matTooltip="Release details"><mat-icon>arrow_back</mat-icon></a>
+          <a class="icon-btn" [routerLink]="['/jobs', job.id]" matTooltip="Release details"><mat-icon>arrow_back</mat-icon></a>
           <div class="ws-title">
             <h1>{{ job.title || job.output_filename || 'Release notes' }}</h1>
-            <span class="muted">
+            <span class="subline">
               {{ includedCount }} notes · {{ approvedCount }} approved
-              @if (attentionCount) { · <span class="attention">{{ attentionCount }} need attention</span> }
+              @if (attentionCount) { <span class="attention"> · {{ attentionCount }} need attention</span> }
               @if (job.last_run_at) { · run {{ job.run_count }} on {{ job.last_run_at | date:'short' }} }
             </span>
           </div>
           <div class="ws-actions">
-            @if (busy) { <mat-spinner diameter="20"></mat-spinner> }
-            <button mat-stroked-button [matMenuTriggerFor]="chunkMenu" matTooltip="How notes are split into topics">
+            @if (busy) { <mat-spinner diameter="18"></mat-spinner> }
+            <button class="btn" [matMenuTriggerFor]="chunkMenu" matTooltip="How notes are split into topics">
               <mat-icon>view_agenda</mat-icon>
               {{ chunkingLabel(job.chunking_strategy) }}
             </button>
@@ -66,12 +65,12 @@ type ListFilter = 'all' | 'attention' | ItemStatus;
                 </button>
               }
             </mat-menu>
-            <button mat-stroked-button [matMenuTriggerFor]="moreMenu"><mat-icon>more_horiz</mat-icon> More</button>
+            <button class="btn" [matMenuTriggerFor]="moreMenu"><mat-icon>more_horiz</mat-icon> More</button>
             <mat-menu #moreMenu="matMenu">
-              <button mat-menu-item (click)="downloadAll()"><mat-icon>download</mat-icon><span>Download DITA ({{ topics.length }})</span></button>
-              <button mat-menu-item (click)="publish()"><mat-icon>cloud_upload</mat-icon><span>Publish to Heretto</span></button>
-              <button mat-menu-item (click)="rerun()"><mat-icon>replay</mat-icon><span>Rerun: check Jira for changes</span></button>
-              <button mat-menu-item (click)="approveAll()"><mat-icon>done_all</mat-icon><span>Approve every note</span></button>
+              <button mat-menu-item (click)="downloadAll()"><span>Download DITA ({{ topics.length }})</span></button>
+              <button mat-menu-item (click)="publish()"><span>Publish to Heretto</span></button>
+              <button mat-menu-item (click)="rerun()"><span>Rerun: check Jira for changes</span></button>
+              <button mat-menu-item (click)="approveAll()"><span>Approve every note</span></button>
             </mat-menu>
           </div>
         </header>
@@ -85,69 +84,63 @@ type ListFilter = 'all' | 'attention' | ItemStatus;
 
         <div class="columns">
           <!-- Notes -->
-          <aside class="notes-pane">
+          <aside class="pane notes-pane">
             <div class="pane-head">
-              <mat-button-toggle-group [value]="filter" (change)="filter = $event.value" hideSingleSelectionIndicator class="filter-toggle">
-                <mat-button-toggle value="all">All</mat-button-toggle>
-                <mat-button-toggle value="attention" [disabled]="attentionCount === 0">
-                  <mat-icon class="toggle-icon">flag</mat-icon>{{ attentionCount }}
-                </mat-button-toggle>
-                <mat-button-toggle value="draft">Draft</mat-button-toggle>
-                <mat-button-toggle value="approved">Approved</mat-button-toggle>
-              </mat-button-toggle-group>
+              <div class="seg">
+                <button [class.on]="filter === 'all'" (click)="filter = 'all'">All</button>
+                <button [class.on]="filter === 'attention'" (click)="filter = 'attention'" [disabled]="attentionCount === 0" matTooltip="Need attention">
+                  <svg class="flag-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><path d="M4 22v-7"/></svg>{{ attentionCount }}
+                </button>
+                <button [class.on]="filter === 'draft'" (click)="filter = 'draft'">Draft</button>
+                <button [class.on]="filter === 'approved'" (click)="filter = 'approved'">Approved</button>
+              </div>
             </div>
             <div class="notes-scroll">
-              @if (visibleGroups.length === 0) {
-                <p class="muted empty-note">No notes match this filter.</p>
-              }
               @for (group of visibleGroups; track group.name) {
                 <div class="group">
-                  <div class="group-head">{{ group.name || 'Ungrouped' }} <span class="muted">{{ group.items.length }}</span></div>
+                  <div class="group-head">{{ group.name || 'Ungrouped' }} <span class="count">{{ group.items.length }}</span></div>
                   @for (item of group.items; track item.id) {
                     <button class="note-row" [class.selected]="item.id === selectedItemId" [class.rejected]="item.status === 'rejected'"
                             (click)="selectItem(item)">
                       <span class="status-dot" [class]="'status-dot status-' + item.status" [matTooltip]="statusLabel(item.status)"></span>
                       <span class="note-main">
                         <span class="note-title">{{ item.title }}</span>
-                        <span class="note-meta muted">
-                          {{ item.issue_keys.join(', ') || 'no issue' }}
-                          @if (item.user_edited) { · <mat-icon class="mini-icon" matTooltip="Edited by a person">edit</mat-icon> }
-                          @if (item.reference_count) { · <mat-icon class="mini-icon">link</mat-icon>{{ item.reference_count }} }
-                        </span>
+                        <span class="note-meta">{{ itemMeta(item) }}</span>
                       </span>
                       @if (item.needs_attention) {
-                        <mat-icon class="attention-flag" [matTooltip]="item.attention_reason || 'Needs attention'">flag</mat-icon>
+                        <svg class="flag-icon attention-flag" viewBox="0 0 24 24" [matTooltip]="item.attention_reason || 'Needs attention'" aria-label="Needs attention"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><path d="M4 22v-7"/></svg>
                       }
                     </button>
                   }
                 </div>
               }
+              @if (visibleGroups.length === 0) {
+                <p class="empty-note">No notes match this filter.</p>
+              }
             </div>
           </aside>
 
           <!-- Topic -->
-          <section class="topic-pane">
-            <div class="pane-head topic-head">
+          <section class="pane topic-pane">
+            <div class="pane-head">
               <div class="topic-tabs">
                 @for (topic of topics; track topic.id) {
-                  <button class="topic-tab" [class.active]="topic.id === selectedTopicId" (click)="selectTopic(topic)">
-                    {{ topic.title }}
-                    <span class="muted">{{ topic.item_ids.length }}</span>
+                  <button class="topic-tab" [class.active]="topic.id === selectedTopic?.id" (click)="selectTopic(topic)">
+                    {{ topic.title }} <span class="count">{{ topic.item_ids.length }}</span>
                   </button>
                 }
               </div>
-              <span class="spacer"></span>
-              <mat-button-toggle-group [value]="view" (change)="view = $event.value" hideSingleSelectionIndicator class="view-toggle">
-                <mat-button-toggle value="rendered" matTooltip="Rendered"><mat-icon>article</mat-icon></mat-button-toggle>
-                <mat-button-toggle value="xml" matTooltip="DITA source"><mat-icon>code</mat-icon></mat-button-toggle>
-              </mat-button-toggle-group>
+              <div class="seg">
+                <button [class.on]="view === 'rendered'" (click)="view = 'rendered'" matTooltip="Rendered" aria-label="Rendered"><mat-icon>article</mat-icon></button>
+                <button [class.on]="view === 'xml'" (click)="view = 'xml'" matTooltip="DITA source" aria-label="DITA source"><mat-icon>code</mat-icon></button>
+              </div>
               @if (selectedTopic) {
-                <button mat-icon-button matTooltip="Download this topic" (click)="downloadTopic(selectedTopic)"><mat-icon>download</mat-icon></button>
+                <button class="icon-btn" matTooltip="Download this topic" (click)="downloadTopic(selectedTopic)"><mat-icon>download</mat-icon></button>
               }
             </div>
             <div class="topic-scroll" [class.xml-view]="view === 'xml'">
               @if (!selectedTopic) {
-                <p class="muted empty-note">No topic yet. Approve or edit notes and the topic appears here.</p>
+                <p class="empty-note">No topic yet. Approve or edit notes and the topic appears here.</p>
               } @else if (view === 'rendered') {
                 <div class="topic-render" [attr.data-topic]="selectedTopic.slug">
                   <hop-dita-content [html]="selectedTopic.html || ''" (linkClick)="onLinkClick($event)"></hop-dita-content>
@@ -164,13 +157,13 @@ type ListFilter = 'all' | 'attention' | ItemStatus;
           </section>
 
           <!-- Chat / note details -->
-          <aside class="side-pane">
-            <div class="pane-head side-tabs">
+          <aside class="pane side-pane">
+            <div class="side-tabs">
               <button class="side-tab" [class.active]="rightPane === 'chat'" (click)="rightPane = 'chat'">
                 <mat-icon>forum</mat-icon> Chat
               </button>
               <button class="side-tab" [class.active]="rightPane === 'item'" (click)="rightPane = 'item'" [disabled]="!selectedItemId">
-                <mat-icon>info</mat-icon> Note
+                <mat-icon>info</mat-icon> Details
               </button>
             </div>
             <div class="side-body">
@@ -192,30 +185,48 @@ type ListFilter = 'all' | 'attention' | ItemStatus;
   changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
     :host { display: block; }
-    .workspace { display: flex; flex-direction: column; height: calc(100vh - 96px); min-height: 480px; }
+    .workspace { display: flex; flex-direction: column; height: calc(100vh - 96px); min-height: 540px; font-size: 14px; line-height: 1.45; }
     .loading { display: flex; flex-direction: column; align-items: center; padding: 60px; color: var(--text-secondary); }
-    .ws-header { display: flex; align-items: center; gap: 12px; padding: 0 0 12px 0; }
+
+    /* ── Header ── */
+    .ws-header { display: flex; align-items: center; gap: 12px; padding-bottom: 12px; }
     .ws-title { flex: 1; min-width: 0; }
-    .ws-title h1 { margin: 0; font-size: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .ws-actions { display: flex; align-items: center; gap: 8px; }
-    .muted { color: var(--text-tertiary); font-size: 12px; }
+    .ws-title h1 { margin: 0; font-size: 20px; font-weight: 700; line-height: 1.2; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .subline { font-size: 12px; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
     .attention { color: var(--color-warning-text); }
-    .running-banner { display: flex; align-items: center; gap: 8px; padding: 8px 14px; margin-bottom: 10px; border-radius: 8px; background: var(--color-info-bg); color: var(--color-info-text); font-size: 13px; }
-    .columns { display: grid; grid-template-columns: 300px minmax(0, 1fr) 380px; gap: 12px; flex: 1; min-height: 0; }
-    @media (max-width: 1280px) { .columns { grid-template-columns: 260px minmax(0, 1fr) 340px; } }
-    @media (max-width: 1024px) { .workspace { height: auto; } .columns { grid-template-columns: 1fr; } .notes-pane, .topic-pane, .side-pane { height: 60vh; } }
-    .notes-pane, .topic-pane, .side-pane { display: flex; flex-direction: column; min-height: 0; border: 1px solid var(--border-default); border-radius: 12px; background: var(--card-bg); overflow: hidden; }
-    .pane-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--border-default); min-height: 44px; }
-    .spacer { flex: 1; }
-    .filter-toggle, .view-toggle { height: 32px; }
-    .filter-toggle ::ng-deep .mat-button-toggle-label-content, .view-toggle ::ng-deep .mat-button-toggle-label-content { line-height: 30px; padding: 0 10px; font-size: 12px; }
-    .toggle-icon { font-size: 14px; width: 14px; height: 14px; vertical-align: middle; margin-right: 2px; }
-    .notes-scroll { flex: 1; overflow-y: auto; padding: 6px 0; }
-    .empty-note { padding: 24px 16px; text-align: center; }
-    .group-head { padding: 10px 14px 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); display: flex; justify-content: space-between; }
-    .note-row { display: flex; align-items: flex-start; gap: 10px; width: 100%; text-align: left; padding: 8px 14px; border: none; border-left: 3px solid transparent; background: transparent; cursor: pointer; font: inherit; color: var(--text-primary); }
+    .ws-actions { display: flex; align-items: center; gap: 8px; }
+    .running-banner { display: flex; align-items: center; gap: 8px; padding: 8px 14px; margin-bottom: 10px; border-radius: 6px; background: var(--color-info-bg); color: var(--color-info-text); font-size: 13px; }
+
+    /* ── Shared controls ── */
+    .btn { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--border-default); background: var(--bg-primary); color: var(--text-primary); font: 600 13px/1 inherit; font-family: inherit; cursor: pointer; white-space: nowrap; }
+    .btn:hover { background: var(--bg-secondary); border-color: var(--border-strong); }
+    .btn mat-icon { font-size: 16px; width: 16px; height: 16px; }
+    .icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border: none; border-radius: 6px; background: transparent; color: var(--text-secondary); cursor: pointer; text-decoration: none; }
+    .icon-btn:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+    .icon-btn mat-icon { font-size: 18px; width: 18px; height: 18px; }
+    .seg { display: inline-flex; height: 30px; border: 1px solid var(--border-default); border-radius: 6px; overflow: hidden; flex-shrink: 0; }
+    .seg button { display: inline-flex; align-items: center; gap: 4px; padding: 0 10px; border: none; border-right: 1px solid var(--border-default); background: transparent; color: var(--text-secondary); font: 500 12px/1 inherit; font-family: inherit; cursor: pointer; white-space: nowrap; }
+    .seg button:last-child { border-right: none; }
+    .seg button.on { background: var(--color-primary); color: var(--text-inverse); }
+    .seg button:disabled { opacity: 0.45; cursor: default; }
+    .seg button mat-icon { font-size: 14px; width: 14px; height: 14px; }
+    .flag-icon { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+    .count { color: var(--text-tertiary); font-weight: 400; }
+
+    /* ── Columns ── */
+    .columns { display: grid; grid-template-columns: 260px minmax(420px, 1fr) 340px; gap: 12px; flex: 1; min-height: 0; }
+    @media (max-width: 1280px) { .columns { grid-template-columns: 240px minmax(0, 1fr) 320px; } }
+    @media (max-width: 1024px) { .workspace { height: auto; } .columns { grid-template-columns: 1fr; } .pane { height: 60vh; } }
+    .pane { display: flex; flex-direction: column; min-height: 0; border: 1px solid var(--border-light); border-radius: 10px; background: var(--card-bg); box-shadow: var(--shadow-xs); overflow: hidden; }
+    .pane-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--border-light); min-height: 44px; }
+    .empty-note { padding: 24px; text-align: center; font-size: 12px; color: var(--text-tertiary); margin: 0; }
+
+    /* ── Notes list ── */
+    .notes-scroll { flex: 1; overflow-y: auto; min-height: 0; }
+    .group-head { padding: 10px 14px 4px; font-size: 11px; font-weight: 600; line-height: 1.3; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); display: flex; justify-content: space-between; }
+    .note-row { display: flex; align-items: flex-start; gap: 10px; width: 100%; text-align: left; padding: 8px 14px 8px 11px; border: none; border-left: 3px solid transparent; background: transparent; cursor: pointer; font: inherit; color: var(--text-primary); }
     .note-row:hover { background: var(--hover-overlay); }
-    .note-row.selected { background: var(--color-accent-bg, var(--hover-overlay)); border-left-color: var(--color-accent); }
+    .note-row.selected { background: var(--color-primary-bg); border-left-color: var(--color-accent); }
     .note-row.rejected .note-title { text-decoration: line-through; color: var(--text-tertiary); }
     .status-dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; background: var(--border-strong); }
     .status-review { background: var(--color-warning); }
@@ -223,23 +234,26 @@ type ListFilter = 'all' | 'attention' | ItemStatus;
     .status-rejected { background: var(--color-error); }
     .note-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
     .note-title { font-size: 13px; line-height: 1.3; }
-    .note-meta { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; }
-    .mini-icon { font-size: 12px; width: 12px; height: 12px; vertical-align: middle; }
-    .attention-flag { color: var(--color-warning); font-size: 18px; width: 18px; height: 18px; flex-shrink: 0; }
-    .topic-tabs { display: flex; gap: 4px; overflow-x: auto; min-width: 0; }
-    .topic-tab { border: 1px solid transparent; background: transparent; padding: 5px 10px; border-radius: 8px; cursor: pointer; font: inherit; font-size: 13px; color: var(--text-secondary); white-space: nowrap; display: inline-flex; gap: 6px; align-items: center; }
-    .topic-tab.active { background: var(--bg-secondary); color: var(--text-primary); border-color: var(--border-default); font-weight: 500; }
-    .topic-scroll { flex: 1; overflow-y: auto; padding: 20px 28px; }
+    .note-meta { font-size: 12px; color: var(--text-tertiary); }
+    .attention-flag { color: var(--color-warning); margin-top: 3px; }
+
+    /* ── Topic ── */
+    .topic-tabs { display: flex; gap: 4px; overflow-x: auto; min-width: 0; flex: 1; scrollbar-width: none; }
+    .topic-tab { border: 1px solid transparent; background: transparent; padding: 5px 10px; border-radius: 6px; cursor: pointer; font: 400 13px/1 inherit; font-family: inherit; color: var(--text-secondary); white-space: nowrap; display: inline-flex; gap: 6px; align-items: center; }
+    .topic-tab.active { background: var(--bg-secondary); color: var(--text-primary); border-color: var(--border-light); font-weight: 500; }
+    .topic-scroll { flex: 1; overflow-y: auto; min-height: 0; padding: 20px 28px; }
     .topic-scroll.xml-view { padding: 12px; }
     .topic-scroll .hop-code-panel pre { white-space: pre-wrap; word-break: break-word; font-size: 12px; }
-    .topic-render { max-width: 820px; }
+    .topic-render { max-width: 760px; }
     .render-warnings { margin-top: 16px; color: var(--color-warning-text); font-size: 12px; }
-    .side-tabs { gap: 0; padding: 0; }
-    .side-tab { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 12px; border: none; border-bottom: 2px solid transparent; background: transparent; cursor: pointer; font: inherit; font-size: 13px; color: var(--text-secondary); }
-    .side-tab.active { color: var(--text-primary); border-bottom-color: var(--color-accent); font-weight: 500; }
+
+    /* ── Side pane ── */
+    .side-tabs { display: flex; border-bottom: 1px solid var(--border-light); }
+    .side-tab { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 12px; border: none; border-bottom: 2px solid transparent; margin-bottom: -1px; background: transparent; cursor: pointer; font: 500 13px/1 inherit; font-family: inherit; color: var(--text-tertiary); }
+    .side-tab.active { color: var(--color-primary); border-bottom-color: var(--color-accent); }
     .side-tab:disabled { opacity: 0.5; cursor: default; }
-    .side-tab mat-icon { font-size: 18px; width: 18px; height: 18px; }
-    .side-body { flex: 1; min-height: 0; }
+    .side-tab mat-icon { font-size: 16px; width: 16px; height: 16px; }
+    .side-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   `]
 })
 export class WorkspaceComponent implements OnInit, OnDestroy {
@@ -334,6 +348,12 @@ export class WorkspaceComponent implements OnInit, OnDestroy {
 
   statusLabel(status: ItemStatus): string {
     return { draft: 'Draft', review: 'In review', approved: 'Approved', rejected: 'Rejected' }[status];
+  }
+
+  /** "MARS-76, MARS-74 · edited · notes" — the issue keys, then what a person added. */
+  itemMeta(item: ReleaseNoteItem): string {
+    return [item.issue_keys.join(', ') || 'no issue', item.user_edited ? 'edited' : '', item.notes ? 'notes' : '']
+      .filter(Boolean).join(' · ');
   }
 
   // ── Loading ──────────────────────────────────────────────────────────────

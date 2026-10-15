@@ -3,25 +3,26 @@ import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
-import { MatTabsModule } from '@angular/material/tabs';
-import { MatSelectModule } from '@angular/material/select';
-import { MatFormFieldModule } from '@angular/material/form-field';
-import { MatInputModule } from '@angular/material/input';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { MatExpansionModule } from '@angular/material/expansion';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import {
   JobsService, ReleaseNoteItemDetail, ItemStatus, ITEM_STATUSES, ItemHistoryEntry, JobIssue
 } from '../../../core/services/jobs.service';
 
+type DetailTab = 'jira' | 'dita' | 'history';
+
+interface NotePart {
+  text: string;
+  isLink: boolean;
+}
+
+const URL_PATTERN = /(https?:\/\/[^\s<>"]+)/g;
+
 @Component({
   selector: 'app-workspace-item-detail',
   standalone: true,
-  imports: [
-    DatePipe, FormsModule, MatButtonModule, MatIconModule, MatTabsModule, MatSelectModule,
-    MatFormFieldModule, MatInputModule, MatTooltipModule, MatProgressSpinnerModule, MatExpansionModule
-  ],
+  imports: [DatePipe, FormsModule, MatButtonModule, MatIconModule, MatTooltipModule, MatProgressSpinnerModule],
   template: `
     <div class="detail">
       @if (loading || !item) {
@@ -32,53 +33,95 @@ import {
             @if (editingTitle) {
               <input class="title-input" [(ngModel)]="titleDraft" (keydown.enter)="saveTitle()" (keydown.escape)="editingTitle = false" />
               <div class="title-actions">
-                <button mat-button (click)="editingTitle = false">Cancel</button>
-                <button mat-flat-button color="primary" (click)="saveTitle()" [disabled]="!titleDraft.trim() || saving">Save</button>
+                <button class="btn text" (click)="editingTitle = false">Cancel</button>
+                <button class="btn primary" (click)="saveTitle()" [disabled]="!titleDraft.trim() || saving">Save</button>
               </div>
             } @else {
               <h3 (click)="startTitleEdit()" matTooltip="Click to rename">{{ item.title }}</h3>
             }
-            <div class="muted">
-              {{ item.group_name || 'No group' }}
-              @for (key of item.issue_keys; track key) { · {{ key }} }
-              @if (item.user_edited) { · <mat-icon class="inline-icon" matTooltip="Edited by a person">edit</mat-icon> }
-            </div>
-          </div>
-          <button mat-icon-button matTooltip="Back to chat" (click)="closed.emit()"><mat-icon>close</mat-icon></button>
-        </div>
-
-        <div class="status-row">
-          <mat-form-field appearance="outline" class="status-field" subscriptSizing="dynamic">
-            <mat-label>Status</mat-label>
-            <mat-select [value]="item.status" (selectionChange)="setStatus($event.value)" [disabled]="saving">
-              @for (status of statuses; track status.value) {
-                <mat-option [value]="status.value">{{ status.label }}</mat-option>
+            <div class="head-meta">
+              <span>{{ item.group_name || 'No group' }}</span>
+              @for (key of item.issue_keys; track key; let last = $last) {
+                <span>·</span>
+                <span>
+                  @if (issueUrl(key); as url) {
+                    <a [href]="url" target="_blank" rel="noopener" class="issue-key">{{ key }}</a>
+                  } @else {
+                    <span class="issue-key">{{ key }}</span>
+                  }{{ last ? '' : ',' }}
+                </span>
               }
-            </mat-select>
-          </mat-form-field>
-          <mat-form-field appearance="outline" class="group-field" subscriptSizing="dynamic">
-            <mat-label>Group</mat-label>
-            <input matInput [(ngModel)]="groupDraft" (blur)="saveGroup()" (keydown.enter)="saveGroup()" [disabled]="saving" list="groups">
-            <datalist id="groups">
-              @for (group of groups; track group) { <option [value]="group"></option> }
-            </datalist>
-          </mat-form-field>
+              @if (item.user_edited) { <span>· edited</span> }
+            </div>
+          </div>
+          <button class="icon-btn" matTooltip="Back to chat" (click)="closed.emit()"><mat-icon>close</mat-icon></button>
         </div>
 
-        @if (item.needs_attention) {
-          <div class="attention-banner">
-            <mat-icon>flag</mat-icon>
-            <div class="attention-text">
-              <strong>Needs attention</strong>
-              <div>{{ item.attention_reason }}</div>
-            </div>
-            <button mat-button (click)="clearAttention()" [disabled]="saving">Clear</button>
+        <div class="detail-scroll">
+          <div class="status-row">
+            <label class="field status-field">Status
+              <select [ngModel]="item.status" (ngModelChange)="setStatus($event)" [disabled]="saving || disabled">
+                @for (status of statuses; track status.value) {
+                  <option [value]="status.value">{{ status.label }}</option>
+                }
+              </select>
+            </label>
+            <label class="field group-field">Group
+              <input [(ngModel)]="groupDraft" (blur)="saveGroup()" (keydown.enter)="blurTarget($event)" [disabled]="saving || disabled" list="groups">
+              <datalist id="groups">
+                @for (group of groups; track group) { <option [value]="group"></option> }
+              </datalist>
+            </label>
           </div>
-        }
 
-        <mat-tab-group class="detail-tabs" animationDuration="0ms">
-          <mat-tab label="Jira">
-            <div class="tab-body">
+          <div class="notes-block">
+            <span class="field-label">Notes</span>
+            @if (notesEditing) {
+              <div>
+                <textarea class="notes-editor" [(ngModel)]="notesDraft" rows="5"
+                          placeholder="Context, open questions, links to a Slack thread or design doc…" [disabled]="saving"></textarea>
+                <div class="row-actions">
+                  <button class="btn text" (click)="notesEditing = false">Cancel</button>
+                  <button class="btn primary" (click)="saveNotes()" [disabled]="saving">Save</button>
+                </div>
+              </div>
+            } @else if (item.notes) {
+              <div class="notes-view">
+                @for (part of noteParts; track $index) {
+                  @if (part.isLink) {
+                    <a [href]="part.text" target="_blank" rel="noopener">{{ part.text }}</a>
+                  } @else {
+                    <span>{{ part.text }}</span>
+                  }
+                }
+              </div>
+              <div class="row-actions">
+                <button class="btn" (click)="editNotes()" [disabled]="disabled">Edit notes</button>
+              </div>
+            } @else {
+              <button class="notes-add" (click)="editNotes()" [disabled]="disabled">Add notes — context, open questions, links…</button>
+            }
+          </div>
+
+          @if (item.needs_attention) {
+            <div class="attention-banner">
+              <svg class="flag-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><path d="M4 22v-7"/></svg>
+              <div class="attention-text">
+                <strong>Needs attention</strong>
+                <div>{{ item.attention_reason }}</div>
+              </div>
+              <button class="btn text warn" (click)="clearAttention()" [disabled]="saving">Clear</button>
+            </div>
+          }
+
+          <div class="dtabs">
+            <button class="dtab" [class.active]="tab === 'jira'" (click)="tab = 'jira'">Jira</button>
+            <button class="dtab" [class.active]="tab === 'dita'" (click)="tab = 'dita'">DITA</button>
+            <button class="dtab" [class.active]="tab === 'history'" (click)="tab = 'history'">History ({{ item.history.length }})</button>
+          </div>
+
+          <div class="tab-body">
+            @if (tab === 'jira') {
               <p class="summary">{{ item.summary }}</p>
               @if (item.issues.length === 0) {
                 <p class="muted">This note is not linked to a Jira issue.</p>
@@ -87,192 +130,192 @@ import {
                 <div class="issue-card" [class.dropped]="!issue.in_query">
                   <div class="issue-head">
                     <a [href]="issue.url" target="_blank" rel="noopener" class="issue-key">
-                      {{ issue.issue_key }} <mat-icon class="inline-icon">open_in_new</mat-icon>
+                      {{ issue.issue_key }}<mat-icon class="inline-icon">open_in_new</mat-icon>
                     </a>
-                    <span class="hop-status-chip">{{ issue.issue_type }}</span>
-                    <span class="hop-status-chip" [class.hop-status-chip-completed]="isDone(issue)">{{ issue.status }}</span>
+                    @if (issue.issue_type) { <span class="chip">{{ issue.issue_type }}</span> }
+                    @if (issue.status) { <span class="chip" [class.chip-success]="isDone(issue)">{{ issue.status }}</span> }
                     @if (issue.item_ids.length > 1) {
-                      <span class="hop-status-chip hop-status-chip-pending" matTooltip="This issue feeds several release notes">{{ issue.item_ids.length }} notes</span>
+                      <span class="chip chip-warning" matTooltip="This issue feeds several release notes">{{ issue.item_ids.length }} notes</span>
                     }
                     @if (!issue.in_query) {
-                      <span class="hop-status-chip hop-status-chip-failed">Left the query</span>
+                      <span class="chip chip-error">Left the query</span>
                     }
                   </div>
                   <div class="issue-summary">{{ issue.summary }}</div>
                   @if (issue.description) {
-                    <mat-expansion-panel class="flat-panel">
-                      <mat-expansion-panel-header><mat-panel-title>Description</mat-panel-title></mat-expansion-panel-header>
+                    <details class="flat">
+                      <summary>Description</summary>
                       <pre class="issue-text">{{ issue.description }}</pre>
-                    </mat-expansion-panel>
+                    </details>
                   }
                   @if (issue.comments.length) {
-                    <mat-expansion-panel class="flat-panel">
-                      <mat-expansion-panel-header><mat-panel-title>Comments ({{ issue.comments.length }})</mat-panel-title></mat-expansion-panel-header>
+                    <details class="flat">
+                      <summary>Comments ({{ issue.comments.length }})</summary>
                       @for (comment of issue.comments; track $index) {
                         <pre class="issue-text comment">{{ comment }}</pre>
                       }
-                    </mat-expansion-panel>
+                    </details>
                   }
-                  <div class="issue-meta muted">
-                    @if (issue.priority) { {{ issue.priority }} · }
-                    @if (issue.assignee) { {{ issue.assignee }} · }
-                    @if (issue.components.length) { {{ issue.components.join(', ') }} · }
-                    @if (issue.fix_versions.length) { {{ issue.fix_versions.join(', ') }} · }
-                    @if (issue.jira_updated) { updated {{ issue.jira_updated | date:'short' }} }
-                  </div>
+                  <div class="issue-meta">{{ issueMeta(issue) }}</div>
                   @if (issue.relevance_reason) {
-                    <div class="muted reason"><mat-icon class="inline-icon">psychology</mat-icon> {{ issue.relevance_reason }}</div>
+                    <div class="reason"><span class="why">Why</span><span>{{ issue.relevance_reason }}</span></div>
                   }
                 </div>
               }
-            </div>
-          </mat-tab>
+            }
 
-          <mat-tab label="DITA">
-            <div class="tab-body">
-              <textarea class="dita-editor" [(ngModel)]="ditaDraft" spellcheck="false" [disabled]="saving"></textarea>
+            @if (tab === 'dita') {
+              <textarea class="dita-editor" [(ngModel)]="ditaDraft" spellcheck="false" [disabled]="saving || disabled"></textarea>
               @if (ditaErrors.length) {
                 <ul class="errors">
                   @for (error of ditaErrors; track $index) { <li>{{ error }}</li> }
                 </ul>
               }
               <div class="editor-actions">
-                <span class="muted">One <code>&lt;div outputclass="release-note"&gt;</code>; validated against DITA 1.3 on save</span>
-                <span class="spacer"></span>
-                <button mat-button (click)="resetDita()" [disabled]="!ditaDirty || saving">Reset</button>
-                <button mat-flat-button color="primary" (click)="saveDita()" [disabled]="!ditaDirty || saving">Save</button>
+                <span class="muted hint">One <code>&lt;div outputclass="release-note"&gt;</code>; validated against DITA 1.3 on save</span>
+                <button class="btn text" (click)="resetDita()" [disabled]="!ditaDirty || saving">Reset</button>
+                <button class="btn primary" (click)="saveDita()" [disabled]="!ditaDirty || saving">Save</button>
               </div>
-            </div>
-          </mat-tab>
+            }
 
-          <mat-tab label="Links ({{ item.references.length }})">
-            <div class="tab-body">
-              <p class="muted">Your own references for this note: a Slack thread, a design doc, a support case.</p>
-              @for (reference of item.references; track reference.id) {
-                <div class="reference-row">
-                  <mat-icon>link</mat-icon>
-                  <a [href]="reference.url" target="_blank" rel="noopener">{{ reference.label || reference.url }}</a>
-                  <span class="spacer"></span>
-                  <button mat-icon-button matTooltip="Remove" (click)="removeReference(reference.id)" [disabled]="saving">
-                    <mat-icon>close</mat-icon>
-                  </button>
-                </div>
-              }
-              <form class="reference-form" (ngSubmit)="addReference()">
-                <mat-form-field appearance="outline" subscriptSizing="dynamic" class="grow">
-                  <mat-label>URL</mat-label>
-                  <input matInput [(ngModel)]="referenceUrl" name="url" placeholder="https://…" [disabled]="saving">
-                </mat-form-field>
-                <mat-form-field appearance="outline" subscriptSizing="dynamic" class="grow">
-                  <mat-label>Label</mat-label>
-                  <input matInput [(ngModel)]="referenceLabel" name="label" placeholder="Slack thread" [disabled]="saving">
-                </mat-form-field>
-                <button mat-flat-button color="primary" type="submit" [disabled]="!referenceUrl.trim() || saving">Add</button>
-              </form>
-            </div>
-          </mat-tab>
-
-          <mat-tab label="History ({{ item.history.length }})">
-            <div class="tab-body">
+            @if (tab === 'history') {
               <ol class="timeline">
                 @for (entry of item.history; track entry.id) {
-                  <li [class]="'event event-' + entry.event_type">
-                    <span class="event-icon"><mat-icon>{{ historyIcon(entry) }}</mat-icon></span>
+                  <li class="event" [class.warn]="isWarning(entry)">
+                    <span class="event-icon">{{ historyGlyph(entry) }}</span>
                     <div class="event-body">
                       <div class="event-summary">{{ entry.summary }}</div>
                       <div class="muted">{{ actorLabel(entry) }} · {{ entry.created_at | date:'medium' }}</div>
                       @if (entry.details?.['changes']) {
-                        <ul class="diff">
-                          @for (change of changesOf(entry); track change.label) {
-                            <li>
-                              <strong>{{ change.label }}</strong>
-                              @if (change.added) {
-                                : {{ change.added.length }} new comment(s)
-                                @for (comment of change.added; track $index) { <pre class="issue-text comment">{{ comment }}</pre> }
-                              } @else {
-                                <div class="diff-pair">
-                                  <span class="from">{{ fmt(change.from) }}</span>
-                                  <mat-icon class="inline-icon">arrow_forward</mat-icon>
-                                  <span class="to">{{ fmt(change.to) }}</span>
-                                </div>
-                              }
-                            </li>
-                          }
-                        </ul>
+                        @for (change of changesOf(entry); track change.label) {
+                          <div class="diff">
+                            <strong>{{ change.label }}</strong>
+                            @if (change.added) {
+                              {{ change.added.length }} new comment(s)
+                              @for (comment of change.added; track $index) { <pre class="issue-text comment">{{ comment }}</pre> }
+                            } @else {
+                              <span class="from">{{ fmt(change.from) }}</span> <span class="to">{{ fmt(change.to) }}</span>
+                            }
+                          </div>
+                        }
                       }
                       @if (entry.details?.['previous_dita']) {
-                        <mat-expansion-panel class="flat-panel">
-                          <mat-expansion-panel-header><mat-panel-title>Previous content</mat-panel-title></mat-expansion-panel-header>
-                          <pre class="issue-text">{{ entry.details!['previous_dita'] }}</pre>
-                          <button mat-button (click)="restorePrevious(entry.details!['previous_dita'])" [disabled]="saving">Restore this version</button>
-                        </mat-expansion-panel>
+                        <details class="flat">
+                          <summary>Previous content</summary>
+                          <pre class="issue-text mono">{{ entry.details!['previous_dita'] }}</pre>
+                          <button class="btn text small" (click)="restorePrevious(entry.details!['previous_dita'])" [disabled]="saving || disabled">Restore this version</button>
+                        </details>
                       }
                     </div>
                   </li>
                 }
               </ol>
-            </div>
-          </mat-tab>
-        </mat-tab-group>
+            }
+          </div>
+        </div>
       }
     </div>
   `,
   changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
-    :host { display: block; height: 100%; }
-    .detail { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+    :host { display: block; height: 100%; min-height: 0; }
+    .detail { display: flex; flex-direction: column; height: 100%; min-height: 0; font-size: 14px; }
     .loading { display: flex; justify-content: center; padding: 40px; }
-    .detail-head { display: flex; align-items: flex-start; gap: 8px; padding: 12px 16px 8px; }
-    .title-block { flex: 1; min-width: 0; }
-    .title-block h3 { margin: 0 0 2px; font-size: 16px; cursor: text; line-height: 1.3; }
-    .title-input { width: 100%; font: inherit; font-size: 16px; font-weight: 600; padding: 4px 8px; border: 1px solid var(--border-focus); border-radius: 6px; }
-    .title-actions { display: flex; justify-content: flex-end; gap: 4px; margin-top: 4px; }
     .muted { color: var(--text-tertiary); font-size: 12px; }
-    .inline-icon { font-size: 14px; width: 14px; height: 14px; vertical-align: middle; }
-    .status-row { display: flex; gap: 8px; padding: 4px 16px 8px; }
+
+    /* ── Controls ── */
+    .btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--border-default); background: var(--bg-primary); color: var(--text-primary); font: 600 13px/1 inherit; font-family: inherit; cursor: pointer; white-space: nowrap; }
+    .btn:hover { background: var(--bg-secondary); border-color: var(--border-strong); }
+    .btn.primary { background: var(--color-primary); border-color: var(--color-primary); color: var(--text-inverse); }
+    .btn.primary:hover { background: var(--color-primary-hover); border-color: var(--color-primary-hover); }
+    .btn.text { border-color: transparent; background: transparent; color: var(--color-primary); }
+    .btn.text:hover { background: var(--bg-secondary); }
+    .btn.text.warn { color: var(--color-warning-text); font-size: 12px; height: 26px; padding: 0 10px; }
+    .btn.text.warn:hover { background: rgba(0, 0, 0, 0.06); }
+    .btn.small { font-size: 12px; height: 26px; padding: 0 10px; margin: 0 6px 6px; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border: none; border-radius: 6px; background: transparent; color: var(--text-secondary); cursor: pointer; flex-shrink: 0; }
+    .icon-btn:hover { background: var(--bg-secondary); color: var(--text-primary); }
+    .icon-btn mat-icon { font-size: 16px; width: 16px; height: 16px; }
+    .inline-icon { font-size: 11px; width: 11px; height: 11px; vertical-align: middle; }
+    .flag-icon { width: 16px; height: 16px; fill: none; stroke: var(--color-warning); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; margin-top: 2px; }
+    .row-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
+
+    /* ── Head ── */
+    .detail-head { display: flex; align-items: flex-start; gap: 8px; padding: 12px 16px 10px; border-bottom: 1px solid var(--border-light); flex-shrink: 0; }
+    .title-block { flex: 1; min-width: 0; }
+    .title-block h3 { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.3; cursor: text; }
+    .title-input { width: 100%; font: inherit; font-size: 16px; font-weight: 600; padding: 4px 8px; border: 1px solid var(--border-focus); border-radius: 6px; box-sizing: border-box; }
+    .title-actions { display: flex; justify-content: flex-end; gap: 4px; margin-top: 4px; }
+    .head-meta { font-size: 12px; color: var(--text-tertiary); display: flex; flex-wrap: wrap; gap: 0 4px; align-items: center; }
+    .issue-key { font-family: var(--font-mono); font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; gap: 4px; }
+    .detail-scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
+
+    /* ── Status / group / notes ── */
+    .status-row { display: flex; gap: 8px; padding: 12px 16px 10px; }
+    .field { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--text-tertiary); }
+    .field-label { font-size: 12px; color: var(--text-tertiary); }
     .status-field { width: 150px; }
-    .group-field { flex: 1; }
-    .attention-banner { display: flex; align-items: center; gap: 10px; margin: 0 16px 8px; padding: 10px 12px; background: var(--color-warning-bg); color: var(--color-warning-text); border-radius: 8px; font-size: 13px; }
-    .attention-banner mat-icon { color: var(--color-warning); }
+    .group-field { flex: 1; min-width: 0; }
+    .field select, .field input { height: 36px; border: 1px solid var(--border-default); border-radius: 6px; padding: 0 10px; font: inherit; font-size: 14px; background: var(--bg-primary); color: var(--text-primary); outline: none; width: 100%; box-sizing: border-box; }
+    .field input { box-shadow: var(--shadow-inset-sm, inset 0 1px 2px rgba(0, 0, 0, 0.05)); }
+    .field input:focus, .field select:focus, .notes-editor:focus, .dita-editor:focus { border-color: var(--border-focus); box-shadow: var(--focus-ring); }
+    .notes-block { padding: 4px 16px 12px; display: flex; flex-direction: column; gap: 3px; }
+    .notes-editor { width: 100%; font: inherit; font-size: 13px; line-height: 1.5; border: 1px solid var(--border-default); border-radius: 6px; padding: 10px; resize: vertical; background: var(--bg-primary); color: var(--text-primary); outline: none; box-sizing: border-box; }
+    .notes-view { font-size: 13px; line-height: 1.55; color: var(--text-primary); white-space: pre-wrap; word-break: break-word; padding: 10px 12px; border: 1px solid var(--border-light); border-radius: 6px; background: var(--bg-secondary); }
+    .notes-add { width: 100%; text-align: left; font: inherit; font-size: 13px; line-height: 1.5; padding: 9px 12px; border: 1px dashed var(--border-default); border-radius: 6px; background: var(--bg-primary); color: var(--text-tertiary); cursor: pointer; }
+    .notes-add:hover { border-color: var(--border-strong); color: var(--text-secondary); }
+    .notes-add:disabled { cursor: not-allowed; opacity: 0.6; }
+
+    /* ── Attention ── */
+    .attention-banner { display: flex; align-items: flex-start; gap: 10px; margin: 0 16px 8px; padding: 10px 12px; background: var(--color-warning-bg); color: var(--color-warning-text); border-radius: 6px; font-size: 13px; }
     .attention-text { flex: 1; }
-    .detail-tabs { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-    .detail-tabs ::ng-deep .mat-mdc-tab-body-wrapper { flex: 1; min-height: 0; }
-    .detail-tabs ::ng-deep .mat-mdc-tab-body-content { overflow-y: auto; }
-    .tab-body { padding: 12px 16px 16px; font-size: 14px; }
-    .summary { margin: 0 0 12px; color: var(--text-secondary); }
-    .issue-card { border: 1px solid var(--border-default); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
+    .attention-text strong { font-weight: 600; }
+
+    /* ── Tabs ── */
+    .dtabs { display: flex; border-bottom: 1px solid var(--border-light); }
+    .dtab { flex: 1; background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -1px; padding: 10px 4px; cursor: pointer; color: var(--text-tertiary); font: 500 13px/1 inherit; font-family: inherit; }
+    .dtab.active { color: var(--color-primary); border-bottom-color: var(--color-accent); }
+    .tab-body { padding: 12px 16px 16px; }
+
+    /* ── Jira ── */
+    .summary { margin: 0 0 12px; color: var(--text-secondary); font-size: 13px; }
+    .issue-card { border: 1px solid var(--border-light); border-radius: 6px; padding: 10px 12px; margin-bottom: 10px; }
     .issue-card.dropped { opacity: 0.7; }
     .issue-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
-    .issue-key { font-family: var(--font-mono); font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; gap: 2px; }
-    .issue-summary { font-weight: 500; margin-bottom: 6px; }
-    .issue-text { white-space: pre-wrap; word-break: break-word; font: inherit; font-size: 13px; margin: 0; color: var(--text-secondary); }
-    .issue-text.comment { border-left: 2px solid var(--border-strong); padding-left: 8px; margin: 6px 0; }
-    .issue-meta { margin-top: 6px; }
-    .reason { margin-top: 4px; display: flex; gap: 4px; align-items: center; }
-    .flat-panel { box-shadow: none !important; border: 1px solid var(--border-light); margin: 6px 0; }
-    .flat-panel ::ng-deep .mat-expansion-panel-header { height: 36px; font-size: 13px; }
-    .dita-editor { width: 100%; min-height: 320px; font-family: var(--font-mono); font-size: 12px; line-height: 1.5; border: 1px solid var(--border-strong); border-radius: 8px; padding: 10px; resize: vertical; background: var(--bg-primary); color: var(--text-primary); box-sizing: border-box; }
-    .dita-editor:focus { outline: none; border-color: var(--border-focus); box-shadow: var(--focus-ring); }
+    .issue-head .issue-key { font-size: 13px; }
+    .chip { display: inline-flex; font-size: 11px; font-weight: 500; line-height: 1; padding: 4px 8px; border-radius: 999px; background: var(--bg-tertiary); color: var(--text-primary); }
+    .chip-success { background: var(--color-success-bg); color: var(--color-success-text); }
+    .chip-warning { background: var(--color-warning-bg); color: var(--color-warning-text); }
+    .chip-error { background: var(--color-error-bg); color: var(--color-error-text); }
+    .issue-summary { font-weight: 500; margin-bottom: 6px; font-size: 13px; }
+    .issue-text { white-space: pre-wrap; word-break: break-word; font: inherit; font-size: 13px; margin: 0; padding: 0 10px 8px; color: var(--text-secondary); }
+    .issue-text.comment { border-left: 2px solid var(--border-strong); padding: 0 0 0 8px; margin: 6px 10px; }
+    .issue-text.mono { font-family: var(--font-mono); font-size: 12px; }
+    .issue-meta { font-size: 12px; color: var(--text-tertiary); margin-top: 6px; }
+    .reason { font-size: 12px; color: var(--text-tertiary); margin-top: 4px; display: flex; gap: 6px; align-items: flex-start; }
+    .why { display: inline-flex; font-size: 10px; font-weight: 600; line-height: 1; padding: 3px 6px; border-radius: 4px; background: var(--color-accent-bg); color: var(--color-accent-text); letter-spacing: 0.04em; text-transform: uppercase; flex-shrink: 0; }
+    details.flat { border: 1px solid var(--border-light); border-radius: 6px; margin: 6px 0; }
+    details.flat summary { padding: 7px 10px; font-size: 13px; cursor: pointer; }
+
+    /* ── DITA ── */
+    .dita-editor { width: 100%; min-height: 300px; font-family: var(--font-mono); font-size: 12px; line-height: 1.5; border: 1px solid var(--border-default); border-radius: 6px; padding: 10px; resize: vertical; background: var(--bg-primary); color: var(--text-primary); box-sizing: border-box; outline: none; }
     .errors { margin: 8px 0; padding: 8px 12px 8px 28px; background: var(--color-error-bg); color: var(--color-error-text); border-radius: 6px; font-size: 12px; }
     .editor-actions { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+    .editor-actions .hint { flex: 1; }
     .editor-actions code { font-family: var(--font-mono); }
-    .spacer { flex: 1; }
-    .reference-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border-light); }
-    .reference-row a { word-break: break-all; }
-    .reference-form { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
-    .reference-form .grow { flex: 1; min-width: 140px; }
+
+    /* ── History ── */
     .timeline { list-style: none; margin: 0; padding: 0; }
     .event { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border-light); }
-    .event-icon { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; background: var(--bg-secondary); flex-shrink: 0; }
-    .event-icon mat-icon { font-size: 16px; width: 16px; height: 16px; color: var(--text-secondary); }
-    .event-jira_changed .event-icon, .event-flagged .event-icon, .event-issue_removed .event-icon { background: var(--color-warning-bg); }
-    .event-jira_changed .event-icon mat-icon, .event-flagged .event-icon mat-icon, .event-issue_removed .event-icon mat-icon { color: var(--color-warning-text); }
+    .event-icon { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; background: var(--bg-tertiary); color: var(--text-secondary); flex-shrink: 0; font: 600 10px/1 var(--font-mono); }
+    .event.warn .event-icon { background: var(--color-warning-bg); color: var(--color-warning-text); }
     .event-body { flex: 1; min-width: 0; }
     .event-summary { font-size: 13px; }
-    .diff { margin: 6px 0 0; padding-left: 16px; font-size: 12px; }
-    .diff-pair { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
-    .diff-pair .from { color: var(--color-error-text); text-decoration: line-through; }
-    .diff-pair .to { color: var(--color-success-text); }
+    .diff { font-size: 12px; margin-top: 4px; padding-left: 12px; color: var(--text-secondary); }
+    .diff strong { font-weight: 600; }
+    .diff .from { color: var(--color-error-text); text-decoration: line-through; }
+    .diff .to { color: var(--color-success-text); }
   `]
 })
 export class WorkspaceItemDetailComponent implements OnChanges {
@@ -290,17 +333,24 @@ export class WorkspaceItemDetailComponent implements OnChanges {
   loading = true;
   saving = false;
   statuses = ITEM_STATUSES;
+  tab: DetailTab = 'jira';
 
   editingTitle = false;
   titleDraft = '';
   groupDraft = '';
   ditaDraft = '';
   ditaErrors: string[] = [];
-  referenceUrl = '';
-  referenceLabel = '';
+  notesEditing = false;
+  notesDraft = '';
 
   get ditaDirty(): boolean {
     return !!this.item && this.ditaDraft.trim() !== (this.item.dita_content || '').trim();
+  }
+
+  /** The notes split into text and links, so links are clickable. */
+  get noteParts(): NotePart[] {
+    return (this.item?.notes || '').split(URL_PATTERN).filter(Boolean)
+      .map(text => ({ text, isLink: /^https?:\/\//.test(text) }));
   }
 
   ngOnChanges(changes: SimpleChanges): void {
@@ -330,6 +380,7 @@ export class WorkspaceItemDetailComponent implements OnChanges {
     this.ditaDraft = item.dita_content;
     this.ditaErrors = [];
     this.editingTitle = false;
+    this.notesEditing = false;
   }
 
   private save(update: Parameters<JobsService['updateItem']>[2], success?: string): void {
@@ -354,6 +405,21 @@ export class WorkspaceItemDetailComponent implements OnChanges {
     });
   }
 
+  issueUrl(key: string): string | null {
+    return this.item?.issues.find(i => i.issue_key === key)?.url || null;
+  }
+
+  issueMeta(issue: JobIssue): string {
+    const parts = [issue.priority, issue.assignee, issue.components.join(', ') || 'no component'];
+    if (issue.fix_versions.length) parts.push(issue.fix_versions.join(', '));
+    if (issue.jira_updated) parts.push(`updated ${new Date(issue.jira_updated).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}`);
+    return parts.filter(Boolean).join(' · ');
+  }
+
+  blurTarget(event: Event): void {
+    (event.target as HTMLElement | null)?.blur();
+  }
+
   startTitleEdit(): void {
     if (this.disabled) return;
     this.titleDraft = this.item?.title || '';
@@ -373,6 +439,18 @@ export class WorkspaceItemDetailComponent implements OnChanges {
   saveGroup(): void {
     const group = this.groupDraft.trim();
     if (group !== (this.item?.group_name || '')) this.save({ group_name: group });
+  }
+
+  editNotes(): void {
+    if (this.disabled) return;
+    this.notesDraft = this.item?.notes || '';
+    this.notesEditing = true;
+  }
+
+  saveNotes(): void {
+    const notes = this.notesDraft.trim();
+    if (notes === (this.item?.notes || '')) { this.notesEditing = false; return; }
+    this.save({ notes }, 'Notes saved');
   }
 
   clearAttention(): void {
@@ -395,52 +473,20 @@ export class WorkspaceItemDetailComponent implements OnChanges {
     this.save({ dita_content: dita }, 'Previous version restored');
   }
 
-  addReference(): void {
-    const url = this.referenceUrl.trim();
-    if (!url || !this.item) return;
-    this.saving = true;
-    this.jobsService.addReference(this.jobId, this.item.id, { url, label: this.referenceLabel.trim() || undefined }).subscribe({
-      next: () => {
-        this.saving = false;
-        this.referenceUrl = '';
-        this.referenceLabel = '';
-        this.load();
-        this.updated.emit(this.item!);
-      },
-      error: (error) => {
-        this.saving = false;
-        this.snackBar.open(error.error?.detail || 'Failed to add the link', 'Close', { duration: 4000 });
-      }
-    });
-  }
-
-  removeReference(referenceId: string): void {
-    if (!this.item) return;
-    this.saving = true;
-    this.jobsService.removeReference(this.jobId, this.item.id, referenceId).subscribe({
-      next: () => {
-        this.saving = false;
-        this.load();
-        this.updated.emit(this.item!);
-      },
-      error: () => {
-        this.saving = false;
-        this.snackBar.open('Failed to remove the link', 'Close', { duration: 3000 });
-      }
-    });
-  }
-
   isDone(issue: JobIssue): boolean {
     return /done|closed|released|resolved/i.test(issue.status || '');
   }
 
-  historyIcon(entry: ItemHistoryEntry): string {
-    const icons: Record<string, string> = {
-      created: 'add_circle', jira_changed: 'sync_problem', regenerated: 'auto_fix_high', content_edited: 'edit',
-      status_changed: 'flag_circle', moved: 'low_priority', flagged: 'flag', issue_removed: 'link_off',
-      reference_added: 'add_link', reference_removed: 'link_off',
+  isWarning(entry: ItemHistoryEntry): boolean {
+    return ['jira_changed', 'flagged', 'issue_removed'].includes(entry.event_type);
+  }
+
+  historyGlyph(entry: ItemHistoryEntry): string {
+    const glyphs: Record<string, string> = {
+      created: '+', jira_changed: '!', regenerated: '↻', content_edited: '✎', status_changed: '◉',
+      moved: '→', flagged: '⚑', issue_removed: '!', notes_edited: '≡',
     };
-    return icons[entry.event_type] || 'history';
+    return glyphs[entry.event_type] || '·';
   }
 
   actorLabel(entry: ItemHistoryEntry): string {

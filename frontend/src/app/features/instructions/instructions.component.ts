@@ -32,12 +32,12 @@ import { JobCreateDialogComponent } from '../jobs/job-create-dialog.component';
     <div class="hop-page">
       <div class="header">
         <div>
-          <h1>Instruction Sets</h1>
+          <h1>Instruction sets</h1>
           <p class="subtitle">Which issues to read, which agents write, and how the release notes are organized</p>
         </div>
         <button mat-raised-button color="primary" (click)="createInstructionSet()">
           <mat-icon>add</mat-icon>
-          Create Instruction Set
+          Create instruction set
         </button>
       </div>
 

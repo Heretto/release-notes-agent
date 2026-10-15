@@ -9,8 +9,8 @@ Domain shape (see docs/COLLABORATIVE_WORKFLOW.md):
                           ──< ReleaseNoteItem     (one user-facing change, written as DITA)
                                  >─< JobJiraIssue  (an issue can feed several notes, and a note
                                                     can come from several issues)
-                                 ──< ReleaseNoteItemReference  (a person's own links)
                                  ──< ReleaseNoteItemHistory    (what changed, when, by whom)
+                                     (.notes: the writer's own free-text notes on the item)
                           ──< ReleaseNoteTopic    (the assembled DITA topics)
                           ──< ReleaseNoteChatMessage
 """
@@ -119,8 +119,7 @@ class HistoryEvent:
     MOVED = "moved"
     FLAGGED = "flagged"
     ISSUE_REMOVED = "issue_removed"
-    REFERENCE_ADDED = "reference_added"
-    REFERENCE_REMOVED = "reference_removed"
+    NOTES_EDITED = "notes_edited"
 
 
 # --- Domain models ---
@@ -269,13 +268,15 @@ class ReleaseNoteItem(Base):
     attention_reason = Column(Text, nullable=True)
     # True once a person has edited the content; a rerun then flags instead of rewriting.
     user_edited = Column(Boolean, nullable=False, default=False, server_default="false")
+    # The writer's own notes about this note: context, open questions, links to a Slack
+    # thread or a design doc. Free text; never part of the DITA output.
+    notes = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     job = relationship("Job", back_populates="items")
     topic = relationship("ReleaseNoteTopic", back_populates="items")
     issue_links = relationship("ReleaseNoteItemIssue", back_populates="item", cascade="all, delete-orphan")
-    references = relationship("ReleaseNoteItemReference", back_populates="item", cascade="all, delete-orphan", order_by="ReleaseNoteItemReference.created_at")
     history = relationship("ReleaseNoteItemHistory", back_populates="item", cascade="all, delete-orphan", order_by="ReleaseNoteItemHistory.created_at.desc()")
 
     @property
@@ -298,21 +299,6 @@ class ReleaseNoteItemIssue(Base):
 
     item = relationship("ReleaseNoteItem", back_populates="issue_links")
     issue = relationship("JobJiraIssue", back_populates="item_links")
-
-
-class ReleaseNoteItemReference(Base):
-    """A link a person attached to a note: a Slack thread, a design doc, a support case."""
-    __tablename__ = "release_note_item_references"
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    item_id = Column(UUID(as_uuid=True), ForeignKey("release_note_items.id", ondelete="CASCADE"), nullable=False, index=True)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    url = Column(Text, nullable=False)
-    label = Column(String(255), nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-    item = relationship("ReleaseNoteItem", back_populates="references")
-    user = relationship("User", foreign_keys=[user_id])
 
 
 class ReleaseNoteItemHistory(Base):
