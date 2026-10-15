@@ -1,0 +1,18 @@
+# Layer over docker-compose.production.yml on a host where a shared edge proxy owns 80/443
+# and terminates TLS:
+#   docker compose -f docker-compose.production.yml -f docker-compose.edge.yml --env-file .env.production up -d
+# nginx publishes no ports, drops the SSL/certbot mounts, and joins the external `edge`
+# network as `release-notes`. Needs Docker Compose >= 2.24.4 for !reset / !override.
+services:
+  nginx:
+    ports: !reset []
+    volumes: !override
+      - ./deployment/nginx-production.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      app-network:
+      edge:
+        aliases: [release-notes]
+
+networks:
+  edge:
+    external: true
