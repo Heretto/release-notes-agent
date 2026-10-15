@@ -12,6 +12,7 @@ from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
+from sqlalchemy import text
 
 from alembic import context
 
@@ -88,6 +89,14 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+def _widen_version_num(connection) -> None:
+    # Alembic creates version_num as VARCHAR(32); three existing revision IDs are longer.
+    if connection.dialect.name == "postgresql":
+        connection.execute(text(
+            "ALTER TABLE IF EXISTS alembic_version ALTER COLUMN version_num TYPE VARCHAR(255)"
+        ))
+
+
 def run_migrations_online() -> None:
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
@@ -106,6 +115,7 @@ def run_migrations_online() -> None:
         )
 
         with context.begin_transaction():
+            _widen_version_num(connection)
             context.run_migrations()
 
 
