@@ -1,18 +1,17 @@
 import { Component, OnInit, OnDestroy, inject, ChangeDetectionStrategy } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { Router } from '@angular/router';
+import { DatePipe } from '@angular/common';
+import { Router, RouterLink } from '@angular/router';
 import { MatCardModule } from '@angular/material/card';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
-import { MatTableModule } from '@angular/material/table';
-import { MatChipsModule } from '@angular/material/chips';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatMenuModule } from '@angular/material/menu';
-import { JobsService, Job } from '../../core/services/jobs.service';
-import { InstructionsService, InstructionSet } from '../../core/services/instructions.service';
+import { HopDataTableComponent, HopTableCellDirective, HopTableColumn, HopConfirmDialogComponent } from '@heretto/hop-ui';
+import { JobsService, Job, JOB_STAGES } from '../../core/services/jobs.service';
+import { InstructionsService } from '../../core/services/instructions.service';
 import { JobCreateDialogComponent } from './job-create-dialog.component';
 import { interval, Subscription } from 'rxjs';
 import { switchMap, startWith } from 'rxjs/operators';
@@ -21,325 +20,148 @@ import { switchMap, startWith } from 'rxjs/operators';
   selector: 'app-jobs',
   standalone: true,
   imports: [
-    CommonModule,
+    DatePipe,
+    RouterLink,
     MatCardModule,
     MatButtonModule,
     MatIconModule,
-    MatTableModule,
-    MatChipsModule,
     MatProgressSpinnerModule,
     MatTooltipModule,
     MatDialogModule,
     MatSnackBarModule,
-    MatMenuModule
+    MatMenuModule,
+    HopDataTableComponent,
+    HopTableCellDirective
   ],
   template: `
-    <div class="jobs-container">
+    <div class="hop-page">
       <div class="header">
         <div>
-          <h1>Jobs</h1>
-          <p class="subtitle">Monitor and manage release note generation jobs</p>
+          <h1>Releases</h1>
+          <p class="subtitle">Every run of the pipeline, and the workspace where its release notes are finished</p>
         </div>
         <button mat-raised-button color="primary" (click)="createJob()">
-          <mat-icon>add</mat-icon>
-          Create New Job
+          <mat-icon>rocket_launch</mat-icon>
+          Start a release
         </button>
       </div>
-    
+
       @if (loading) {
         <div class="loading-container">
           <mat-spinner></mat-spinner>
-          <p>Loading jobs...</p>
+          <p>Loading releases...</p>
         </div>
       }
-    
+
       @if (!loading && jobs.length === 0) {
         <div class="empty-state">
           <mat-card>
             <mat-card-content>
               <mat-icon class="empty-icon">work_off</mat-icon>
-              <h3>No Jobs Yet</h3>
-              <p>Create your first job to start generating release notes.</p>
+              <h3>No releases yet</h3>
+              <p>Start one and the agents will draft release notes from your Jira issues.</p>
               <button mat-raised-button color="primary" (click)="createJob()">
-                <mat-icon>add</mat-icon>
-                Create Your First Job
+                <mat-icon>rocket_launch</mat-icon>
+                Start your first release
               </button>
             </mat-card-content>
           </mat-card>
         </div>
       }
-    
+
       @if (!loading && jobs.length > 0) {
-        <div class="jobs-list">
-          <mat-card class="jobs-table-card">
-            <table mat-table [dataSource]="jobs" class="jobs-table">
-              <!-- Status Column -->
-              <ng-container matColumnDef="status">
-                <th mat-header-cell *matHeaderCellDef>Status</th>
-                <td mat-cell *matCellDef="let job">
-                  <mat-chip [class]="getStatusClass(job.status)">
-                    <mat-icon class="status-icon">{{ getStatusIcon(job.status) }}</mat-icon>
-                    {{ job.status | uppercase }}
-                  </mat-chip>
-                </td>
-              </ng-container>
-              <!-- JQL Query Column -->
-              <ng-container matColumnDef="jql_query">
-                <th mat-header-cell *matHeaderCellDef>JQL Query</th>
-                <td mat-cell *matCellDef="let job" class="query-cell">
-                  <span [matTooltip]="job.jql_query">
-                    {{ truncateQuery(job.jql_query) }}
-                  </span>
-                </td>
-              </ng-container>
-              <!-- Output Column -->
-              <ng-container matColumnDef="output_filename">
-                <th mat-header-cell *matHeaderCellDef>Output</th>
-                <td mat-cell *matCellDef="let job">
-                  {{ job.output_filename || 'N/A' }}
-                </td>
-              </ng-container>
-              <!-- Tickets Column -->
-              <ng-container matColumnDef="tickets_processed">
-                <th mat-header-cell *matHeaderCellDef>Tickets</th>
-                <td mat-cell *matCellDef="let job">
-                  <span class="ticket-count">{{ job.tickets_processed || 0 }}</span>
-                </td>
-              </ng-container>
-              <!-- Created Column -->
-              <ng-container matColumnDef="created_at">
-                <th mat-header-cell *matHeaderCellDef>Created</th>
-                <td mat-cell *matCellDef="let job">
-                  {{ formatDate(job.created_at) }}
-                </td>
-              </ng-container>
-              <!-- Duration Column -->
-              <ng-container matColumnDef="duration">
-                <th mat-header-cell *matHeaderCellDef>Duration</th>
-                <td mat-cell *matCellDef="let job">
-                  {{ calculateDuration(job) }}
-                </td>
-              </ng-container>
-              <!-- Actions Column -->
-              <ng-container matColumnDef="actions">
-                <th mat-header-cell *matHeaderCellDef>Actions</th>
-                <td mat-cell *matCellDef="let job">
-                  <button mat-icon-button [matMenuTriggerFor]="menu" (click)="$event.stopPropagation()">
-                    <mat-icon>more_vert</mat-icon>
+        <mat-card class="table-card">
+          <hop-data-table [columns]="columns" [data]="jobs" [filterable]="true"
+                          filterPlaceholder="Filter releases" sortActive="created" sortDirection="desc">
+            <ng-template hopCell="status" let-job>
+              <span [class]="'hop-status-chip hop-status-chip-' + chipClass(job)"
+                    [class.hop-shimmer]="job.status === 'running'">{{ statusLabel(job) }}</span>
+            </ng-template>
+            <ng-template hopCell="title" let-job>
+              <a [routerLink]="['/jobs', job.id]" class="release-link">{{ titleOf(job) }}</a>
+              <div class="query-preview" [matTooltip]="job.jql_query">{{ job.jql_query }}</div>
+            </ng-template>
+            <ng-template hopCell="progress" let-job>
+              <span class="progress" [class.error]="job.status === 'failed'" [matTooltip]="progressText(job)">{{ progressText(job) }}</span>
+            </ng-template>
+            <ng-template hopCell="notes" let-job>
+              @if (job.counts && job.counts.items) {
+                <span class="count-pill">{{ job.counts.approved_items }}/{{ job.counts.items }}</span>
+                @if (job.counts.attention_items) {
+                  <mat-icon class="attention-icon" [matTooltip]="job.counts.attention_items + ' note(s) need attention'">flag</mat-icon>
+                }
+              } @else {
+                <span class="muted">—</span>
+              }
+            </ng-template>
+            <ng-template hopCell="issues" let-job>
+              @if (job.counts) {
+                <span [matTooltip]="job.counts.relevant_issues + ' relevant of ' + job.counts.issues">
+                  {{ job.counts.relevant_issues }}/{{ job.counts.issues }}
+                </span>
+              }
+            </ng-template>
+            <ng-template hopCell="created" let-job>
+              {{ job.created_at | date:'short' }}
+              @if (job.run_count > 1) { <div class="muted">{{ job.run_count }} runs</div> }
+            </ng-template>
+            <ng-template hopCell="actions" let-job>
+              <div class="row-actions">
+                @if (job.status === 'completed') {
+                  <a mat-stroked-button [routerLink]="['/jobs', job.id, 'workspace']">
+                    <mat-icon>edit_note</mat-icon> Workspace
+                  </a>
+                }
+                <button mat-icon-button [matMenuTriggerFor]="menu" (click)="$event.stopPropagation()">
+                  <mat-icon>more_vert</mat-icon>
+                </button>
+                <mat-menu #menu="matMenu">
+                  <a mat-menu-item [routerLink]="['/jobs', job.id]">
+                    <mat-icon>info</mat-icon><span>Details and run log</span>
+                  </a>
+                  @if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
+                    <button mat-menu-item (click)="rerunJob(job)">
+                      <mat-icon>replay</mat-icon><span>Rerun (check Jira for changes)</span>
+                    </button>
+                  }
+                  @if (job.status === 'running' || job.status === 'pending') {
+                    <button mat-menu-item (click)="cancelJob(job)">
+                      <mat-icon>cancel</mat-icon><span>Cancel</span>
+                    </button>
+                  }
+                  <button mat-menu-item (click)="deleteJob(job)">
+                    <mat-icon>delete</mat-icon><span>Delete</span>
                   </button>
-                  <mat-menu #menu="matMenu">
-                    @if (job.status === 'completed') {
-                      <button mat-menu-item (click)="viewJob(job)">
-                        <mat-icon>visibility</mat-icon>
-                        <span>View Output</span>
-                      </button>
-                    }
-                    @if (job.status === 'completed') {
-                      <button mat-menu-item (click)="downloadArtifact(job)">
-                        <mat-icon>download</mat-icon>
-                        <span>Download</span>
-                      </button>
-                    }
-                    @if (job.status === 'completed' || job.status === 'failed') {
-                      <button mat-menu-item (click)="rerunJob(job)">
-                        <mat-icon>replay</mat-icon>
-                        <span>Rerun</span>
-                      </button>
-                    }
-                    @if (job.status === 'failed') {
-                      <button mat-menu-item (click)="retryJob(job)">
-                        <mat-icon>refresh</mat-icon>
-                        <span>Retry</span>
-                      </button>
-                    }
-                    @if (job.status === 'running' || job.status === 'pending') {
-                      <button mat-menu-item (click)="cancelJob(job)"
-                        >
-                        <mat-icon>cancel</mat-icon>
-                        <span>Cancel</span>
-                      </button>
-                    }
-                    @if (job.error_message) {
-                      <button mat-menu-item (click)="viewError(job)">
-                        <mat-icon>error_outline</mat-icon>
-                        <span>View Error</span>
-                      </button>
-                    }
-                  </mat-menu>
-                </td>
-              </ng-container>
-              <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
-              <tr mat-row *matRowDef="let row; columns: displayedColumns;"
-                [class.running-job]="row.status === 'running'"
-                class="clickable-row"
-                (click)="navigateToJob(row)"
-              matTooltip="Click to view details"></tr>
-            </table>
-          </mat-card>
-        </div>
+                </mat-menu>
+              </div>
+            </ng-template>
+          </hop-data-table>
+        </mat-card>
       }
     </div>
-    `,
+  `,
   changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
-    .jobs-container {
-      max-width: 1400px;
-      margin: 0 auto;
-      padding: 20px;
-    }
-    
-    .header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 30px;
-    }
-
-    .header h1 {
-      margin: 0;
-    }
-
-    .subtitle {
-      color: var(--text-secondary);
-      margin: 5px 0 0 0;
-    }
-
-    .loading-container {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 60px;
-    }
-
-    .loading-container p {
-      margin-top: 20px;
-      color: var(--text-secondary);
-    }
-
-    .empty-state {
-      text-align: center;
-      padding: 40px 20px;
-    }
-
-    .empty-state mat-card {
-      max-width: 500px;
-      margin: 0 auto;
-      padding: 40px;
-    }
-
-    .empty-icon {
-      font-size: 64px;
-      width: 64px;
-      height: 64px;
-      color: var(--border-default);
-      margin: 0 auto 20px;
-    }
-
-    .empty-state h3 {
-      color: var(--text-primary);
-      margin-bottom: 10px;
-    }
-
-    .empty-state p {
-      color: var(--text-secondary);
-      margin-bottom: 20px;
-    }
-
-    .jobs-list {
-      margin-top: 20px;
-    }
-
-    .jobs-table-card {
-      overflow: hidden;
-    }
-
-    .jobs-table {
-      width: 100%;
-    }
-
-    .query-cell {
-      max-width: 300px;
-      font-family: var(--font-mono);
-      font-size: 12px;
-    }
-
-    .ticket-count {
-      background: var(--color-primary-bg);
-      padding: 4px 8px;
-      border-radius: 12px;
-      font-weight: 500;
-    }
-
-    mat-chip {
-      font-size: 12px;
-      height: 24px;
-      display: inline-flex;
-      align-items: center;
-    }
-
-    mat-chip.pending {
-      background-color: var(--color-warning) !important;
-      color: white !important;
-    }
-
-    mat-chip.running {
-      background-color: var(--color-info) !important;
-      color: white !important;
-    }
-
-    mat-chip.completed {
-      background-color: var(--color-success) !important;
-      color: white !important;
-    }
-
-    mat-chip.failed {
-      background-color: var(--color-error) !important;
-      color: white !important;
-    }
-
-    .status-icon {
-      font-size: 16px;
-      width: 16px;
-      height: 16px;
-      margin-right: 4px;
-    }
-
-    .running-job {
-      background: linear-gradient(90deg, 
-        rgba(22, 185, 168, 0.05) 0%, 
-        rgba(22, 185, 168, 0.1) 50%, 
-        rgba(22, 185, 168, 0.05) 100%);
-      animation: pulse 2s ease-in-out infinite;
-    }
-
-    @keyframes pulse {
-      0%, 100% {
-        opacity: 1;
-      }
-      50% {
-        opacity: 0.7;
-      }
-    }
-
-    .clickable-row {
-      cursor: pointer !important;
-      transition: background-color 0.2s;
-    }
-
-    .clickable-row:hover {
-      background-color: rgba(0, 0, 0, 0.04) !important;
-    }
-    
-    /* Make sure the entire row is clickable except for buttons */
-    .clickable-row td {
-      cursor: pointer !important;
-    }
-    
-    .clickable-row button {
-      cursor: pointer !important;
-      position: relative;
-      z-index: 1;
-    }
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; gap: 16px; flex-wrap: wrap; }
+    .header h1 { margin: 0; }
+    .subtitle { color: var(--text-secondary); margin: 5px 0 0 0; }
+    .loading-container { display: flex; flex-direction: column; align-items: center; padding: 60px; }
+    .loading-container p { margin-top: 20px; color: var(--text-secondary); }
+    .empty-state { text-align: center; padding: 40px 20px; }
+    .empty-state mat-card { max-width: 500px; margin: 0 auto; padding: 40px; }
+    .empty-icon { font-size: 64px; width: 64px; height: 64px; color: var(--border-default); margin: 0 auto 20px; }
+    .empty-state h3 { color: var(--text-primary); margin-bottom: 10px; }
+    .empty-state p { color: var(--text-secondary); margin-bottom: 20px; }
+    .table-card { overflow: hidden; }
+    .release-link { color: var(--text-primary); font-weight: 500; text-decoration: none; }
+    .release-link:hover { text-decoration: underline; }
+    .query-preview { font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary); max-width: 360px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .progress { display: block; font-size: 13px; color: var(--text-secondary); max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .progress.error { color: var(--color-error-text); }
+    .count-pill { background: var(--color-primary-bg); padding: 2px 8px; border-radius: 12px; font-weight: 500; font-size: 13px; }
+    .attention-icon { font-size: 18px; width: 18px; height: 18px; color: var(--color-warning); vertical-align: middle; margin-left: 6px; }
+    .muted { color: var(--text-tertiary); font-size: 12px; }
+    .row-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; white-space: nowrap; }
   `]
 })
 export class JobsComponent implements OnInit, OnDestroy {
@@ -348,27 +170,32 @@ export class JobsComponent implements OnInit, OnDestroy {
   private dialog = inject(MatDialog);
   private snackBar = inject(MatSnackBar);
   private router = inject(Router);
-  
+
   jobs: Job[] = [];
-  loading = false;
-  displayedColumns = ['status', 'jql_query', 'output_filename', 'tickets_processed', 'created_at', 'duration', 'actions'];
-  
+  loading = true;
+  columns: HopTableColumn<Job>[] = [
+    { key: 'status', label: 'Status', value: j => j.status },
+    { key: 'title', label: 'Release', value: j => this.titleOf(j) },
+    { key: 'progress', label: 'Progress', value: j => this.progressText(j), sortable: false },
+    { key: 'notes', label: 'Notes', value: j => j.counts?.items ?? 0, filterable: false, align: 'end' },
+    { key: 'issues', label: 'Issues', value: j => j.counts?.issues ?? 0, filterable: false, align: 'end' },
+    { key: 'created', label: 'Created', value: j => new Date(j.created_at), filterable: false },
+    { key: 'actions', label: '', sortable: false, filterable: false },
+  ];
+
   private refreshSubscription?: Subscription;
 
   ngOnInit() {
-    this.loadJobs();
-    // Auto-refresh every 5 seconds to update job statuses
     this.refreshSubscription = interval(5000)
-      .pipe(
-        startWith(0),
-        switchMap(() => this.jobsService.getJobs())
-      )
+      .pipe(startWith(0), switchMap(() => this.jobsService.getJobs()))
       .subscribe({
         next: (jobs) => {
           this.jobs = jobs;
+          this.loading = false;
         },
         error: (error) => {
-          console.error('Failed to refresh jobs:', error);
+          console.error('Failed to load jobs:', error);
+          this.loading = false;
         }
       });
   }
@@ -377,235 +204,97 @@ export class JobsComponent implements OnInit, OnDestroy {
     this.refreshSubscription?.unsubscribe();
   }
 
-  loadJobs() {
-    this.loading = true;
-    this.jobsService.getJobs().subscribe({
-      next: (jobs) => {
-        this.jobs = jobs;
-        this.loading = false;
-      },
-      error: (error) => {
-        console.error('Failed to load jobs:', error);
-        this.loading = false;
-        this.snackBar.open('Failed to load jobs', 'Close', {
-          duration: 3000
-        });
-      }
-    });
+  titleOf(job: Job): string {
+    return job.title || job.output_filename || 'Untitled release';
+  }
+
+  chipClass(job: Job): string {
+    return job.status === 'cancelled' ? 'failed' : job.status;
+  }
+
+  statusLabel(job: Job): string {
+    if (job.status === 'completed') return 'Ready';
+    return job.status.charAt(0).toUpperCase() + job.status.slice(1);
+  }
+
+  progressText(job: Job): string {
+    if (job.status === 'running' && job.stage) {
+      const stage = JOB_STAGES.find(s => s.key === job.stage);
+      return `${stage?.label || job.stage}${job.stage_message ? ' — ' + job.stage_message : ''}`;
+    }
+    if (job.status === 'failed') return job.error_message || 'Failed';
+    return job.stage_message || '';
   }
 
   createJob() {
-    console.log('Create job button clicked');
-    
-    // First, get instruction sets to select from
     this.instructionsService.getInstructionSets().subscribe({
-      next: (instructions) => {
-        console.log('Loaded instruction sets:', instructions);
-        
-        if (instructions.length === 0) {
-          this.snackBar.open('Please create an instruction set first', 'Close', {
-            duration: 3000
-          });
+      next: (instructionSets) => {
+        if (instructionSets.length === 0) {
+          this.snackBar.open('Create an instruction set first', 'Go', { duration: 5000 })
+            .onAction().subscribe(() => this.router.navigate(['/instructions']));
           return;
         }
-
-        const dialogRef = this.dialog.open(JobCreateDialogComponent, {
-          width: '600px',
-          data: { instructionSets: instructions }
-        });
-
+        const dialogRef = this.dialog.open(JobCreateDialogComponent, { width: '640px', data: { instructionSets } });
         dialogRef.afterClosed().subscribe(jobData => {
-          if (jobData) {
-            this.jobsService.createJob(jobData).subscribe({
-              next: (job) => {
-                this.jobs.unshift(job);
-                this.snackBar.open('Job created successfully!', 'Close', {
-                  duration: 3000
-                });
-              },
-              error: (error) => {
-                console.error('Failed to create job:', error);
-                this.snackBar.open(
-                  error.error?.detail || 'Failed to create job',
-                  'Close',
-                  { duration: 5000 }
-                );
-              }
-            });
-          }
+          if (!jobData) return;
+          this.jobsService.createJob(jobData).subscribe({
+            next: (job) => {
+              this.jobs = [job, ...this.jobs];
+              this.router.navigate(['/jobs', job.id]);
+            },
+            error: (error) => {
+              this.snackBar.open(error.error?.detail || 'Failed to start the release', 'Close', { duration: 5000 });
+            }
+          });
         });
       },
       error: (error) => {
-        console.error('Failed to load instruction sets:', error);
         this.snackBar.open(
           error.status === 401 ? 'Session expired. Please log in again.' : 'Failed to load instruction sets',
-          'Close',
-          { duration: 5000 }
+          'Close', { duration: 5000 }
         );
       }
     });
   }
 
-  viewJob(job: Job) {
-    this.navigateToJob(job);
-  }
-
-  navigateToJob(job: Job) {
-    console.log('Navigating to job:', job.id);
-    if (job.id) {
-      this.router.navigate(['/jobs', job.id]);
-    } else {
-      console.error('Job has no ID:', job);
-    }
-  }
-
-  downloadArtifact(job: Job) {
-    if (!job.id) return;
-    
-    this.jobsService.getJobArtifacts(job.id).subscribe({
-      next: (artifacts) => {
-        if (artifacts.length > 0) {
-          const artifact = artifacts[0];
-          this.jobsService.downloadArtifact(job.id, artifact.id).subscribe({
-            next: (blob) => {
-              const url = window.URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = job.output_filename || 'release-notes.xml';
-              a.click();
-              window.URL.revokeObjectURL(url);
-            },
-            error: (error) => {
-              this.snackBar.open('Failed to download artifact', 'Close', {
-                duration: 3000
-              });
-            }
-          });
-        } else {
-          this.snackBar.open('No artifacts available', 'Close', {
-            duration: 3000
-          });
-        }
-      },
-      error: (error) => {
-        this.snackBar.open('Failed to get artifacts', 'Close', {
-          duration: 3000
-        });
-      }
-    });
-  }
-
-  retryJob(job: Job) {
-    if (!job.id) return;
-    
-    this.jobsService.retryJob(job.id).subscribe({
-      next: (newJob) => {
-        this.jobs.unshift(newJob);
-        this.snackBar.open('Job retry initiated', 'Close', {
-          duration: 3000
-        });
-      },
-      error: (error) => {
-        this.snackBar.open('Failed to retry job', 'Close', {
-          duration: 3000
-        });
-      }
-    });
-  }
-
   rerunJob(job: Job) {
-    if (!job.id) return;
-    
     this.jobsService.rerunJob(job.id).subscribe({
-      next: (newJob) => {
-        this.jobs.unshift(newJob);
-        this.snackBar.open('New job created with same parameters', 'View', {
-          duration: 5000
-        }).onAction().subscribe(() => {
-          this.router.navigate(['/jobs', newJob.id]);
-        });
+      next: (updated) => {
+        this.jobs = this.jobs.map(j => j.id === updated.id ? updated : j);
+        this.snackBar.open('Rerun started — unchanged issues keep their notes', 'View', { duration: 5000 })
+          .onAction().subscribe(() => this.router.navigate(['/jobs', job.id]));
       },
-      error: (error) => {
-        this.snackBar.open('Failed to rerun job', 'Close', {
-          duration: 3000
-        });
-        console.error('Rerun job error:', error);
-      }
+      error: (error) => this.snackBar.open(error.error?.detail || 'Failed to rerun', 'Close', { duration: 5000 })
     });
   }
 
   cancelJob(job: Job) {
-    if (!job.id) return;
-    
-    if (confirm('Are you sure you want to cancel this job?')) {
-      this.jobsService.cancelJob(job.id).subscribe({
+    this.jobsService.cancelJob(job.id).subscribe({
+      next: () => {
+        job.status = 'cancelled';
+        this.snackBar.open('Job cancelled', 'Close', { duration: 3000 });
+      },
+      error: () => this.snackBar.open('Failed to cancel job', 'Close', { duration: 3000 })
+    });
+  }
+
+  deleteJob(job: Job) {
+    const ref = this.dialog.open(HopConfirmDialogComponent, {
+      data: {
+        title: 'Delete release',
+        message: `Delete "${this.titleOf(job)}" with all its release notes, history and chat? This cannot be undone.`,
+        confirmText: 'Delete'
+      }
+    });
+    ref.afterClosed().subscribe(confirmed => {
+      if (!confirmed) return;
+      this.jobsService.deleteJob(job.id).subscribe({
         next: () => {
-          job.status = 'failed';
-          this.snackBar.open('Job cancelled', 'Close', {
-            duration: 3000
-          });
+          this.jobs = this.jobs.filter(j => j.id !== job.id);
+          this.snackBar.open('Release deleted', 'Close', { duration: 3000 });
         },
-        error: (error) => {
-          this.snackBar.open('Failed to cancel job', 'Close', {
-            duration: 3000
-          });
-        }
+        error: () => this.snackBar.open('Failed to delete', 'Close', { duration: 3000 })
       });
-    }
-  }
-
-  viewError(job: Job) {
-    if (job.error_message) {
-      alert(`Error Details:\n\n${job.error_message}`);
-    }
-  }
-
-  getStatusClass(status: string): string {
-    return status.toLowerCase();
-  }
-
-  getStatusIcon(status: string): string {
-    switch (status.toLowerCase()) {
-      case 'pending':
-        return 'schedule';
-      case 'running':
-        return 'sync';
-      case 'completed':
-        return 'check_circle';
-      case 'failed':
-        return 'error';
-      default:
-        return 'help';
-    }
-  }
-
-  truncateQuery(query: string): string {
-    return query.length > 80 ? query.substring(0, 80) + '...' : query;
-  }
-
-  formatDate(dateStr: string): string {
-    if (!dateStr) return 'N/A';
-    const date = new Date(dateStr);
-    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
-  }
-
-  calculateDuration(job: Job): string {
-    if (!job.started_at) return 'N/A';
-    
-    const start = new Date(job.started_at);
-    const end = job.completed_at ? new Date(job.completed_at) : new Date();
-    const duration = end.getTime() - start.getTime();
-    
-    const seconds = Math.floor(duration / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const hours = Math.floor(minutes / 60);
-    
-    if (hours > 0) {
-      return `${hours}h ${minutes % 60}m`;
-    } else if (minutes > 0) {
-      return `${minutes}m ${seconds % 60}s`;
-    } else {
-      return `${seconds}s`;
-    }
+    });
   }
 }

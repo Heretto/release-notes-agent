@@ -93,7 +93,7 @@ def get_instruction_set(headers, ai_credential_id=None):
         json={
             "name": "Test Instruction Set",
             "jql_query": "project = EZDNXTGEN ORDER BY created DESC",
-            "agent_ids": [agent_id] if agent_id else [],
+            "writer_agent_id": agent_id,
         },
         headers=headers,
     )

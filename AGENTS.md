@@ -22,6 +22,22 @@ Read those instead of inferring from this project's code. Do not copy them here.
 
 ## What is specific to this project
 
+**The job is a collaborative release, not a one-shot file.** A run snapshots the Jira issues,
+evaluates them, consolidates and organizes release note items, writes one DITA fragment per
+item, and assembles topics; a person then finishes the notes in the workspace
+(`/jobs/:id/workspace`) with the writer agent in chat. `docs/COLLABORATIVE_WORKFLOW.md` is the
+map: pipeline stages, rerun semantics (unchanged issues keep their notes; changes go to each
+note's history), the fragment shape (`<div outputclass="release-note">` inside group
+`<section>`s), and the chat tools. Backend entry points: `app/services/release_notes_pipeline.py`
+(stages), `workspace_service.py` (assembly, history, publishing, response shapes),
+`workspace_chat.py` (agent tools), `topic_assembler.py` (fragment validation and chunking).
+`tests/integration/test_pipeline_with_fakes.py` runs the whole pipeline against the local
+Postgres with fake Jira and fake agents; keep it green when touching the stages.
+
+**Instruction sets name agents by role** (`writer_agent_id`, `analysis_agent_id`), not an
+ordered chain; the `instruction_set_agents` table is gone (migration
+`add_collaborative_workflow` moved the first chain agent into the writer slot).
+
 **Three environment files, not interchangeable.** `backend/.env` for host runs (uvicorn,
 celery, alembic — it carries localhost `DATABASE_URL`/`REDIS_URL`); the repository-root
 `.env` for `docker compose` variable substitution; `.env.production` for production compose.
@@ -40,6 +56,18 @@ local state.
 - **`backend/Dockerfile` installs `git`.** The hop-core pin is a `git+https://` URL, so pip
   shells out to git at image build time. `python:3.11-slim` does not ship it.
 - **One Celery worker.** No distributed lock; a second replica would double-run jobs.
+- **Do not pass `temperature` to agents.** Several Anthropic models reject it with HTTP 400
+  ("temperature is deprecated for this model"); the pipeline and the workspace chat leave it
+  unset and take the provider default. `tests/unit/services/test_anthropic_temperature.py`
+  covers the older adapter's fallback for the same reason.
+- **The bundled DITA 1.3 DTD (hop-core `topic.dtd`) does not declare `<codeph>`, `<codeblock>`,
+  `<uicontrol>` or `<filepath>`.** The writer's format rules (`pipeline_prompts.FRAGMENT_FORMAT`)
+  list only elements that validate (`<tt>`, `<pre>`, `<note>`, `<dl>`, `<simpletable>`, …); a
+  fragment that fails the DTD is retried once with the errors and then falls back to the plain
+  summary, flagged for attention.
+- **Jobs run in the API process via `BackgroundTasks` with their own session** (`JobOrchestrator()`
+  without a `db`): a request-scoped session is closed before a background task runs on this
+  FastAPI version's successor, so never hand one in from a route.
 - **The alembic filter deliberately deviates from hop-core AGENTS.md §6.** The published
   recipe unions in bare `Table` objects found in the models namespace; here that would pull
   in hop-core's `user_organizations` association table (imported into

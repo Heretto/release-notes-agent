@@ -1,16 +1,56 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../../environments/environment';
+
+export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+export type JobStage =
+  | 'fetch_issues' | 'evaluate' | 'consolidate' | 'organize' | 'write' | 'assemble' | 'publish' | 'done';
+export type ItemStatus = 'draft' | 'review' | 'approved' | 'rejected';
+export type ChunkingStrategy = 'single' | 'by_group' | 'by_component';
+
+export const JOB_STAGES: { key: JobStage; label: string }[] = [
+  { key: 'fetch_issues', label: 'Fetch issues' },
+  { key: 'evaluate', label: 'Evaluate' },
+  { key: 'consolidate', label: 'Consolidate' },
+  { key: 'organize', label: 'Organize' },
+  { key: 'write', label: 'Write' },
+  { key: 'assemble', label: 'Assemble' },
+  { key: 'publish', label: 'Publish' },
+];
+
+export const CHUNKING_STRATEGIES: { value: ChunkingStrategy; label: string; hint: string }[] = [
+  { value: 'single', label: 'Single topic', hint: 'Every release note in one topic (default)' },
+  { value: 'by_group', label: 'One topic per group', hint: 'A topic for each group: features, fixes, …' },
+  { value: 'by_component', label: 'One topic per component', hint: 'A topic for each Jira component' },
+];
+
+export const ITEM_STATUSES: { value: ItemStatus; label: string }[] = [
+  { value: 'draft', label: 'Draft' },
+  { value: 'review', label: 'In review' },
+  { value: 'approved', label: 'Approved' },
+  { value: 'rejected', label: 'Rejected' },
+];
 
 export interface JobCreate {
   jql_query: string;
   instruction_set_id: string;
   ai_credential_id?: string;
+  title?: string;
   output_filename: string;
   publish_to_heretto: boolean;
   heretto_folder_id?: string;
   max_tickets?: number;
+  chunking_strategy?: ChunkingStrategy;
+}
+
+export interface JobCounts {
+  issues: number;
+  relevant_issues: number;
+  items: number;
+  approved_items: number;
+  attention_items: number;
+  topics: number;
 }
 
 export interface Job {
@@ -18,16 +58,156 @@ export interface Job {
   user_id: string;
   instruction_set_id?: string;
   ai_credential_id?: string;
+  title?: string | null;
   jql_query: string;
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  status: JobStatus;
   triggered_by: 'manual' | 'webhook' | 'scheduled';
   output_filename?: string;
   tickets_processed: number;
   max_tickets?: number;
-  error_message?: string;
+  error_message?: string | null;
+  stage?: JobStage | null;
+  stage_message?: string | null;
+  chunking_strategy: ChunkingStrategy;
+  run_count: number;
+  last_run_at?: string | null;
   created_at: string;
-  started_at?: string;
-  completed_at?: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+  counts?: JobCounts;
+}
+
+export interface JobIssue {
+  id: string;
+  issue_key: string;
+  url?: string | null;
+  summary: string;
+  description?: string | null;
+  issue_type?: string | null;
+  status?: string | null;
+  priority?: string | null;
+  labels: string[];
+  components: string[];
+  fix_versions: string[];
+  comments: string[];
+  assignee?: string | null;
+  reporter?: string | null;
+  jira_created?: string | null;
+  jira_updated?: string | null;
+  relevance: 'pending' | 'relevant' | 'not_relevant';
+  relevance_reason?: string | null;
+  in_query: boolean;
+  item_ids: string[];
+  changed_at?: string | null;
+}
+
+export interface ItemReference {
+  id: string;
+  url: string;
+  label?: string | null;
+  user_id?: string | null;
+  created_at?: string | null;
+}
+
+export interface ItemHistoryEntry {
+  id: string;
+  event_type: string;
+  actor: 'system' | 'agent' | 'user';
+  user_id?: string | null;
+  summary: string;
+  details?: Record<string, any> | null;
+  created_at?: string | null;
+}
+
+export interface ReleaseNoteItem {
+  id: string;
+  job_id: string;
+  topic_id?: string | null;
+  fragment_id: string;
+  position: number;
+  group_name?: string | null;
+  title: string;
+  summary: string;
+  dita_content: string;
+  status: ItemStatus;
+  needs_attention: boolean;
+  attention_reason?: string | null;
+  user_edited: boolean;
+  issue_keys: string[];
+  reference_count: number;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface ReleaseNoteItemDetail extends ReleaseNoteItem {
+  issues: JobIssue[];
+  references: ItemReference[];
+  history: ItemHistoryEntry[];
+}
+
+export interface ReleaseNoteItemUpdate {
+  title?: string;
+  summary?: string;
+  dita_content?: string;
+  status?: ItemStatus;
+  group_name?: string;
+  clear_attention?: boolean;
+}
+
+export interface ReleaseNoteTopic {
+  id: string;
+  position: number;
+  slug: string;
+  title: string;
+  filename: string;
+  dita_content: string;
+  html?: string | null;
+  render_warnings: string[];
+  heretto_doc_id?: string | null;
+  published_at?: string | null;
+  item_ids: string[];
+  updated_at?: string | null;
+}
+
+export interface ChatAction {
+  tool: string;
+  args: Record<string, any>;
+  ok: boolean;
+  result: string;
+  description?: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  actions?: ChatAction[] | null;
+  user_id?: string | null;
+  created_at?: string | null;
+}
+
+export interface ChatSendResponse {
+  user_message: ChatMessage;
+  assistant_message: ChatMessage;
+  changed_item_ids: string[];
+  topics_changed: boolean;
+}
+
+export interface JobRequestLog {
+  id: string;
+  type: string;
+  status: 'pending' | 'success' | 'failed';
+  timestamp: string;
+  duration_ms?: number | null;
+  error_message?: string | null;
+  request_data: any;
+  response_data: any;
+}
+
+export interface PublishResult {
+  success: boolean;
+  document_id?: string | null;
+  message: string;
 }
 
 @Injectable({
@@ -37,11 +217,11 @@ export class JobsService {
   private http = inject(HttpClient);
   private apiUrl = `${environment.apiUrl}/jobs`;
 
-  getJobs(status?: string): Observable<Job[]> {
-    if (status) {
-      return this.http.get<Job[]>(`${this.apiUrl}`, { params: { status } });
-    }
-    return this.http.get<Job[]>(`${this.apiUrl}`);
+  // ── Jobs ──────────────────────────────────────────────────────────────────
+
+  getJobs(status?: JobStatus): Observable<Job[]> {
+    const params = status ? new HttpParams().set('status_filter', status) : undefined;
+    return this.http.get<Job[]>(`${this.apiUrl}`, { params });
   }
 
   getJob(id: string): Observable<Job> {
@@ -56,9 +236,24 @@ export class JobsService {
     return this.http.post<void>(`${this.apiUrl}/${id}/cancel`, {});
   }
 
+  /** Run the pipeline again on the same job; unchanged issues keep their notes. */
+  rerunJob(id: string): Observable<Job> {
+    return this.http.post<Job>(`${this.apiUrl}/${id}/rerun`, {});
+  }
+
   retryJob(id: string): Observable<Job> {
     return this.http.post<Job>(`${this.apiUrl}/${id}/retry`, {});
   }
+
+  deleteJob(id: string): Observable<any> {
+    return this.http.delete(`${this.apiUrl}/${id}`);
+  }
+
+  getJobRequests(jobId: string): Observable<JobRequestLog[]> {
+    return this.http.get<JobRequestLog[]>(`${this.apiUrl}/${jobId}/requests`);
+  }
+
+  // ── Artifacts (kept for downloads) ────────────────────────────────────────
 
   getJobArtifacts(id: string): Observable<any[]> {
     return this.http.get<any[]>(`${this.apiUrl}/${id}/artifacts`);
@@ -69,24 +264,68 @@ export class JobsService {
   }
 
   downloadArtifact(jobId: string, artifactId: string): Observable<Blob> {
-    return this.http.get(`${this.apiUrl}/${jobId}/artifacts/${artifactId}/download`, {
-      responseType: 'blob'
+    return this.http.get(`${this.apiUrl}/${jobId}/artifacts/${artifactId}/download`, { responseType: 'blob' });
+  }
+
+  // ── Workspace ─────────────────────────────────────────────────────────────
+
+  getIssues(jobId: string): Observable<JobIssue[]> {
+    return this.http.get<JobIssue[]>(`${this.apiUrl}/${jobId}/issues`);
+  }
+
+  getItems(jobId: string): Observable<ReleaseNoteItem[]> {
+    return this.http.get<ReleaseNoteItem[]>(`${this.apiUrl}/${jobId}/items`);
+  }
+
+  getItem(jobId: string, itemId: string): Observable<ReleaseNoteItemDetail> {
+    return this.http.get<ReleaseNoteItemDetail>(`${this.apiUrl}/${jobId}/items/${itemId}`);
+  }
+
+  updateItem(jobId: string, itemId: string, update: ReleaseNoteItemUpdate): Observable<ReleaseNoteItemDetail> {
+    return this.http.patch<ReleaseNoteItemDetail>(`${this.apiUrl}/${jobId}/items/${itemId}`, update);
+  }
+
+  moveItem(jobId: string, itemId: string, move: { group_name?: string; position?: number }): Observable<ReleaseNoteItem[]> {
+    return this.http.post<ReleaseNoteItem[]>(`${this.apiUrl}/${jobId}/items/${itemId}/move`, move);
+  }
+
+  addReference(jobId: string, itemId: string, reference: { url: string; label?: string }): Observable<ItemReference> {
+    return this.http.post<ItemReference>(`${this.apiUrl}/${jobId}/items/${itemId}/references`, reference);
+  }
+
+  removeReference(jobId: string, itemId: string, referenceId: string): Observable<any> {
+    return this.http.delete(`${this.apiUrl}/${jobId}/items/${itemId}/references/${referenceId}`);
+  }
+
+  getTopics(jobId: string, render = true): Observable<ReleaseNoteTopic[]> {
+    const params = new HttpParams().set('render', String(render));
+    return this.http.get<ReleaseNoteTopic[]>(`${this.apiUrl}/${jobId}/topics`, { params });
+  }
+
+  reassembleTopics(jobId: string, strategy: ChunkingStrategy): Observable<ReleaseNoteTopic[]> {
+    return this.http.post<ReleaseNoteTopic[]>(`${this.apiUrl}/${jobId}/topics/reassemble`, { chunking_strategy: strategy });
+  }
+
+  downloadTopic(jobId: string, topicId: string): Observable<Blob> {
+    return this.http.get(`${this.apiUrl}/${jobId}/topics/${topicId}/download`, { responseType: 'blob' });
+  }
+
+  publish(jobId: string): Observable<PublishResult[]> {
+    return this.http.post<PublishResult[]>(`${this.apiUrl}/${jobId}/publish`, {});
+  }
+
+  getChat(jobId: string): Observable<ChatMessage[]> {
+    return this.http.get<ChatMessage[]>(`${this.apiUrl}/${jobId}/chat`);
+  }
+
+  sendChat(jobId: string, message: string, selectedItemId?: string | null): Observable<ChatSendResponse> {
+    return this.http.post<ChatSendResponse>(`${this.apiUrl}/${jobId}/chat`, {
+      message,
+      selected_item_id: selectedItemId || undefined,
     });
   }
 
-  getJobRequests(jobId: string): Observable<any[]> {
-    return this.http.get<any[]>(`${this.apiUrl}/${jobId}/requests`);
-  }
-
-  deleteArtifact(jobId: string, artifactId: string): Observable<any> {
-    return this.http.delete(`${this.apiUrl}/${jobId}/artifacts/${artifactId}`);
-  }
-
-  deleteAllArtifacts(jobId: string): Observable<any> {
-    return this.http.delete(`${this.apiUrl}/${jobId}/artifacts`);
-  }
-
-  rerunJob(id: string): Observable<Job> {
-    return this.http.post<Job>(`${this.apiUrl}/${id}/rerun`, {});
+  clearChat(jobId: string): Observable<any> {
+    return this.http.delete(`${this.apiUrl}/${jobId}/chat`);
   }
 }

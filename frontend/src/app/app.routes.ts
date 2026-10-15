@@ -40,6 +40,10 @@ export const routes: Routes = [
         loadComponent: () => import('./features/jobs/job-detail.component').then(m => m.JobDetailComponent),
       },
       {
+        path: 'jobs/:id/workspace',
+        loadComponent: () => import('./features/jobs/workspace/workspace.component').then(m => m.WorkspaceComponent),
+      },
+      {
         path: 'settings',
         loadComponent: () => import('./features/settings/settings.component').then(m => m.SettingsComponent),
       },
