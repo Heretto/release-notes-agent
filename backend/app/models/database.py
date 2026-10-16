@@ -102,6 +102,20 @@ class IssueRelevance:
     NOT_RELEVANT = "not_relevant"
 
 
+class AppRole:
+    """What a person may do in this app, separate from hop-core's org role.
+
+    hop-core owns `organization_members.role` (ADMIN/MEMBER) as a Postgres enum on its own
+    table, and this app must not migrate hop-core's schema — so "can this person write
+    release notes, or only review them?" is answered here instead, on a table of ours.
+    The two are orthogonal: an org admin is an author, and a reviewer can be either org role.
+    """
+    AUTHOR = "author"
+    REVIEWER = "reviewer"
+
+    ALL = (AUTHOR, REVIEWER)
+
+
 class HistoryEvent:
     CREATED = "created"
     JIRA_CHANGED = "jira_changed"
@@ -119,6 +133,31 @@ class HistoryEvent:
 
 
 # --- Domain models ---
+
+class AppUserRole(Base):
+    """One person's app role in one organization.
+
+    Keyed by email rather than user id so an admin can set the role of someone they are
+    inviting, before that person has an account. Email is what an invitation addresses and
+    what hop-core matches on when the invitation is accepted, so the role is waiting when
+    they arrive. No row means reviewer: self-registration of any kind — SSO or password —
+    lands there, and only an admin moves someone up.
+    """
+    __tablename__ = "app_user_roles"
+    __table_args__ = (UniqueConstraint("organization_id", "email", name="uq_app_user_role_email"),)
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    # Stored lower-cased; compare with the same.
+    email = Column(String(255), nullable=False)
+    role = Column(String(20), nullable=False, default=AppRole.REVIEWER)
+    # Who last set it, for the People page to explain itself.
+    set_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    set_by = relationship("User", foreign_keys=[set_by_id])
+
 
 class InstructionSet(Base):
     __tablename__ = "instruction_sets"

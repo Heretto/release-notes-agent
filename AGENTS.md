@@ -118,6 +118,22 @@ credentials stored by the old routes keep working.
   but does not reliably return the counts, which is why every release once read "0 issues";
   `_fill_issue_counts` falls back to `/version/{id}/relatedIssueCounts` per version, which
   is only affordable because the list is a page.
+- **There are two role systems, and they are not the same thing.** hop-core owns the
+  organization role (ADMIN/MEMBER) as a Postgres enum on *its* table, which this app must
+  not migrate — so "may this person write release notes, or only review them?" lives on
+  `app_user_roles` here (`app/services/app_roles.py`), keyed by **email** rather than user
+  id so an admin can set the role of someone they are inviting before that account exists.
+  **No row means reviewer**: every form of self-registration, SSO included, lands there.
+  The migration backfilled every existing member as an author, which is the only reason
+  turning this on did not lock everyone out — keep that in mind before changing the default.
+  Enforcement is `ReviewerAccessMiddleware` (`app/api/reviewer_access.py`), a **whitelist**,
+  and it is middleware rather than per-route dependencies because most of what a reviewer
+  must not reach belongs to hop-core's routers. A route added later is therefore closed
+  until someone opens it deliberately. The gate caches roles for 30s (it sits on nearly
+  every request); `forget_cached_roles()` on a role change keeps a promotion immediate.
+  In the browser, `authorGuard` guards the **shell**, and the review view lives outside it
+  — which is why "if they did not come through a review URL, explain how to get access"
+  needs no detection: it falls out of the routing.
 - **Review is a separate axis from `status`, not a stage of it.** `status` (draft → review →
   approved) is where a note sits in the writer's flow; `reviewer_id`/`reviewed` are one
   person's answer to "have you read this?". A note can be approved with nobody having

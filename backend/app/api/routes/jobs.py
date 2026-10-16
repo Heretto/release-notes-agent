@@ -29,6 +29,7 @@ from app.models.schemas import (
     ReleaseNoteItemUpdate, ReleaseNoteTopicResponse,
 )
 from app.services.job_orchestrator import JobOrchestrator
+from app.services.app_roles import is_author
 from app.services.jql_variables import release_query, resolve as resolve_jql
 from app.services.topic_assembler import FragmentError
 from app.services.workspace_chat import ChatUnavailable, WorkspaceChat
@@ -415,6 +416,14 @@ async def update_job_item(
 ):
     """Edit a note: headline, summary, DITA content, status, group, review, or its attention flag."""
     job = _get_job(job_id, context, db)
+    # A reviewer reaches this route (the only write the reviewer whitelist allows) solely to
+    # say they have read a note. Everything else here is authoring.
+    if not is_author(db, context.organization_id, context.user.email):
+        if update.model_fields_set - {"reviewed"}:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Reviewers can mark a note reviewed, but not edit it.",
+            )
     # Only the fields the pipeline also writes need the job to be idle. A reviewer marking
     # a note read during a rerun changes nothing the run touches, and refusing it would
     # mean the review page breaks whenever the writer reruns.

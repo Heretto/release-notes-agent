@@ -8,7 +8,8 @@ from app.config import get_settings
 # Import domain models to register them on Base (must happen before app starts)
 import app.models.database  # noqa: F401
 
-from app.api.routes import instructions, jobs, webhooks, health
+from app.api.reviewer_access import ReviewerAccessMiddleware
+from app.api.routes import instructions, jobs, people, webhooks, health
 
 
 # Register domain-specific org stats for superadmin endpoints
@@ -36,6 +37,7 @@ app = create_hop_app(
     extra_routers=[
         instructions.router,
         jobs.router,
+        people.router,
         webhooks.router,
     ],
     title="AI Release Notes Agent API",
@@ -43,6 +45,11 @@ app = create_hop_app(
     version="1.0.0",
     include_dita_router=True,
 )
+
+# Reviewers are confined to the review UI. Middleware rather than per-route dependencies
+# because most of what they must not reach belongs to hop-core's routers, which this app
+# does not own — see app/api/reviewer_access.py.
+app.add_middleware(ReviewerAccessMiddleware, api_prefix=get_settings().api_prefix)
 
 # Health checks are mounted outside api_prefix. create_hop_app puts every extra_router under
 # the prefix, and everything under the prefix expects authentication — but a health probe has

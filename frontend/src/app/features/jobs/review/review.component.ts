@@ -8,6 +8,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { HopAccountService } from '@heretto/hop-ui';
+import { PeopleService } from '../../../core/services/people.service';
 import { ItemComment, Job, JobsService, ReleaseNoteItem, ReleaseNoteItemDetail } from '../../../core/services/jobs.service';
 
 /** The notes of one group, as the sidebar lists them. */
@@ -41,9 +42,11 @@ interface ReviewGroup {
           <h1>{{ job.title || job.output_filename || 'Release notes' }}</h1>
           <span class="spacer"></span>
           <span class="muted">Reviewing as {{ viewerEmail }}</span>
-          <a mat-stroked-button [routerLink]="['/releases', job.id, 'workspace']">
-            <mat-icon>edit_note</mat-icon> Workspace
-          </a>
+          @if (isAuthor) {
+            <a mat-stroked-button [routerLink]="['/releases', job.id, 'workspace']">
+              <mat-icon>edit_note</mat-icon> Workspace
+            </a>
+          }
         </header>
 
         <div class="rv-body">
@@ -231,6 +234,7 @@ export class ReviewComponent implements OnInit {
   private jobsService = inject(JobsService);
   private snackBar = inject(MatSnackBar);
   private account = inject(HopAccountService);
+  private people = inject(PeopleService);
 
   job: Job | null = null;
   items: ReleaseNoteItem[] = [];
@@ -242,8 +246,15 @@ export class ReviewComponent implements OnInit {
   commentDraft = '';
   viewerId = '';
   viewerEmail = '';
+  /** Reviewers have no workspace to go back to, so they are not offered one. */
+  isAuthor = false;
 
   ngOnInit(): void {
+    this.people.myRole().subscribe({
+      next: role => this.isAuthor = role.is_author,
+      error: () => this.isAuthor = false
+    });
+
     const jobId = this.route.snapshot.paramMap.get('id');
     if (!jobId) { this.router.navigate(['/releases']); return; }
 

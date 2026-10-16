@@ -1,5 +1,6 @@
 import { Routes } from '@angular/router';
 import { hopAuthGuard, hopAdminGuard, hopSuperuserGuard, HOP_AGENT_ROUTES } from '@heretto/hop-ui';
+import { authorGuard, orgAdminGuard } from './core/author.guard';
 
 export const routes: Routes = [
   // Public routes (no layout)
@@ -8,6 +9,14 @@ export const routes: Routes = [
   { path: 'forgot-password', loadComponent: () => import('@heretto/hop-ui').then(m => m.HopForgotPasswordComponent) },
   { path: 'reset-password', loadComponent: () => import('@heretto/hop-ui').then(m => m.HopResetPasswordComponent) },
   { path: 'auth/sso/complete', loadComponent: () => import('@heretto/hop-ui').then(m => m.HopSSOCallbackComponent) },
+
+  // Where a reviewer lands if they open the app instead of a review link. Outside the shell
+  // and outside authorGuard, or the guard would bounce them straight back to it.
+  {
+    path: 'review-access',
+    canActivate: [hopAuthGuard],
+    loadComponent: () => import('./features/access/promotion-required.component').then(m => m.PromotionRequiredComponent),
+  },
 
   // Protected, but deliberately outside the shell: review is a reading view for people who
   // are not working in the app, so it carries no navigation. It must sit before the shell
@@ -21,7 +30,9 @@ export const routes: Routes = [
   // Protected routes (with layout)
   {
     path: '',
-    canActivate: [hopAuthGuard],
+    // authorGuard on the shell rather than on each page: a reviewer has no business
+    // anywhere inside it, and guarding the parent covers pages added later.
+    canActivate: [hopAuthGuard, authorGuard],
     loadComponent: () => import('./shell/shell.component').then(m => m.ShellComponent),
     children: [
       {
@@ -59,6 +70,11 @@ export const routes: Routes = [
       {
         path: 'settings',
         loadComponent: () => import('./features/settings/settings.component').then(m => m.SettingsComponent),
+      },
+      {
+        path: 'people',
+        canActivate: [orgAdminGuard],
+        loadComponent: () => import('./features/people/people.component').then(m => m.PeopleComponent),
       },
       { path: 'account', loadComponent: () => import('@heretto/hop-ui').then(m => m.HopAccountComponent) },
       { path: 'admin', canActivate: [hopAdminGuard], loadComponent: () => import('@heretto/hop-ui').then(m => m.HopAdminComponent) },
