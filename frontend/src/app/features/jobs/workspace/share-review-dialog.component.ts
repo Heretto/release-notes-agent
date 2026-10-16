@@ -62,15 +62,18 @@ interface ReviewerRow {
   changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
     /* Material caps dialog content at 65vh. This dialog grows with the reviewer list, so
-       cap it in pixels instead: it expands to 600px and only then scrolls. The min() keeps
-       the vh floor for a short window, where a flat 600px would run off the screen. The
-       class is here for specificity — Material's rule is a class selector, so a bare
-       element selector is a coin toss. */
-    mat-dialog-content.share-content { min-width: 480px; max-width: 560px; max-height: min(600px, 80vh); }
-    .intro { color: var(--text-secondary); font-size: 13px; margin: 0 0 14px 0; }
-    .label { display: block; font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
-    .rows { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
-    .row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border: 1px solid var(--border-default); border-radius: 6px; }
+       cap it in pixels instead: it expands to 600px and only then scrolls. The second term
+       is the guard for a window too short for that, and is a subtraction rather than a
+       fraction — what the content can have is the window minus this dialog's own chrome
+       (title, actions, overlay margin), which 80vh underestimated. The class is here for
+       specificity: Material's rule is a class selector, so a bare element selector is a
+       coin toss. */
+    mat-dialog-content.share-content { min-width: 480px; max-width: 560px;
+      max-height: min(600px, calc(100vh - 190px)); }
+    .intro { color: var(--text-secondary); font-size: 13px; margin: 0 0 10px 0; }
+    .label { display: block; font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px; }
+    .rows { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
+    .row { display: flex; align-items: center; gap: 10px; padding: 7px 12px; border: 1px solid var(--border-default); border-radius: 6px; }
     .row.unassigned .name, .row.unassigned .count { color: var(--text-tertiary); }
     .avatar { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px;
       border-radius: 50%; background: var(--bg-secondary); font-size: 11px; font-weight: 600; flex-shrink: 0; }
@@ -80,7 +83,7 @@ interface ReviewerRow {
     .link-row { display: flex; gap: 8px; }
     .link-row input { flex: 1; min-width: 0; font: inherit; font-size: 13px; padding: 8px 10px;
       border: 1px solid var(--border-default); border-radius: 6px; background: var(--bg-secondary); color: var(--text-primary); }
-    mat-dialog-actions { padding: 16px 24px; border-top: 1px solid var(--border-default); }
+    mat-dialog-actions { padding: 12px 24px; border-top: 1px solid var(--border-default); }
   `]
 })
 export class ShareReviewDialogComponent {
