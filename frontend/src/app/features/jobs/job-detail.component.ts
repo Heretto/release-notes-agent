@@ -124,6 +124,8 @@ type StepState = 'done' | 'current' | 'pending' | 'failed';
           <mat-card class="summary-card">
             <h2>Summary</h2>
             <dl class="facts">
+              <!-- What the run produced, then what it ran on. Mixing the two is what made
+                   "JQL query" read as a caption for the query block rather than a fact. -->
               <div class="fact">
                 <dt>Issues</dt>
                 <dd>{{ job.counts?.relevant_issues || 0 }} relevant of {{ job.counts?.issues || 0 }}</dd>
@@ -141,16 +143,6 @@ type StepState = 'done' | 'current' | 'pending' | 'failed';
                 <dd>{{ job.counts?.topics || 0 }} ({{ chunkingLabel(job.chunking_strategy) }})</dd>
               </div>
               <div class="fact">
-                <dt>Output file</dt>
-                <dd>{{ job.output_filename || '—' }}</dd>
-              </div>
-              @if (variablesUsed(); as vars) {
-                <div class="fact">
-                  <dt>Variables</dt>
-                  <dd class="vars-fact">{{ vars }}</dd>
-                </div>
-              }
-              <div class="fact">
                 <dt>Created</dt>
                 <dd>{{ job.created_at | date:'medium' }}</dd>
               </div>
@@ -158,22 +150,29 @@ type StepState = 'done' | 'current' | 'pending' | 'failed';
                 <dt>Duration</dt>
                 <dd>{{ duration() }}</dd>
               </div>
+
               <div class="fact">
                 <dt>Instructions</dt>
                 <dd>
                   @if (instructionSet) {
                     <a routerLink="/instructions" [queryParams]="{ highlight: instructionSet.id }"
                        class="instruction-link">{{ instructionSet.name }}</a>
-                    @if (instructionSet.source_mode === 'releases') {
-                      <div class="muted">Jira releases in {{ instructionSet.jira_project }}</div>
-                    } @else {
-                      <div class="muted">JQL query</div>
-                    }
                   } @else if (job.instruction_set_name) {
-                    {{ job.instruction_set_name }}
-                    <div class="muted">No longer available</div>
+                    {{ job.instruction_set_name }} <span class="muted">(no longer available)</span>
                   } @else {
                     —
+                  }
+                </dd>
+              </div>
+              <div class="fact">
+                <dt>Source</dt>
+                <dd>
+                  @if (instructionSet?.source_mode === 'releases') {
+                    Jira releases in {{ instructionSet!.jira_project }}
+                  } @else if (job.uses_instruction_query === false) {
+                    Query set on this release
+                  } @else {
+                    JQL query
                   }
                 </dd>
               </div>
@@ -190,9 +189,19 @@ type StepState = 'done' | 'current' | 'pending' | 'failed';
                   </dd>
                 </div>
               }
+              @if (variablesUsed(); as vars) {
+                <div class="fact">
+                  <dt>Variables</dt>
+                  <dd class="vars-fact">{{ vars }}</dd>
+                </div>
+              }
+              <div class="fact">
+                <dt>Output file</dt>
+                <dd>{{ job.output_filename || '—' }}</dd>
+              </div>
             </dl>
             <div class="hop-query-block">
-              <span class="hop-query-block-label">JQL</span>
+              <span class="hop-query-block-label">{{ instructionSet?.source_mode === 'releases' ? 'JIRA RELEASE QUERY' : 'JQL' }}</span>
               <code>{{ job.jql_query }}</code>
             </div>
           </mat-card>
