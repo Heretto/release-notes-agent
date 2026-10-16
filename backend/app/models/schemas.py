@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field, validator
+from pydantic import BaseModel, EmailStr, Field, model_validator, validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from uuid import UUID
@@ -84,7 +84,13 @@ class JqlVariableSpec(BaseModel):
 class InstructionSetBase(BaseModel):
     name: str
     description: Optional[str] = None
-    jql_query: str = Field(..., min_length=1, max_length=4096)
+    # "jql": jql_query below is the template. "releases": the query is built per Jira
+    # release from jira_project and extra_jql, and jql_query is unused.
+    source_mode: str = Field("jql", pattern=r'^(jql|releases)$')
+    jira_project: Optional[str] = Field(None, max_length=255)
+    extra_jql: Optional[str] = Field(None, max_length=2048)
+    # Required in "jql" mode only — see the validator below.
+    jql_query: str = Field("", max_length=4096)
     # Keyed by the {name} tokens in jql_query; normalized against them on save.
     variables: Dict[str, JqlVariableSpec] = Field(default_factory=dict)
     jira_credential_id: Optional[UUID] = None
@@ -101,13 +107,26 @@ class InstructionSetBase(BaseModel):
     organization_guidance: Optional[str] = Field(None, max_length=8000)
     chunking_strategy: str = Field("single", pattern=r'^(single|by_group|by_component)$')
 
+    @model_validator(mode="after")
+    def _require_the_fields_the_mode_uses(self):
+        """Each mode needs its own field, and neither is required by the other."""
+        if self.source_mode == "releases":
+            if not (self.jira_project or "").strip():
+                raise ValueError("A Jira project key is required when the source is Jira releases")
+        elif not (self.jql_query or "").strip():
+            raise ValueError("A JQL query is required")
+        return self
+
 class InstructionSetCreate(InstructionSetBase):
     pass
 
 class InstructionSetUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
-    jql_query: Optional[str] = Field(None, min_length=1, max_length=4096)
+    source_mode: Optional[str] = Field(None, pattern=r'^(jql|releases)$')
+    jira_project: Optional[str] = Field(None, max_length=255)
+    extra_jql: Optional[str] = Field(None, max_length=2048)
+    jql_query: Optional[str] = Field(None, max_length=4096)
     variables: Optional[Dict[str, JqlVariableSpec]] = None
     jira_credential_id: Optional[UUID] = None
     dita_template_id: Optional[UUID] = None
@@ -140,6 +159,9 @@ class JobCreate(BaseModel):
     instruction_set_id: UUID
     # {name: value} for the instruction set's JQL variables.
     variables: Dict[str, str] = Field(default_factory=dict)
+    # The chosen Jira release, for an instruction set whose source is Jira releases. The
+    # server builds the query from it; the browser never sends one.
+    release: Optional[str] = Field(None, max_length=255)
     title: Optional[str] = Field(None, max_length=255)
     output_filename: str = Field(..., min_length=1, max_length=255)
     publish_to_heretto: bool = False

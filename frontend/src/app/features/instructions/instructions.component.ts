@@ -106,13 +106,17 @@ import { JqlPart, jqlParts, variableNames } from '../../core/jql-variables';
               </div>
 
               <div class="hop-query-block">
-                <span class="hop-query-block-label">JQL</span>
-                <code>
-                  @for (part of queryParts(instruction.jql_query); track $index) {
-                    @if (part.isEmpty) { <span class="jql-var">{{ part.text }}</span> }
-                    @else { <span>{{ part.text }}</span> }
-                  }
-                </code>
+                <span class="hop-query-block-label">{{ isReleasesMode(instruction) ? 'JIRA RELEASES' : 'JQL' }}</span>
+                @if (isReleasesMode(instruction)) {
+                  <code>{{ releaseQuery(instruction) }}</code>
+                } @else {
+                  <code>
+                    @for (part of queryParts(instruction.jql_query); track $index) {
+                      @if (part.isEmpty) { <span class="jql-var">{{ part.text }}</span> }
+                      @else { <span>{{ part.text }}</span> }
+                    }
+                  </code>
+                }
               </div>
 
               <dl class="facts">
@@ -137,6 +141,16 @@ import { JqlPart, jqlParts, variableNames } from '../../core/jql-variables';
                 <div class="fact">
                   <dt>Topics</dt>
                   <dd>{{ chunkingLabel(instruction.chunking_strategy) }}</dd>
+                </div>
+                <div class="fact">
+                  <dt>Source</dt>
+                  <dd>
+                    @if (isReleasesMode(instruction)) {
+                      Jira releases in {{ instruction.jira_project }}
+                    } @else {
+                      JQL query
+                    }
+                  </dd>
                 </div>
                 @if (variablesFact(instruction); as vars) {
                   <div class="fact">
@@ -253,6 +267,17 @@ export class InstructionsComponent implements OnInit {
     });
   }
 
+  isReleasesMode(instruction: InstructionSet): boolean {
+    return instruction.source_mode === 'releases';
+  }
+
+  /** The query each Jira release runs, with the release name standing in. */
+  releaseQuery(instruction: InstructionSet): string {
+    const project = (instruction.jira_project || '').trim().toUpperCase();
+    const extra = (instruction.extra_jql || '').trim();
+    return `project = ${project} AND fixVersion = "…"${extra ? ` AND (${extra})` : ''} ORDER BY created ASC`;
+  }
+
   /** The query split so its `{name}` tokens can be highlighted. */
   queryParts(jql: string | undefined): JqlPart[] {
     return jqlParts(jql || '');
@@ -260,6 +285,7 @@ export class InstructionsComponent implements OnInit {
 
   /** `{name} = default` for each variable, or '' when the query has none (hides the fact). */
   variablesFact(instruction: InstructionSet): string {
+    if (this.isReleasesMode(instruction)) return '';
     return variableNames(instruction.jql_query || '')
       .map(name => {
         const value = instruction.variables?.[name]?.default;

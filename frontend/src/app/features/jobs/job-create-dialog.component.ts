@@ -6,7 +6,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatSelectModule } from '@angular/material/select';
-import { InstructionSet } from '../../core/services/instructions.service';
+import { InstructionSet, InstructionsService, JiraRelease } from '../../core/services/instructions.service';
 import { CHUNKING_STRATEGIES, JobCreate } from '../../core/services/jobs.service';
 import { JqlPart, defaultsOf, jqlParts, missingValues, variableNames } from '../../core/jql-variables';
 
@@ -89,6 +89,30 @@ interface StartVariable {
           </mat-form-field>
         </div>
 
+        @if (isReleasesMode) {
+          <div class="vars-card releases-card">
+            <div class="vars-head">
+              <span class="vars-title">Jira release</span>
+              <span class="muted">{{ releasesStatus }}</span>
+            </div>
+            @for (release of releases; track release.name) {
+              <button type="button" class="release-row" [class.chosen]="release.name === chosenRelease"
+                      (click)="chooseRelease(release)">
+                <span class="radio" [class.on]="release.name === chosenRelease"></span>
+                <span class="release-name">{{ release.name }}</span>
+                <span class="release-chip" [class.released]="release.released">
+                  {{ release.released ? 'Released' : 'Unreleased' }}
+                </span>
+                <span class="release-date">{{ releaseDateText(release) }}</span>
+                <span class="release-count">{{ release.issue_count }} issues</span>
+              </button>
+            }
+            @if (!releases.length) {
+              <p class="muted no-releases">{{ releasesStatus }}</p>
+            }
+          </div>
+        }
+
         @if (startVariables.length) {
           <div class="vars-card">
             <span class="vars-title">Query variables</span>
@@ -106,14 +130,18 @@ interface StartVariable {
         <div class="preview-block">
           <span class="preview-label">Query this release will run</span>
           <div class="query-preview">
-            @for (part of previewParts; track $index) {
-              @if (part.isVar) { <span class="chip-filled">{{ part.text }}</span> }
-              @else if (part.isEmpty) { <span class="chip-missing">{{ part.text }}</span> }
-              @else { <span>{{ part.text }}</span> }
+            @if (isReleasesMode) {
+              <span>{{ releaseQueryPreview }}</span>
+            } @else {
+              @for (part of previewParts; track $index) {
+                @if (part.isVar) { <span class="chip-filled">{{ part.text }}</span> }
+                @else if (part.isEmpty) { <span class="chip-missing">{{ part.text }}</span> }
+                @else { <span>{{ part.text }}</span> }
+              }
             }
           </div>
-          @if (missing.length) {
-            <p class="preview-missing">Fill in every variable before starting.</p>
+          @if (blockedReason) {
+            <p class="preview-missing">{{ blockedReason }}</p>
           }
         </div>
 
@@ -148,6 +176,23 @@ interface StartVariable {
     .vars-card { border: 1px solid var(--border-default); border-radius: 8px; background: var(--bg-secondary);
       padding: 14px 16px 0; margin-bottom: 8px; }
     .vars-title { display: block; font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+    .vars-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+    .muted { font-size: 12px; color: var(--text-tertiary); }
+    .releases-card { padding-bottom: 14px; display: flex; flex-direction: column; gap: 6px; }
+    .no-releases { margin: 0; font-size: 13px; }
+    .release-row { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 9px 12px;
+      border: 1px solid var(--border-default); border-radius: 6px; background: var(--bg-primary);
+      color: var(--text-primary); font: inherit; cursor: pointer; }
+    .release-row.chosen { border-color: var(--color-primary); background: var(--color-primary-bg); }
+    .radio { width: 14px; height: 14px; border-radius: 50%; border: 1px solid var(--border-strong, var(--border-default));
+      background: var(--bg-primary); flex-shrink: 0; }
+    .radio.on { border-color: var(--color-primary); background: var(--color-primary); box-shadow: inset 0 0 0 3px var(--bg-primary); }
+    .release-name { font-family: var(--font-mono); font-size: 13px; font-weight: 600; min-width: 72px; }
+    .release-chip { display: inline-flex; align-items: center; font-size: 11px; font-weight: 600; padding: 4px 8px;
+      border-radius: 999px; background: var(--color-info-bg, var(--bg-secondary)); color: var(--color-info-text, var(--text-secondary)); }
+    .release-chip.released { background: var(--color-success-bg); color: var(--color-success-text); }
+    .release-date { flex: 1; font-size: 12px; color: var(--text-tertiary); }
+    .release-count { font-size: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
     .preview-block { margin-bottom: 8px; }
     .preview-label { display: block; font-size: 12px; font-weight: 500; color: var(--text-secondary); margin-bottom: 4px; }
     .query-preview { background: var(--bg-secondary); border: 1px solid var(--border-default); border-radius: 6px;
@@ -168,6 +213,11 @@ export class JobCreateDialogComponent implements OnInit {
   /** Values for the chosen set's `{name}` tokens. The server does the substituting. */
   values: Record<string, string> = {};
 
+  /** Releases mode: Jira's fix versions for the set's project, and the one chosen. */
+  releases: JiraRelease[] = [];
+  releasesStatus = '';
+  chosenRelease = '';
+
   /**
    * Title and filename follow the instruction set and the variable values until the person
    * edits one; after that their text is kept, even if they then change a variable.
@@ -180,6 +230,7 @@ export class JobCreateDialogComponent implements OnInit {
   constructor(
     private fb: FormBuilder,
     private dialogRef: MatDialogRef<JobCreateDialogComponent>,
+    private instructionsService: InstructionsService,
     @Inject(MAT_DIALOG_DATA) public data: JobCreateDialogData
   ) {
     this.instructionSets = data.instructionSets;
@@ -204,12 +255,66 @@ export class JobCreateDialogComponent implements OnInit {
       // A different set has different variables, so start from its defaults rather than
       // carrying over values that belonged to another query.
       this.values = defaultsOf(selected.variables);
+      this.loadReleases();
+    });
+    this.loadReleases();
+  }
+
+  get isReleasesMode(): boolean {
+    return this.selectedInstructionSet?.source_mode === 'releases';
+  }
+
+  /** The query the chosen release will run, as the server will build it. */
+  get releaseQueryPreview(): string {
+    const set = this.selectedInstructionSet;
+    const project = (set?.jira_project || '').trim().toUpperCase();
+    const extra = (set?.extra_jql || '').trim();
+    if (!this.chosenRelease) return 'Choose a release to see the query it will run.';
+    return `project = ${project} AND fixVersion = "${this.chosenRelease}"`
+      + (extra ? ` AND (${extra})` : '') + ' ORDER BY created ASC';
+  }
+
+  get blockedReason(): string {
+    if (this.isReleasesMode) return this.chosenRelease ? '' : 'Choose a release before starting.';
+    return this.missing.length ? 'Fill in every variable before starting.' : '';
+  }
+
+  releaseDateText(release: JiraRelease): string {
+    if (!release.date) return '';
+    return `${release.released ? 'Released ' : 'Due '}${release.date}`;
+  }
+
+  chooseRelease(release: JiraRelease): void {
+    this.chosenRelease = release.name;
+  }
+
+  /** Read live from Jira: a release list only exists there, and a stale copy would lie. */
+  private loadReleases(): void {
+    this.releases = [];
+    this.chosenRelease = '';
+    const set = this.selectedInstructionSet;
+    if (!set?.id || !this.isReleasesMode) {
+      this.releasesStatus = '';
+      return;
+    }
+    this.releasesStatus = 'Loading…';
+    this.instructionsService.listReleases(set.id).subscribe({
+      next: result => {
+        this.releases = result.releases;
+        this.releasesStatus = result.releases.length
+          ? `${result.releases.length} in ${result.project}`
+          : `No releases found in ${result.project}.`;
+      },
+      error: error => {
+        this.releases = [];
+        this.releasesStatus = error.error?.detail || 'Could not read releases from Jira';
+      }
     });
   }
 
   get startVariables(): StartVariable[] {
     const set = this.selectedInstructionSet;
-    if (!set) return [];
+    if (!set || this.isReleasesMode) return [];
     return variableNames(set.jql_query || '').map(name => {
       const spec = set.variables?.[name];
       return { name, token: `{${name}}`, label: spec?.label || name, hint: spec?.hint || '' };
@@ -217,6 +322,7 @@ export class JobCreateDialogComponent implements OnInit {
   }
 
   get missing(): string[] {
+    if (this.isReleasesMode) return [];
     return missingValues(this.selectedInstructionSet?.jql_query || '', this.values);
   }
 
@@ -230,9 +336,13 @@ export class JobCreateDialogComponent implements OnInit {
     const set = this.selectedInstructionSet;
     if (!set) return '';
     const parts = [set.product_name || set.name];
-    for (const v of this.startVariables) {
-      const value = (this.values[v.name] || '').trim();
-      if (value) parts.push(value);
+    if (this.isReleasesMode) {
+      if (this.chosenRelease) parts.push(this.chosenRelease);
+    } else {
+      for (const v of this.startVariables) {
+        const value = (this.values[v.name] || '').trim();
+        if (value) parts.push(value);
+      }
     }
     return parts.filter(Boolean).join(' ');
   }
@@ -245,7 +355,7 @@ export class JobCreateDialogComponent implements OnInit {
 
   get blocked(): boolean {
     return !this.form.valid || !this.selectedInstructionSet
-      || !!this.missing.length || !this.title.trim() || !this.filename.trim();
+      || !!this.blockedReason || !this.title.trim() || !this.filename.trim();
   }
 
   setValue(name: string, value: string): void {
@@ -271,9 +381,11 @@ export class JobCreateDialogComponent implements OnInit {
     const jobData: JobCreate = {
       instruction_set_id: this.form.value.instruction_set_id,
       title: this.title.trim() || undefined,
-      // No jql_query: the server resolves the instruction set's template from these values,
-      // injecting each one as a quoted literal so a value cannot rewrite the query.
-      variables: this.values,
+      // No jql_query: the server builds the query — from the chosen release in releases
+      // mode, otherwise from these values, each injected as a quoted literal so it cannot
+      // rewrite the query.
+      variables: this.isReleasesMode ? {} : this.values,
+      release: this.isReleasesMode ? this.chosenRelease : undefined,
       output_filename: this.filename.trim(),
       chunking_strategy: this.selectedInstructionSet.chunking_strategy || 'single',
       max_tickets: this.form.value.max_tickets || undefined,

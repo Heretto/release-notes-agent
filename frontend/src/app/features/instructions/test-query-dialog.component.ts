@@ -95,7 +95,7 @@ interface TestResult {
               </mat-select>
             </mat-form-field>
           }
-          @if (variableNames.length) {
+          @if (!isReleasesMode && variableNames.length) {
             <div class="query-vars">
               <h4>Query Variables:</h4>
               @for (name of variableNames; track name) {
@@ -109,7 +109,12 @@ interface TestResult {
           }
           <div class="query-info">
             <h4>Query to Test:</h4>
-            <pre class="jql-query">@for (part of previewParts; track $index) {@if (part.isEmpty) {<span class="jql-missing">{{ part.text }}</span>} @else {<span>{{ part.text }}</span>}}</pre>
+            @if (isReleasesMode) {
+              <pre class="jql-query">{{ releaseQueryPreview }}</pre>
+              <p class="hint">Tests against the newest release in {{ data.jira_project }}.</p>
+            } @else {
+              <pre class="jql-query">@for (part of previewParts; track $index) {@if (part.isEmpty) {<span class="jql-missing">{{ part.text }}</span>} @else {<span>{{ part.text }}</span>}}</pre>
+            }
           </div>
         </div>
       }
@@ -591,6 +596,17 @@ export class TestQueryDialogComponent implements OnInit {
     this.loadJiraCredentials();
   }
 
+  get isReleasesMode(): boolean {
+    return this.data.source_mode === 'releases';
+  }
+
+  /** The query a release runs, with the release name standing in. */
+  get releaseQueryPreview(): string {
+    const project = (this.data.jira_project || '').trim().toUpperCase();
+    const extra = (this.data.extra_jql || '').trim();
+    return `project = ${project} AND fixVersion = "…"${extra ? ` AND (${extra})` : ''} ORDER BY created ASC`;
+  }
+
   get variableNames(): string[] {
     return variableNames(this.data.jql_query || '');
   }
@@ -600,6 +616,7 @@ export class TestQueryDialogComponent implements OnInit {
   }
 
   get missing(): string[] {
+    if (this.isReleasesMode) return [];
     return missingValues(this.data.jql_query || '', this.values);
   }
 

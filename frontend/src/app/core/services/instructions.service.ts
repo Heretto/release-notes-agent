@@ -13,6 +13,10 @@ export interface InstructionSet {
   jql_query: string;
   /** Keyed by the {name} tokens in jql_query; the server keeps the two in step. */
   variables?: Record<string, JqlVariableSpec>;
+  /** 'jql' — jql_query is a template — or 'releases' — one query per Jira fix version. */
+  source_mode?: 'jql' | 'releases';
+  jira_project?: string | null;
+  extra_jql?: string | null;
   jira_credential_id?: string | null;
   writer_agent_id?: string | null;
   analysis_agent_id?: string | null;
@@ -62,10 +66,32 @@ export class InstructionsService {
   }
 
   /** `variables` fill the query's `{name}` tokens; the server does the substituting. */
+  /** A Jira release (fix version), as the picker shows it. */
+  listReleases(instructionId: string): Observable<JiraReleaseList> {
+    return this.http.get<JiraReleaseList>(`${this.apiUrl}/${instructionId}/releases`);
+  }
+
   testQuery(instructionId: string, credentialId: string, variables: Record<string, string> = {}): Observable<any> {
     return this.http.post<any>(`${this.apiUrl}/${instructionId}/test`, {
       credential_id: credentialId,
       variables
     });
   }
+}
+
+/** One Jira release (fix version) an instruction set in "releases" mode can run on. */
+export interface JiraRelease {
+  id: string;
+  name: string;
+  description: string;
+  released: boolean;
+  archived: boolean;
+  /** Release date once released, otherwise the planned start date; '' when Jira has none. */
+  date: string;
+  issue_count: number;
+}
+
+export interface JiraReleaseList {
+  project: string;
+  releases: JiraRelease[];
 }

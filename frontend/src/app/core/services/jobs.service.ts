@@ -37,6 +37,8 @@ export interface JobCreate {
   jql_query?: string;
   /** {name: value} for the instruction set's JQL variables. */
   variables?: Record<string, string>;
+  /** The chosen Jira release, when the instruction set's source is Jira releases. */
+  release?: string;
   instruction_set_id: string;
   title?: string;
   output_filename: string;

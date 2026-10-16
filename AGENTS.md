@@ -93,6 +93,14 @@ credentials stored by the old routes keep working.
 - **`backend/Dockerfile` installs `git`.** The hop-core pin is a `git+https://` URL, so pip
   shells out to git at image build time. `python:3.11-slim` does not ship it.
 - **One Celery worker.** No distributed lock; a second replica would double-run jobs.
+- **An instruction set has two sources, and only one of its query fields is required.**
+  `source_mode = 'jql'` means `jql_query` is the template; `source_mode = 'releases'` means
+  the query is built per Jira fix version from `jira_project` and `extra_jql` and
+  `jql_query` is unused (stored as `''`). The requirement moves with the mode — enforced by
+  a model validator in `InstructionSetBase` and by swapping the Angular validators in
+  `instruction-dialog.component.ts` — so do not put `min_length=1` back on `jql_query`.
+  Release lists are read live from Jira (`GET /instructions/{id}/releases`), never stored:
+  a cached list would offer a version that no longer exists.
 - **JQL variables resolve on the server, never in the browser.** An instruction set's
   `jql_query` is a template whose `{name}` tokens a release fills in. The browser splits the
   template only to *display* it (`frontend/src/app/core/jql-variables.ts`); the query that

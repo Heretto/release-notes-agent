@@ -124,6 +124,15 @@ class InstructionSet(Base):
     organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(255), nullable=False)
     description = Column(Text)
+    # "jql" — jql_query below is the template — or "releases": the agent reads the fix
+    # versions Jira tracks for jira_project and the query is built per release. Stored as a
+    # plain string rather than an enum so adding a source later is a code change, not a
+    # migration on every existing row.
+    source_mode = Column(String(32), nullable=False, default="jql", server_default="jql")
+    # Releases mode only: the Jira project whose versions are offered, and an optional JQL
+    # fragment ANDed into every release's query.
+    jira_project = Column(String(255), nullable=True)
+    extra_jql = Column(Text, nullable=True)
     # A JQL *template*: {name} tokens are filled in when a release is started. See
     # app/services/jql_variables.py — resolution is server-side and always injects a value
     # as one quoted literal, so a value can never rewrite the query.

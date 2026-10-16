@@ -77,6 +77,33 @@ def resolve(jql: str, values: Mapping[str, str]) -> str:
     return _TOKEN_RE.sub(substitute, jql or "")
 
 
+#: A Jira project key. Jira's own rule is letters, digits and underscore starting with a
+#: letter; anything else cannot be a key, so refusing it keeps the unquoted `project = X`
+#: below from being a way to smuggle JQL in.
+_PROJECT_KEY_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
+
+
+def release_query(project: str, release: str, extra_jql: str | None = None) -> str:
+    """The query for one Jira release, in an instruction set's "releases" source mode.
+
+    The release name is a Jira value like any other and is injected as a quoted literal.
+    `extra_jql` is written by whoever configured the instruction set — the same trust as the
+    JQL template itself — but it is wrapped in parentheses so an `OR` inside it widens only
+    the filter and can never widen the query past the chosen fixVersion.
+    """
+    project = (project or "").strip().upper()
+    if not _PROJECT_KEY_RE.match(project):
+        raise ValueError(f"'{project}' is not a Jira project key")
+    if not (release or "").strip():
+        raise ValueError("No release chosen")
+
+    query = f'project = {project} AND fixVersion = "{escape_value(release.strip())}"'
+    extra = (extra_jql or "").strip()
+    if extra:
+        query += f" AND ({extra})"
+    return query + " ORDER BY created ASC"
+
+
 def normalize_specs(jql: str, specs: Mapping[str, Mapping[str, str]] | None) -> Dict[str, Dict[str, str]]:
     """Variable metadata, keyed by the tokens the template actually contains.
 

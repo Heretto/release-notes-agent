@@ -270,26 +270,51 @@ class JiraServiceV3:
             logger.error("Failed to get Jira projects: %s", e, exc_info=True)
             raise Exception("Failed to get projects — check your credentials and permissions")
     
-    async def get_versions(self, project_key: str) -> List[Dict[str, str]]:
-        """Get versions for a project."""
+    async def get_versions(self, project_key: str) -> List[Dict[str, Any]]:
+        """Get a project's versions (Jira's "releases"), newest first.
+
+        `expand=issuesstatus` makes Jira return the per-status issue counts alongside each
+        version, which is what lets the release picker show how many issues a release would
+        be read from without a second round trip per version.
+        """
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(
                     f"{self.base_url}/project/{project_key}/versions",
+                    params={"expand": "issuesstatus"},
                     headers=self.headers,
                     timeout=10.0
                 )
-                
+
+                if response.status_code == 404:
+                    raise Exception(f"Project '{project_key}' not found in Jira")
                 if response.status_code != 200:
                     raise Exception(f"Failed to get versions: HTTP {response.status_code}")
-                
-                versions = response.json()
-                return [{"id": v.get("id"), "name": v.get("name")} for v in versions]
-                
+
+                versions = []
+                for version in response.json():
+                    counts = version.get("issuesStatusForFixVersion") or {}
+                    versions.append({
+                        "id": version.get("id"),
+                        "name": version.get("name"),
+                        "description": version.get("description") or "",
+                        "released": bool(version.get("released")),
+                        "archived": bool(version.get("archived")),
+                        # releaseDate once released, startDate while it is still the plan.
+                        "date": version.get("releaseDate") or version.get("startDate") or "",
+                        "issue_count": sum(
+                            value for value in counts.values() if isinstance(value, int)
+                        ),
+                    })
+                # Jira returns versions in project order (oldest first); the picker wants the
+                # release someone is most likely to be writing notes for at the top.
+                versions.reverse()
+                return [v for v in versions if not v["archived"]]
+
         except Exception as e:
             logger.error("Failed to get versions for project %s: %s", project_key, e, exc_info=True)
             raise Exception("Failed to get versions — check your credentials and project key")
-    
+
     async def get_issue(self, issue_key: str) -> JiraTicket:
         """Get a single issue by key."""
         try:

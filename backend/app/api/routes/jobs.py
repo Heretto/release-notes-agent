@@ -29,7 +29,7 @@ from app.models.schemas import (
     ReleaseNoteItemUpdate, ReleaseNoteTopicResponse,
 )
 from app.services.job_orchestrator import JobOrchestrator
-from app.services.jql_variables import resolve as resolve_jql
+from app.services.jql_variables import release_query, resolve as resolve_jql
 from app.services.topic_assembler import FragmentError
 from app.services.workspace_chat import ChatUnavailable, WorkspaceChat
 from app.services.workspace_service import (
@@ -146,9 +146,19 @@ async def create_job(
     # otherwise the set's template is filled from the submitted variable values. Values are
     # injected as quoted literals by jql_variables.resolve, so one can never rewrite the
     # query — see that module for why this never happens in the browser.
+    used_variables: dict[str, str] = {}
     if job_data.jql_query:
         resolved_jql = job_data.jql_query
-        used_variables: dict[str, str] = {}
+    elif (instruction_set.source_mode or "jql") == "releases":
+        # The chosen Jira release is the only variable this mode has; recording it under the
+        # name the query uses keeps `jobs.variables` readable for both modes.
+        used_variables = {"fixVersion": (job_data.release or "").strip()}
+        try:
+            resolved_jql = release_query(
+                instruction_set.jira_project or "", job_data.release or "", instruction_set.extra_jql
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
     else:
         used_variables = {name: (value or "").strip() for name, value in job_data.variables.items()}
         try:

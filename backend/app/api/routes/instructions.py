@@ -15,13 +15,14 @@ from app.models.schemas import (
     InstructionSetUpdate,
     InstructionSetResponse
 )
-from app.services.jql_variables import defaults_of, normalize_specs, resolve as resolve_jql
+from app.services.jql_variables import defaults_of, normalize_specs, release_query, resolve as resolve_jql
 from app.api.dependencies import get_current_active_user_with_org, CurrentUserContext
 
 router = APIRouter(prefix="/instructions")
 
 _INSTRUCTION_UPDATABLE_FIELDS = {
-    "name", "description", "jql_query", "variables", "jira_credential_id",
+    "name", "description", "source_mode", "jira_project", "extra_jql",
+    "jql_query", "variables", "jira_credential_id",
     "dita_template_id", "heretto_folder_id",
     "publish_to_heretto", "is_default",
     "writer_agent_id", "analysis_agent_id", "product_name",
@@ -35,7 +36,10 @@ def _to_response(instruction_set: InstructionSet) -> InstructionSetResponse:
         user_id=instruction_set.user_id,
         name=instruction_set.name,
         description=instruction_set.description,
-        jql_query=instruction_set.jql_query,
+        source_mode=instruction_set.source_mode or "jql",
+        jira_project=instruction_set.jira_project,
+        extra_jql=instruction_set.extra_jql,
+        jql_query=instruction_set.jql_query or "",
         variables=instruction_set.variables or {},
         jira_credential_id=instruction_set.jira_credential_id,
         dita_template_id=instruction_set.dita_template_id,
@@ -201,11 +205,77 @@ async def delete_instruction_set(
     return {"message": "Instruction set deleted successfully"}
 
 
+@router.get("/{instruction_id}/releases")
+async def list_instruction_releases(
+    instruction_id: UUID,
+    context: CurrentUserContext = Depends(get_current_active_user_with_org),
+    db: Session = Depends(get_db)
+):
+    """The Jira releases (fix versions) an instruction set in "releases" mode can run on.
+
+    Read live from Jira rather than stored: a release list changes in Jira, not here, and a
+    stale copy would offer a version that no longer exists.
+    """
+    from app.services.jira_service_v3 import JiraServiceV3
+    from app.core.security import decrypt_credentials
+
+    instruction_set = db.query(InstructionSet).filter(
+        InstructionSet.id == instruction_id,
+        InstructionSet.organization_id == context.organization_id
+    ).first()
+    if not instruction_set:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Instruction set not found")
+
+    project = (instruction_set.jira_project or "").strip()
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This instruction set has no Jira project key"
+        )
+
+    jira_credential = _resolve_jira_credential(instruction_set, context.organization_id, db)
+    decrypted = decrypt_credentials(jira_credential.encrypted_data)
+    jira_service = JiraServiceV3(
+        server=decrypted["server_url"],
+        email=decrypted["email"],
+        api_token=decrypted["api_token"]
+    )
+
+    try:
+        releases = await jira_service.get_versions(project)
+    except Exception as exc:
+        logger.error("Failed to list releases for instruction set %s: %s", instruction_id, exc, exc_info=True)
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+    return {"project": project.upper(), "releases": releases}
+
+
+def _resolve_jira_credential(instruction_set: InstructionSet, organization_id: UUID, db: Session) -> Credential:
+    """The instruction set's own Jira credential, or the organization's only one."""
+    query = db.query(Credential).filter(
+        Credential.organization_id == organization_id,
+        Credential.type == CredentialType.JIRA,
+    )
+    if instruction_set.jira_credential_id:
+        credential = query.filter(Credential.id == instruction_set.jira_credential_id).first()
+    else:
+        credentials = query.all()
+        credential = credentials[0] if len(credentials) == 1 else None
+    if not credential:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No Jira credential is selected for this instruction set."
+        )
+    return credential
+
+
 class TestQueryRequest(BaseModel):
     credential_id: UUID
     #: Values for the query's {name} variables. Anything omitted falls back to the
     #: variable's stored default, so a test can be run straight from the card.
     variables: Dict[str, str] = {}
+    #: In "releases" mode, which Jira release to test against.
+    release: Optional[str] = None
 
 
 @router.post("/{instruction_id}/test")
@@ -237,22 +307,37 @@ async def test_instruction_query(
             detail="No Jira credentials configured. Please add Jira credentials first."
         )
 
-    # Resolve here rather than letting the browser send a built query: the same escaping
-    # rule that protects a real run has to protect the test, or the test is testing
-    # something else. See app/services/jql_variables.py.
-    values = {**defaults_of(instruction_set.variables or {})}
-    values.update({name: (value or "").strip() for name, value in request.variables.items()})
-    try:
-        resolved_jql = resolve_jql(instruction_set.jql_query or "", values)
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
-
     decrypted = decrypt_credentials(jira_credential.encrypted_data)
     jira_service = JiraServiceV3(
         server=decrypted["server_url"],
         email=decrypted["email"],
         api_token=decrypted["api_token"]
     )
+
+    # Resolve here rather than letting the browser send a built query: the same escaping
+    # rule that protects a real run has to protect the test, or the test is testing
+    # something else. See app/services/jql_variables.py.
+    try:
+        if (instruction_set.source_mode or "jql") == "releases":
+            release = (request.release or "").strip()
+            if not release:
+                # A test is about the query shape, so the newest release is as good an
+                # example as any — and it saves the dialog from having to pick one.
+                versions = await jira_service.get_versions(instruction_set.jira_project or "")
+                if not versions:
+                    raise ValueError(
+                        f"No releases found in {(instruction_set.jira_project or '').upper()}"
+                    )
+                release = versions[0]["name"]
+            resolved_jql = release_query(
+                instruction_set.jira_project or "", release, instruction_set.extra_jql
+            )
+        else:
+            values = {**defaults_of(instruction_set.variables or {})}
+            values.update({name: (value or "").strip() for name, value in request.variables.items()})
+            resolved_jql = resolve_jql(instruction_set.jql_query or "", values)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
 
     try:
         issues = await jira_service.execute_query(jql=resolved_jql, max_results=10)
