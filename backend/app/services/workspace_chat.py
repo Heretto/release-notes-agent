@@ -26,7 +26,7 @@ from app.models.database import (
 )
 from app.models.schemas import ChatSendResponse
 from app.services.agents import AgentUnavailable, resolve_agent
-from app.services.pipeline_prompts import FRAGMENT_FORMAT, issue_record
+from app.services.pipeline_prompts import FRAGMENT_FORMAT, house_style, issue_record
 from app.services.topic_assembler import FragmentError, coerce_fragment
 from app.services.workspace_service import (
     assemble_job_topics, chat_message_to_response, group_order, move_item, product_name,
@@ -221,6 +221,7 @@ Groups in order: {', '.join(groups) if groups else '(none yet)'}.
   facts true to its Jira issues, and send the COMPLETE fragment to update_note.
 - Statuses: draft, review, approved, rejected (rejected notes are left out of the output).
 - When asked to split or reorganize the release notes into topics, use reorganize_topics.
+{house_style(job.instruction_set.organization_guidance if job.instruction_set else None)}
 
 {FRAGMENT_FORMAT}"""
 

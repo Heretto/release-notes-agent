@@ -34,6 +34,22 @@ note's history), the fragment shape (`<div outputclass="release-note">` inside g
 `tests/integration/test_pipeline_with_fakes.py` runs the whole pipeline against the local
 Postgres with fake Jira and fake agents; keep it green when touching the stages.
 
+**Guidance reaches two stages, and only governs one note at a time.**
+`organization_guidance` goes to the organize stage (group names and order) *and*, since the
+writer is what actually writes the words, to the writer and the workspace chat agent via
+`pipeline_prompts.house_style()`. It used to reach only the organize stage, so anyone who
+wrote their house style in that box — note prefixes, tense, which elements to use — saw no
+change in the output and reasonably reported the guidance as ignored. The block scopes
+itself on the way in: the writer is told to follow every rule about **this note** and to
+ignore rules about the topic around it. That is not politeness — a writer told to emit
+`<title>`, `<shortdesc>` or `<ul>` wrappers returns a fragment that fails DTD validation and
+the note silently falls back to its plain summary. Topic-level structure is
+`topic_assembler.build_topic_xml`, which is **not** configurable: it emits
+`<topic><title/><body>` with one `<section><title>` per group. A house style that wants a
+different topic shape (notes as `<li>` in one shared `<ul>`, a bold paragraph per product
+instead of a section title) cannot be delivered by prompting and needs that function and the
+`<div outputclass="release-note">` fragment contract to change together.
+
 **Instruction sets name agents by role** (`writer_agent_id`, `analysis_agent_id`), not an
 ordered chain; the `instruction_set_agents` table is gone (migration
 `add_collaborative_workflow` moved the first chain agent into the writer slot).

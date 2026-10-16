@@ -198,23 +198,57 @@ settings, paths and UI labels), <pre> (for code blocks), <note type="note|import
 and > in text (&amp; &lt; &gt;). Mention Jira issue keys only if your style guidance asks for them."""
 
 
-def write_instructions(product: str) -> str:
+def house_style(guidance: Optional[str]) -> str:
+    """The instruction set's guidance, as the writer sees it.
+
+    The same text also goes to the organize stage, which uses it to choose group names and
+    order. Writers get it because people put their whole house style in that box — the
+    wording of a note, the prefixes it opens with, which elements to use — and none of it
+    used to reach the agent that writes the words, so the guidance appeared to do nothing.
+
+    Scoped on the way in: a single note is all this agent can affect. Rules about the topic
+    around it are carried out by assembly, and telling the writer to produce them makes it
+    emit fragments that fail validation.
+    """
+    guidance = (guidance or "").strip()
+    if not guidance:
+        return ""
+    return f"""
+
+## House style
+
+These rules come from the instruction set and are **binding**. Follow everything in them
+that governs this one release note: how it opens, what tense and voice it uses, what
+wording is required, which elements to use.
+
+Ignore anything that describes the document *around* this note — the topic title,
+<shortdesc>, sections, how notes are grouped or ordered, headings per product. Those are
+applied when the notes are assembled into topics, and emitting them here produces an
+invalid fragment. Return one <div> as described below, whatever the rules say about the
+wider structure.
+
+{guidance}"""
+
+
+def write_instructions(product: str, guidance: Optional[str] = None) -> str:
     return f"""Write the release note for {product} described in the input, following your style
 guidance. Write for the reader who will use the change: say what is new or different and what
 it means for them, concretely. Do not pad with phrases like "we are excited"; do not describe
 internal implementation. Use the Jira issues for facts only — do not copy ticket prose
 verbatim and do not include anything a customer should not see (internal names, customer
-names, credentials).
+names, credentials).{house_style(guidance)}
 
 {FRAGMENT_FORMAT}"""
 
 
-def rewrite_instructions(product: str, errors: Sequence[str]) -> str:
+def rewrite_instructions(product: str, errors: Sequence[str], guidance: Optional[str] = None) -> str:
     listed = "\n".join(f"- {e}" for e in errors)
+    # The house style rides along: a retry that drops it fixes the DITA and loses the
+    # wording the first attempt got right.
     return f"""Your previous fragment for this release note was not valid DITA. Fix these problems and
 return the corrected fragment only:
 
-{listed}
+{listed}{house_style(guidance)}
 
 {FRAGMENT_FORMAT}"""
 

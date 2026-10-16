@@ -305,10 +305,14 @@ const MORE_RELEASES = 10;
           </mat-form-field>
 
           <mat-form-field appearance="outline" class="full-width">
-            <mat-label>How the release notes are organized</mat-label>
-            <textarea matInput formControlName="organization_guidance" rows="3"
-                      placeholder="e.g. Group as New features, Improvements, Fixes, then Known issues. Put API changes first in each group."></textarea>
-            <mat-hint>Shown to the analysis agent when it groups and orders the notes</mat-hint>
+            <mat-label>How the release notes are organized and written</mat-label>
+            <textarea matInput formControlName="organization_guidance" rows="4"
+                      placeholder="e.g. Group as New features, Improvements, Fixes, then Known issues. Open every note with Added. / Changed. / Fixed. and write in past simple."></textarea>
+            <mat-hint>
+              Given to the agent that groups the notes and to the one that writes them. Rules about
+              the topic around a note — its title, shortdesc or sections — are set by Topics below,
+              not here.
+            </mat-hint>
           </mat-form-field>
         </div>
 

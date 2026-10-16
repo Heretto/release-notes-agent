@@ -508,7 +508,10 @@ class ReleaseNotesPipeline:
         self._set_stage(job, JobStage.WRITE, f"Writing release notes (0 of {total})")
         semaphore = asyncio.Semaphore(WRITE_CONCURRENCY)
         product = product_name(job)
-        instructions = prompts.write_instructions(product)
+        # The instruction set's guidance reaches the writer, not just the organize stage:
+        # it is where people put how a note should read, and the writer is what writes it.
+        guidance = self.instruction_set.organization_guidance if self.instruction_set else None
+        instructions = prompts.write_instructions(product, guidance)
 
         async def generate(item: ReleaseNoteItem, is_rewrite: bool) -> Tuple[ReleaseNoteItem, bool, str, Optional[str]]:
             """Returns (item, is_rewrite, fragment, fallback_reason)."""
@@ -521,7 +524,7 @@ class ReleaseNotesPipeline:
                 errors: List[str] = []
                 last_output = ""
                 for attempt in range(2):
-                    task = instructions if attempt == 0 else prompts.rewrite_instructions(product, errors)
+                    task = instructions if attempt == 0 else prompts.rewrite_instructions(product, errors, guidance)
                     payload = input_text if attempt == 0 else prompts.write_input(item, previous_fragment=last_output)
                     request, started = self._log_request(job, "write", {
                         "agent": self.writer.name, "item_id": str(item.id), "title": item.title,
