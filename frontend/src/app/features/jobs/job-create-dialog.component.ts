@@ -77,15 +77,18 @@ interface StartVariable {
           <mat-hint>Used as the topic title. Built from the instruction set and the values below until you change it.</mat-hint>
         </mat-form-field>
 
+        <!-- subscriptSizing="dynamic": both hints wrap in a half-width field, and the
+             default fixed one-line subscript lets the second line run into whatever
+             follows — here the Jira releases card. -->
         <div class="two-up">
-          <mat-form-field appearance="outline">
+          <mat-form-field appearance="outline" subscriptSizing="dynamic">
             <mat-label>Output filename</mat-label>
             <input matInput class="mono" [value]="filename" (input)="onFilename($any($event.target).value)"
                    placeholder="release-notes.dita">
             <mat-hint>Topic filename in Heretto and in downloads</mat-hint>
           </mat-form-field>
 
-          <mat-form-field appearance="outline">
+          <mat-form-field appearance="outline" subscriptSizing="dynamic">
             <mat-label>Maximum issues to read</mat-label>
             <input matInput formControlName="max_tickets" type="number" min="1" max="500"
                    placeholder="Default 100">
@@ -177,7 +180,7 @@ interface StartVariable {
     h2 { display: flex; align-items: center; gap: 10px; }
     .intro { color: var(--text-secondary); font-size: 14px; margin: 0 0 16px 0; }
     .full-width { width: 100%; }
-    .two-up { display: grid; grid-template-columns: 1.6fr 1fr; gap: 12px; }
+    .two-up { display: grid; grid-template-columns: 1.6fr 1fr; gap: 12px; align-items: start; margin-bottom: 18px; }
     .two-up mat-form-field { width: 100%; }
     .mono { font-family: var(--font-mono); font-size: 13px; }
     .agents-line { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); font-size: 13px; margin: 0 0 12px 0; }

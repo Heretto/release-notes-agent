@@ -125,8 +125,10 @@ const MORE_RELEASES = 10;
           </div>
 
           @if (isReleasesMode) {
+            <!-- subscriptSizing="dynamic": the hint wraps in a half-width field, and the
+                 default fixed one-line subscript lets it run into the card below. -->
             <div class="two-up">
-              <mat-form-field appearance="outline">
+              <mat-form-field appearance="outline" subscriptSizing="dynamic">
                 <mat-label>Project key</mat-label>
                 <input matInput class="mono upper" formControlName="jira_project" placeholder="HER" required>
                 @if (form.get('jira_project')?.hasError('required')) {
@@ -134,7 +136,7 @@ const MORE_RELEASES = 10;
                 }
               </mat-form-field>
 
-              <mat-form-field appearance="outline">
+              <mat-form-field appearance="outline" subscriptSizing="dynamic">
                 <mat-label>Additional filter</mat-label>
                 <input matInput class="mono" formControlName="extra_jql" placeholder="status in (Done, Released)">
                 <mat-hint>Optional JQL added to every release query</mat-hint>
@@ -355,7 +357,7 @@ const MORE_RELEASES = 10;
     .source-switch { margin-bottom: 16px; }
     .source-label { display: block; font-size: 12px; font-weight: 500; color: var(--text-secondary); margin-bottom: 6px; }
     .source-help { margin: 6px 0 0; font-size: 12px; }
-    .two-up { display: grid; grid-template-columns: 160px 1fr; gap: 12px; }
+    .two-up { display: grid; grid-template-columns: 160px 1fr; gap: 12px; align-items: start; margin-bottom: 18px; }
     .two-up mat-form-field { width: 100%; }
     .upper { text-transform: uppercase; }
     .release-list { display: flex; flex-direction: column; gap: 6px; }
