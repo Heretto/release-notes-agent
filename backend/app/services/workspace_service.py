@@ -28,7 +28,7 @@ from app.models.database import (
     ReleaseNoteTopic,
 )
 from app.models.schemas import (
-    ChatMessageResponse, ItemHistoryResponse, JobCounts, JobIssueResponse,
+    ChatMessageResponse, ItemCommentResponse, ItemHistoryResponse, JobCounts, JobIssueResponse,
     JobResponse, ReleaseNoteItemDetailResponse, ReleaseNoteItemResponse, ReleaseNoteTopicResponse,
     HerettoUploadResult,
 )
@@ -311,7 +311,19 @@ def _item_fields(item: ReleaseNoteItem) -> dict:
         dita_content=item.dita_content or "", status=item.status, needs_attention=bool(item.needs_attention),
         attention_reason=item.attention_reason, user_edited=bool(item.user_edited),
         issue_keys=[link.issue.issue_key for link in item.issue_links],
-        has_notes=bool((item.notes or "").strip()), created_at=item.created_at, updated_at=item.updated_at,
+        has_notes=bool((item.notes or "").strip()),
+        reviewer_id=item.reviewer_id,
+        reviewer_email=item.reviewer.email if item.reviewer else None,
+        reviewed=bool(item.reviewed), comment_count=len(item.comments),
+        created_at=item.created_at, updated_at=item.updated_at,
+    )
+
+
+def comment_to_response(comment) -> ItemCommentResponse:
+    return ItemCommentResponse(
+        id=comment.id, user_id=comment.user_id,
+        user_email=comment.user.email if comment.user else None,
+        body=comment.body, created_at=comment.created_at,
     )
 
 
@@ -324,6 +336,7 @@ def item_to_detail(item: ReleaseNoteItem) -> ReleaseNoteItemDetailResponse:
         **_item_fields(item),
         issues=[issue_to_response(link.issue) for link in item.issue_links],
         notes=item.notes or "",
+        comments=[comment_to_response(c) for c in item.comments],
         history=[
             ItemHistoryResponse(
                 id=h.id, event_type=h.event_type, actor=h.actor, user_id=h.user_id,

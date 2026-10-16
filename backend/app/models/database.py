@@ -112,6 +112,9 @@ class HistoryEvent:
     FLAGGED = "flagged"
     ISSUE_REMOVED = "issue_removed"
     NOTES_EDITED = "notes_edited"
+    REVIEWER_ASSIGNED = "reviewer_assigned"
+    REVIEWED = "reviewed"
+    COMMENT_ADDED = "comment_added"
 
 
 # --- Domain models ---
@@ -280,13 +283,23 @@ class ReleaseNoteItem(Base):
     # thread or design doc. Replaced the structured references table; URLs in it are linked
     # when rendered. Never shown to readers — it does not reach the assembled topic.
     notes = Column(Text, nullable=False, default="", server_default="")
+    # Who is asked to read this note, and whether they have said they are done with it.
+    # Review is its own axis: `status` is where the note is in the writer's flow, `reviewed`
+    # is one reviewer's answer, and a note can be approved without having been reviewed or
+    # reviewed while still a draft. SET NULL: removing someone from the org must leave the
+    # note, unassigned, not delete it.
+    reviewer_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reviewed = Column(Boolean, nullable=False, default=False, server_default="false")
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     job = relationship("Job", back_populates="items")
     topic = relationship("ReleaseNoteTopic", back_populates="items")
+    reviewer = relationship("User", foreign_keys=[reviewer_id])
     issue_links = relationship("ReleaseNoteItemIssue", back_populates="item", cascade="all, delete-orphan")
     history = relationship("ReleaseNoteItemHistory", back_populates="item", cascade="all, delete-orphan", order_by="ReleaseNoteItemHistory.created_at.desc()")
+    comments = relationship("ReleaseNoteItemComment", back_populates="item", cascade="all, delete-orphan", order_by="ReleaseNoteItemComment.created_at")
 
     @property
     def issues(self):
@@ -308,6 +321,24 @@ class ReleaseNoteItemIssue(Base):
 
     item = relationship("ReleaseNoteItem", back_populates="issue_links")
     issue = relationship("JobJiraIssue", back_populates="item_links")
+
+
+class ReleaseNoteItemComment(Base):
+    """What a reviewer said about one note.
+
+    Flat, not threaded: a note is small enough that a reply is just the next comment, and
+    the review screen reads top to bottom.
+    """
+    __tablename__ = "release_note_item_comments"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    item_id = Column(UUID(as_uuid=True), ForeignKey("release_note_items.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    body = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    item = relationship("ReleaseNoteItem", back_populates="comments")
+    user = relationship("User", foreign_keys=[user_id])
 
 
 class ReleaseNoteItemHistory(Base):

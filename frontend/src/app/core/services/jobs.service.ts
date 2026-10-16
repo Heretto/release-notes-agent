@@ -132,14 +132,28 @@ export interface ReleaseNoteItem {
   user_edited: boolean;
   issue_keys: string[];
   has_notes: boolean;
+  /** Review is its own axis, separate from `status`: who was asked, and their answer. */
+  reviewer_id?: string | null;
+  reviewer_email?: string | null;
+  reviewed: boolean;
+  comment_count: number;
   created_at?: string | null;
   updated_at?: string | null;
+}
+
+export interface ItemComment {
+  id: string;
+  user_id?: string | null;
+  user_email?: string | null;
+  body: string;
+  created_at?: string | null;
 }
 
 export interface ReleaseNoteItemDetail extends ReleaseNoteItem {
   issues: JobIssue[];
   notes: string;
   history: ItemHistoryEntry[];
+  comments: ItemComment[];
 }
 
 export interface ReleaseNoteItemUpdate {
@@ -150,6 +164,9 @@ export interface ReleaseNoteItemUpdate {
   group_name?: string;
   notes?: string;
   clear_attention?: boolean;
+  /** `null` unassigns — the field is only sent when it is meant to change. */
+  reviewer_id?: string | null;
+  reviewed?: boolean;
 }
 
 export interface ReleaseNoteTopic {
@@ -281,6 +298,14 @@ export class JobsService {
 
   updateItem(jobId: string, itemId: string, update: ReleaseNoteItemUpdate): Observable<ReleaseNoteItemDetail> {
     return this.http.patch<ReleaseNoteItemDetail>(`${this.apiUrl}/${jobId}/items/${itemId}`, update);
+  }
+
+  listComments(jobId: string, itemId: string): Observable<ItemComment[]> {
+    return this.http.get<ItemComment[]>(`${this.apiUrl}/${jobId}/items/${itemId}/comments`);
+  }
+
+  addComment(jobId: string, itemId: string, body: string): Observable<ItemComment> {
+    return this.http.post<ItemComment>(`${this.apiUrl}/${jobId}/items/${itemId}/comments`, { body });
   }
 
   moveItem(jobId: string, itemId: string, move: { group_name?: string; position?: number }): Observable<ReleaseNoteItem[]> {

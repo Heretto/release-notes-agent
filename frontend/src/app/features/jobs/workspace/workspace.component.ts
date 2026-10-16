@@ -19,6 +19,7 @@ import {
 import { InstructionsService, InstructionSet } from '../../../core/services/instructions.service';
 import { WorkspaceChatComponent } from './workspace-chat.component';
 import { WorkspaceItemDetailComponent } from './workspace-item-detail.component';
+import { ShareReviewDialogComponent } from './share-review-dialog.component';
 
 interface ItemGroup {
   name: string;
@@ -81,6 +82,10 @@ const HANDLE_WIDTH = 12;
                 </button>
               }
             </mat-menu>
+            <button mat-stroked-button (click)="shareForReview()" matTooltip="Assign reviewers and hand out the review link">
+              <mat-icon>ios_share</mat-icon>
+              Share for review
+            </button>
             <button mat-stroked-button [matMenuTriggerFor]="moreMenu"><mat-icon>more_horiz</mat-icon> More</button>
             <mat-menu #moreMenu="matMenu">
               <button mat-menu-item (click)="downloadAll()"><mat-icon>download</mat-icon><span>Download DITA ({{ topics.length }})</span></button>
@@ -450,6 +455,13 @@ export class WorkspaceComponent implements OnInit, OnDestroy {
       group.items.push(item);
     }
     return groups;
+  }
+
+  shareForReview(): void {
+    this.dialog.open(ShareReviewDialogComponent, {
+      width: '560px',
+      data: { jobId: this.job!.id, items: this.items }
+    });
   }
 
   chunkingLabel(strategy: ChunkingStrategy): string {

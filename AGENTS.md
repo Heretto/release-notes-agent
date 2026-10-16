@@ -101,6 +101,14 @@ credentials stored by the old routes keep working.
   `instruction-dialog.component.ts` — so do not put `min_length=1` back on `jql_query`.
   Release lists are read live from Jira (`GET /instructions/{id}/releases`), never stored:
   a cached list would offer a version that no longer exists.
+- **Review is a separate axis from `status`, not a stage of it.** `status` (draft → review →
+  approved) is where a note sits in the writer's flow; `reviewer_id`/`reviewed` are one
+  person's answer to "have you read this?". A note can be approved with nobody having
+  reviewed it, or reviewed while still a draft — do not collapse the two. Review access is
+  "signed in and in this organization", enforced by the API on every call; `/releases/:id/review`
+  is a plain route with no token, so the Share-for-review link is just that URL.
+  `PATCH /jobs/{id}/items/{item}` skips the idle check when the only fields sent are
+  `reviewer_id`/`reviewed`, so reviewing keeps working while the writer reruns.
 - **JQL variables resolve on the server, never in the browser.** An instruction set's
   `jql_query` is a template whose `{name}` tokens a release fills in. The browser splits the
   template only to *display* it (`frontend/src/app/core/jql-variables.ts`); the query that

@@ -260,13 +260,30 @@ class ReleaseNoteItemResponse(BaseModel):
     user_edited: bool = False
     issue_keys: List[str] = Field(default_factory=list)
     has_notes: bool = False
+    # Review is its own axis, separate from `status`: who was asked to read this note,
+    # whether they have said they are done, and how much they said.
+    reviewer_id: Optional[UUID] = None
+    reviewer_email: Optional[str] = None
+    reviewed: bool = False
+    comment_count: int = 0
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+class ItemCommentResponse(BaseModel):
+    id: UUID
+    user_id: Optional[UUID] = None
+    user_email: Optional[str] = None
+    body: str
+    created_at: Optional[datetime] = None
+
+class ItemCommentCreate(BaseModel):
+    body: str = Field(..., min_length=1, max_length=8000)
 
 class ReleaseNoteItemDetailResponse(ReleaseNoteItemResponse):
     issues: List[JobIssueResponse] = Field(default_factory=list)
     notes: str = ""
     history: List[ItemHistoryResponse] = Field(default_factory=list)
+    comments: List[ItemCommentResponse] = Field(default_factory=list)
 
 class ReleaseNoteItemUpdate(BaseModel):
     title: Optional[str] = Field(None, min_length=1, max_length=500)
@@ -276,6 +293,10 @@ class ReleaseNoteItemUpdate(BaseModel):
     group_name: Optional[str] = Field(None, max_length=255)
     notes: Optional[str] = Field(None, max_length=20_000)
     clear_attention: Optional[bool] = None
+    # Sent as null to unassign, so the route tests membership in model_fields_set rather
+    # than `is not None` — null here is a value, not an omission.
+    reviewer_id: Optional[UUID] = None
+    reviewed: Optional[bool] = None
 
 class ReleaseNoteTopicResponse(BaseModel):
     id: UUID

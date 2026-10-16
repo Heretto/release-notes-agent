@@ -20,10 +20,10 @@ from app.core.security import decrypt_credentials
 from app.models.database import (
     ChunkingStrategy, Credential, CredentialType, HistoryEvent, InstructionSet, ItemStatus, Job,
     JobArtifact, JobRequest, JobStatus, JobTrigger,
-    ReleaseNoteItem, ReleaseNoteTopic, get_db,
+    ReleaseNoteItem, ReleaseNoteItemComment, ReleaseNoteTopic, User, get_db, user_organizations,
 )
 from app.models.schemas import (
-    ChatMessageResponse, ChatSendRequest, ChatSendResponse,
+    ChatMessageResponse, ChatSendRequest, ChatSendResponse, ItemCommentCreate, ItemCommentResponse,
     JiraPreviewRequest, JiraPreviewResponse, JobArtifactResponse, JobCreate, JobIssueResponse, JobResponse,
     JobStatusEnum, ReassembleRequest, ReleaseNoteItemDetailResponse, ReleaseNoteItemResponse,
     ReleaseNoteItemUpdate, ReleaseNoteTopicResponse,
@@ -33,7 +33,8 @@ from app.services.jql_variables import release_query, resolve as resolve_jql
 from app.services.topic_assembler import FragmentError
 from app.services.workspace_chat import ChatUnavailable, WorkspaceChat
 from app.services.workspace_service import (
-    PublishError, assemble_job_topics, chat_message_to_response, issue_to_response, item_to_detail,
+    PublishError, assemble_job_topics, chat_message_to_response, comment_to_response,
+    issue_to_response, item_to_detail,
     item_to_response, job_to_response, move_item, publish_topics, record_history, set_item_content,
     topic_to_response,
 )
@@ -61,6 +62,23 @@ def _get_job(job_id: UUID, context: CurrentUserContext, db: Session) -> Job:
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
     return job
+
+
+def _organization_member(user_id: UUID, context: CurrentUserContext, db: Session) -> User:
+    """A user who is in this organization, or 404.
+
+    Review is for signed-in members of the organization that owns the release — that is the
+    whole of the access rule, and it is enforced here rather than by the link.
+    """
+    user = (
+        db.query(User)
+        .join(user_organizations, user_organizations.c.user_id == User.id)
+        .filter(User.id == user_id, user_organizations.c.organization_id == context.organization_id)
+        .first()
+    )
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="That person is not in this organization")
+    return user
 
 
 def _get_item(job: Job, item_id: UUID) -> ReleaseNoteItem:
@@ -395,9 +413,13 @@ async def update_job_item(
     context: CurrentUserContext = Depends(get_current_active_user_with_org),
     db: Session = Depends(get_db),
 ):
-    """Edit a note: headline, summary, DITA content, status, group, or clear its attention flag."""
+    """Edit a note: headline, summary, DITA content, status, group, review, or its attention flag."""
     job = _get_job(job_id, context, db)
-    _require_idle(job)
+    # Only the fields the pipeline also writes need the job to be idle. A reviewer marking
+    # a note read during a rerun changes nothing the run touches, and refusing it would
+    # mean the review page breaks whenever the writer reruns.
+    if update.model_fields_set - {"reviewer_id", "reviewed"}:
+        _require_idle(job)
     item = _get_item(job, item_id)
     user_id = context.user.id
     changed = False
@@ -443,6 +465,30 @@ async def update_job_item(
                        actor="user", user_id=user_id)
         # Notes are a person's own context; they never reach the assembled topic, so this
         # deliberately does not set `changed` and does not trigger a reassemble.
+    # Review lives alongside the writer's status, so neither of these sets `changed`: they
+    # say nothing about the content and must not trigger a reassemble.
+    if "reviewer_id" in update.model_fields_set and update.reviewer_id != item.reviewer_id:
+        previous = item.reviewer_id
+        reviewer = None
+        if update.reviewer_id is not None:
+            reviewer = _organization_member(update.reviewer_id, context, db)
+        item.reviewer_id = update.reviewer_id
+        # Someone else's "done" says nothing about the new reviewer's reading of it.
+        if previous is not None:
+            item.reviewed = False
+            item.reviewed_at = None
+        record_history(
+            db, item, HistoryEvent.REVIEWER_ASSIGNED,
+            f"Reviewer set to {reviewer.email}" if reviewer else "Reviewer cleared",
+            actor="user", user_id=user_id, details={"reviewer_id": str(update.reviewer_id) if update.reviewer_id else None},
+        )
+    if update.reviewed is not None and bool(update.reviewed) != bool(item.reviewed):
+        item.reviewed = bool(update.reviewed)
+        item.reviewed_at = datetime.now(timezone.utc) if item.reviewed else None
+        record_history(db, item, HistoryEvent.REVIEWED,
+                       "Marked as reviewed" if item.reviewed else "Review undone",
+                       actor="user", user_id=user_id)
+
     if update.clear_attention and item.needs_attention:
         item.needs_attention = False
         item.attention_reason = None
@@ -453,6 +499,44 @@ async def update_job_item(
     db.commit()
     db.refresh(item)
     return item_to_detail(item)
+
+
+@router.get("/{job_id}/items/{item_id}/comments", response_model=List[ItemCommentResponse])
+async def list_item_comments(
+    job_id: UUID,
+    item_id: UUID,
+    context: CurrentUserContext = Depends(get_current_active_user_with_org),
+    db: Session = Depends(get_db),
+):
+    """Every comment on one note, oldest first."""
+    item = _get_item(_get_job(job_id, context, db), item_id)
+    return [comment_to_response(c) for c in item.comments]
+
+
+@router.post("/{job_id}/items/{item_id}/comments", response_model=ItemCommentResponse)
+async def add_item_comment(
+    job_id: UUID,
+    item_id: UUID,
+    comment_data: ItemCommentCreate,
+    context: CurrentUserContext = Depends(get_current_active_user_with_org),
+    db: Session = Depends(get_db),
+):
+    """Leave a comment on a note.
+
+    Deliberately not behind `_require_idle`: a reviewer reads and comments while the writer
+    reruns, and a comment touches nothing the pipeline writes.
+    """
+    job = _get_job(job_id, context, db)
+    item = _get_item(job, item_id)
+    comment = ReleaseNoteItemComment(
+        item_id=item.id, user_id=context.user.id, body=comment_data.body.strip()
+    )
+    db.add(comment)
+    record_history(db, item, HistoryEvent.COMMENT_ADDED,
+                   f"Comment from {context.user.email}", actor="user", user_id=context.user.id)
+    db.commit()
+    db.refresh(comment)
+    return comment_to_response(comment)
 
 
 class ItemMoveRequest(BaseModel):
