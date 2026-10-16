@@ -23,7 +23,7 @@ from app.models.database import (
     ReleaseNoteItem, ReleaseNoteItemComment, ReleaseNoteTopic, User, get_db, user_organizations,
 )
 from app.models.schemas import (
-    ChatMessageResponse, ChatSendRequest, ChatSendResponse, ItemCommentCreate, ItemCommentResponse,
+    ChatMessageResponse, ChatSendRequest, ChatSendResponse, ItemCommentCreate, ItemCommentResponse, ItemCommentUpdate,
     JiraPreviewRequest, JiraPreviewResponse, JobArtifactResponse, JobCreate, JobIssueResponse, JobResponse,
     JobStatusEnum, ReassembleRequest, ReleaseNoteItemDetailResponse, ReleaseNoteItemResponse,
     ReleaseNoteItemUpdate, ReleaseNoteTopicResponse,
@@ -536,6 +536,43 @@ async def add_item_comment(
                    f"Comment from {context.user.email}", actor="user", user_id=context.user.id)
     db.commit()
     db.refresh(comment)
+    return comment_to_response(comment)
+
+
+@router.patch("/{job_id}/items/{item_id}/comments/{comment_id}", response_model=ItemCommentResponse)
+async def resolve_item_comment(
+    job_id: UUID,
+    item_id: UUID,
+    comment_id: UUID,
+    update: ItemCommentUpdate,
+    context: CurrentUserContext = Depends(get_current_active_user_with_org),
+    db: Session = Depends(get_db),
+):
+    """Mark a comment resolved, or reopen it.
+
+    Anyone in the organization can resolve any comment — the writer answering a reviewer and
+    the reviewer accepting the answer are both normal, and arguing about which of them owns
+    the button would cost more than it saves. Like commenting, this is exempt from the
+    job-is-idle check: it touches nothing a run writes.
+    """
+    job = _get_job(job_id, context, db)
+    item = _get_item(job, item_id)
+    comment = next((c for c in item.comments if c.id == comment_id), None)
+    if comment is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found")
+
+    if bool(update.resolved) != bool(comment.resolved):
+        comment.resolved = bool(update.resolved)
+        comment.resolved_at = datetime.now(timezone.utc) if comment.resolved else None
+        comment.resolved_by_id = context.user.id if comment.resolved else None
+        record_history(
+            db, item, HistoryEvent.COMMENT_RESOLVED,
+            f"Comment from {comment.user.email if comment.user else 'someone'} "
+            + ("resolved" if comment.resolved else "reopened"),
+            actor="user", user_id=context.user.id,
+        )
+        db.commit()
+        db.refresh(comment)
     return comment_to_response(comment)
 
 

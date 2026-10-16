@@ -274,10 +274,16 @@ class ItemCommentResponse(BaseModel):
     user_id: Optional[UUID] = None
     user_email: Optional[str] = None
     body: str
+    resolved: bool = False
+    resolved_at: Optional[datetime] = None
+    resolved_by_email: Optional[str] = None
     created_at: Optional[datetime] = None
 
 class ItemCommentCreate(BaseModel):
     body: str = Field(..., min_length=1, max_length=8000)
+
+class ItemCommentUpdate(BaseModel):
+    resolved: bool
 
 class ReleaseNoteItemDetailResponse(ReleaseNoteItemResponse):
     issues: List[JobIssueResponse] = Field(default_factory=list)

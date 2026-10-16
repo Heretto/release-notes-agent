@@ -146,6 +146,10 @@ export interface ItemComment {
   user_id?: string | null;
   user_email?: string | null;
   body: string;
+  /** Dealt with, not deleted — a resolved comment stays readable alongside the change. */
+  resolved: boolean;
+  resolved_at?: string | null;
+  resolved_by_email?: string | null;
   created_at?: string | null;
 }
 
@@ -306,6 +310,11 @@ export class JobsService {
 
   addComment(jobId: string, itemId: string, body: string): Observable<ItemComment> {
     return this.http.post<ItemComment>(`${this.apiUrl}/${jobId}/items/${itemId}/comments`, { body });
+  }
+
+  resolveComment(jobId: string, itemId: string, commentId: string, resolved: boolean): Observable<ItemComment> {
+    return this.http.patch<ItemComment>(
+      `${this.apiUrl}/${jobId}/items/${itemId}/comments/${commentId}`, { resolved });
   }
 
   moveItem(jobId: string, itemId: string, move: { group_name?: string; position?: number }): Observable<ReleaseNoteItem[]> {

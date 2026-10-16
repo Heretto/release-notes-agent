@@ -120,7 +120,13 @@ credentials stored by the old routes keep working.
   "signed in and in this organization", enforced by the API on every call; `/releases/:id/review`
   is a plain route with no token, so the Share-for-review link is just that URL.
   `PATCH /jobs/{id}/items/{item}` skips the idle check when the only fields sent are
-  `reviewer_id`/`reviewed`, so reviewing keeps working while the writer reruns.
+  `reviewer_id`/`reviewed`, so reviewing keeps working while the writer reruns. Commenting
+  and resolving a comment are exempt for the same reason. **Resolving is not deleting** —
+  the comment stays readable, so what was asked for survives next to the change that
+  answered it. "Ask the agent" in the Details pane hands a comment to the writer agent by
+  sending it into the workspace chat (`chatPending` → the chat's `pendingMessage`), rather
+  than calling the agent behind the scenes, so what was asked and what the agent did sit in
+  one transcript the person can read and undo.
 - **JQL variables resolve on the server, never in the browser.** An instruction set's
   `jql_query` is a template whose `{name}` tokens a release fills in. The browser splits the
   template only to *display* it (`frontend/src/app/core/jql-variables.ts`); the query that

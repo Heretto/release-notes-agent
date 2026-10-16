@@ -8,7 +8,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { HopAccountService } from '@heretto/hop-ui';
-import { Job, JobsService, ReleaseNoteItem, ReleaseNoteItemDetail } from '../../../core/services/jobs.service';
+import { ItemComment, Job, JobsService, ReleaseNoteItem, ReleaseNoteItemDetail } from '../../../core/services/jobs.service';
 
 /** The notes of one group, as the sidebar lists them. */
 interface ReviewGroup {
@@ -108,12 +108,20 @@ interface ReviewGroup {
 
                 <h3>Comments ({{ selected.comments.length }})</h3>
                 @for (comment of selected.comments; track comment.id) {
-                  <div class="rv-comment">
+                  <div class="rv-comment" [class.resolved]="comment.resolved">
                     <span class="avatar">{{ initialsOf(comment.user_email) }}</span>
                     <div class="rv-comment-body">
                       <div class="rv-comment-head">
                         <span class="rv-comment-name">{{ comment.user_email || 'Someone' }}</span>
                         <span class="muted">{{ comment.created_at | date:'short' }}</span>
+                        @if (comment.resolved) {
+                          <span class="resolved-tag"><mat-icon class="inline-icon">check</mat-icon> Resolved</span>
+                        }
+                        <span class="spacer"></span>
+                        <button mat-button class="resolve-button" (click)="setResolved(comment, !comment.resolved)"
+                                [disabled]="saving">
+                          {{ comment.resolved ? 'Reopen' : 'Resolve' }}
+                        </button>
                       </div>
                       <div class="rv-comment-text">{{ comment.body }}</div>
                     </div>
@@ -197,6 +205,11 @@ interface ReviewGroup {
       color: var(--color-success-text); }
     .rv-note-view h3 { margin: 20px 0 10px; font-size: 13px; font-weight: 600; }
     .rv-comment { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border-light); }
+    .rv-comment.resolved .rv-comment-text, .rv-comment.resolved .rv-comment-name { color: var(--text-tertiary); }
+    .rv-comment.resolved .avatar { opacity: 0.6; }
+    .resolved-tag { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 600;
+      padding: 2px 8px; border-radius: 999px; background: var(--color-success-bg); color: var(--color-success-text); }
+    .resolve-button { min-width: 0; }
     .avatar { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px;
       border-radius: 50%; background: var(--bg-secondary); font-size: 11px; font-weight: 600; flex-shrink: 0; }
     .rv-comment-body { flex: 1; min-width: 0; }
@@ -326,6 +339,27 @@ export class ReviewComponent implements OnInit {
     if (this.isMine(item)) return item.reviewed ? 'Reviewed by you' : 'Assigned to you';
     if (item.reviewer_email) return `Reviewer: ${item.reviewer_email}`;
     return 'No reviewer';
+  }
+
+  setResolved(comment: ItemComment, resolved: boolean): void {
+    if (!this.selected || this.saving) return;
+    this.saving = true;
+    this.jobsService.resolveComment(this.job!.id, this.selected.id, comment.id, resolved).subscribe({
+      next: updated => {
+        this.saving = false;
+        // Patch in place: reloading the note would discard an unsent comment draft.
+        if (this.selected) {
+          this.selected = {
+            ...this.selected,
+            comments: this.selected.comments.map(c => c.id === updated.id ? updated : c)
+          };
+        }
+      },
+      error: () => {
+        this.saving = false;
+        this.snackBar.open('Could not update the comment', 'Close', { duration: 3000 });
+      }
+    });
   }
 
   initialsOf(email: string | null | undefined): string {

@@ -323,7 +323,10 @@ def comment_to_response(comment) -> ItemCommentResponse:
     return ItemCommentResponse(
         id=comment.id, user_id=comment.user_id,
         user_email=comment.user.email if comment.user else None,
-        body=comment.body, created_at=comment.created_at,
+        body=comment.body,
+        resolved=bool(comment.resolved), resolved_at=comment.resolved_at,
+        resolved_by_email=comment.resolved_by.email if comment.resolved_by else None,
+        created_at=comment.created_at,
     )
 
 

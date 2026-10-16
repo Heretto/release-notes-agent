@@ -202,11 +202,13 @@ const HANDLE_WIDTH = 12;
             <div class="side-body">
               @if (rightPane === 'item' && selectedItemId) {
                 <app-workspace-item-detail [jobId]="job.id" [itemId]="selectedItemId" [groups]="groupNames" [disabled]="!editable"
-                                           (updated)="onItemUpdated($event)" (closed)="rightPane = 'chat'">
+                                           (updated)="onItemUpdated($event)" (closed)="rightPane = 'chat'"
+                                           (askAgent)="askAgent($event)">
                 </app-workspace-item-detail>
               } @else {
                 <app-workspace-chat [jobId]="job.id" [selectedItem]="selectedItem" [agentName]="instructionSet?.writer_agent_name || null"
-                                    [disabled]="!editable" (changed)="onChatChanged($event)">
+                                    [disabled]="!editable" [pendingMessage]="chatPending"
+                                    (pendingMessageSent)="chatPending = null" (changed)="onChatChanged($event)">
                 </app-workspace-chat>
               }
             </div>
@@ -288,6 +290,8 @@ export class WorkspaceComponent implements OnInit, OnDestroy {
   job: Job | null = null;
   instructionSet: InstructionSet | null = null;
   items: ReleaseNoteItem[] = [];
+  /** Queued for the chat pane; cleared as soon as the chat reports it sent. */
+  chatPending: string | null = null;
   topics: ReleaseNoteTopic[] = [];
   loading = true;
   busy = false;
@@ -455,6 +459,16 @@ export class WorkspaceComponent implements OnInit, OnDestroy {
       group.items.push(item);
     }
     return groups;
+  }
+
+  /** A comment handed to the agent: show the chat, which sends it as soon as it mounts. */
+  askAgent(message: string): void {
+    if (!this.editable) {
+      this.snackBar.open('A run is in progress — the agent cannot edit notes until it finishes', 'Close', { duration: 4000 });
+      return;
+    }
+    this.chatPending = message;
+    this.rightPane = 'chat';
   }
 
   shareForReview(): void {

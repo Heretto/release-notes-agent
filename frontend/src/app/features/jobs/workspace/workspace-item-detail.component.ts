@@ -13,7 +13,7 @@ import { MatExpansionModule } from '@angular/material/expansion';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { HopOrganizationService, OrganizationMember } from '@heretto/hop-ui';
 import {
-  JobsService, ReleaseNoteItemDetail, ItemStatus, ITEM_STATUSES, ItemHistoryEntry, JobIssue
+  JobsService, ReleaseNoteItemDetail, ItemComment, ItemStatus, ITEM_STATUSES, ItemHistoryEntry, JobIssue
 } from '../../../core/services/jobs.service';
 
 @Component({
@@ -201,14 +201,31 @@ import {
           <mat-tab label="Comments ({{ item.comments.length }})">
             <div class="tab-body">
               @for (comment of item.comments; track comment.id) {
-                <div class="comment-row">
+                <div class="comment-row" [class.resolved]="comment.resolved">
                   <span class="avatar">{{ initialsOf(comment.user_email) }}</span>
                   <div class="comment-body">
                     <div class="comment-head">
                       <span class="comment-name">{{ comment.user_email || 'Someone' }}</span>
                       <span class="muted">{{ comment.created_at | date:'short' }}</span>
+                      @if (comment.resolved) {
+                        <span class="resolved-tag"><mat-icon class="inline-icon">check</mat-icon> Resolved</span>
+                      }
                     </div>
                     <div class="comment-text">{{ comment.body }}</div>
+                    <div class="comment-row-actions">
+                      @if (!comment.resolved) {
+                        <button mat-button (click)="askAgentToFix(comment)" [disabled]="disabled || saving"
+                                matTooltip="Send this comment to the agent in the chat">
+                          <mat-icon>auto_fix_high</mat-icon> Ask the agent
+                        </button>
+                        <button mat-button (click)="setResolved(comment, true)" [disabled]="saving">Resolve</button>
+                      } @else {
+                        <span class="muted">
+                          @if (comment.resolved_by_email) { by {{ comment.resolved_by_email }} }
+                        </span>
+                        <button mat-button (click)="setResolved(comment, false)" [disabled]="saving">Reopen</button>
+                      }
+                    </div>
                   </div>
                 </div>
               } @empty {
@@ -307,6 +324,12 @@ import {
       font-weight: 600; padding: 4px 10px; border-radius: 999px;
       background: var(--color-success-bg); color: var(--color-success-text); }
     .comment-row { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border-light); }
+    .comment-row.resolved .comment-text, .comment-row.resolved .comment-name { color: var(--text-tertiary); }
+    .comment-row.resolved .avatar { opacity: 0.6; }
+    .resolved-tag { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 600;
+      padding: 2px 8px; border-radius: 999px; background: var(--color-success-bg); color: var(--color-success-text); }
+    .comment-row-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; margin-top: 2px; }
+    .comment-row-actions .mat-mdc-button { min-width: 0; }
     .avatar { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px;
       border-radius: 50%; background: var(--bg-secondary); font-size: 11px; font-weight: 600; flex-shrink: 0; }
     .comment-body { flex: 1; min-width: 0; }
@@ -367,6 +390,8 @@ export class WorkspaceItemDetailComponent implements OnChanges, OnInit {
   @Input() disabled = false;
   @Output() updated = new EventEmitter<ReleaseNoteItemDetail>();
   @Output() closed = new EventEmitter<void>();
+  /** A comment to put to the agent, sent by the workspace into the chat pane. */
+  @Output() askAgent = new EventEmitter<string>();
 
   item: ReleaseNoteItemDetail | null = null;
   loading = true;
@@ -494,6 +519,42 @@ export class WorkspaceItemDetailComponent implements OnChanges, OnInit {
     });
   }
 
+  setResolved(comment: ItemComment, resolved: boolean): void {
+    if (!this.item || this.saving) return;
+    this.saving = true;
+    this.jobsService.resolveComment(this.jobId, this.item.id, comment.id, resolved).subscribe({
+      next: updated => {
+        this.saving = false;
+        // Patch in place rather than reloading: the note itself has not changed, and a
+        // reload would throw away an unsent comment draft.
+        if (this.item) {
+          this.item = {
+            ...this.item,
+            comments: this.item.comments.map(c => c.id === updated.id ? updated : c)
+          };
+        }
+      },
+      error: () => {
+        this.saving = false;
+        this.snackBar.open('Failed to update the comment', 'Close', { duration: 3000 });
+      }
+    });
+  }
+
+  /**
+   * Hand a comment to the writer agent as an instruction. The workspace shows the chat and
+   * sends it there, so what was asked and what the agent did stay in one transcript.
+   */
+  askAgentToFix(comment: ItemComment): void {
+    if (!this.item) return;
+    const who = comment.user_email || 'A reviewer';
+    this.askAgent.emit(
+      `${who} commented on the note “${this.item.title}”:\n\n` +
+      `"${comment.body}"\n\n` +
+      `Please update that note to address the comment.`
+    );
+  }
+
   /** Initials from an email, for the comment avatars. */
   initialsOf(email: string | null | undefined): string {
     const name = (email || '?').split('@')[0];
@@ -559,7 +620,7 @@ export class WorkspaceItemDetailComponent implements OnChanges, OnInit {
       created: 'add_circle', jira_changed: 'sync_problem', regenerated: 'auto_fix_high', content_edited: 'edit',
       status_changed: 'flag_circle', moved: 'low_priority', flagged: 'flag', issue_removed: 'link_off',
       notes_edited: 'sticky_note_2', reviewer_assigned: 'person_add', reviewed: 'task_alt',
-      comment_added: 'comment',
+      comment_added: 'comment', comment_resolved: 'mark_chat_read',
     };
     return icons[entry.event_type] || 'history';
   }

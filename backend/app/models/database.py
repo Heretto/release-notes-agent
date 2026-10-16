@@ -115,6 +115,7 @@ class HistoryEvent:
     REVIEWER_ASSIGNED = "reviewer_assigned"
     REVIEWED = "reviewed"
     COMMENT_ADDED = "comment_added"
+    COMMENT_RESOLVED = "comment_resolved"
 
 
 # --- Domain models ---
@@ -335,10 +336,16 @@ class ReleaseNoteItemComment(Base):
     item_id = Column(UUID(as_uuid=True), ForeignKey("release_note_items.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     body = Column(Text, nullable=False)
+    # Resolved means "dealt with", not "deleted": the comment stays readable, so the note's
+    # history of what was asked for survives alongside the change that answered it.
+    resolved = Column(Boolean, nullable=False, default=False, server_default="false")
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+    resolved_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     item = relationship("ReleaseNoteItem", back_populates="comments")
     user = relationship("User", foreign_keys=[user_id])
+    resolved_by = relationship("User", foreign_keys=[resolved_by_id])
 
 
 class ReleaseNoteItemHistory(Base):
