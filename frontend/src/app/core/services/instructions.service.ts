@@ -66,9 +66,15 @@ export class InstructionsService {
   }
 
   /** `variables` fill the query's `{name}` tokens; the server does the substituting. */
-  /** A Jira release (fix version), as the picker shows it. */
-  listReleases(instructionId: string): Observable<JiraReleaseList> {
-    return this.http.get<JiraReleaseList>(`${this.apiUrl}/${instructionId}/releases`);
+  /**
+   * One page of the Jira releases this instruction set can run on, newest first.
+   * Paginated because a long-lived project has hundreds of versions and the picker shows
+   * a handful; `next_start` continues where the last page stopped.
+   */
+  listReleases(instructionId: string, startAt = 0, maxResults = 5): Observable<JiraReleaseList> {
+    return this.http.get<JiraReleaseList>(`${this.apiUrl}/${instructionId}/releases`, {
+      params: { start_at: startAt, max_results: maxResults }
+    });
   }
 
   testQuery(instructionId: string, credentialId: string, variables: Record<string, string> = {}): Observable<any> {
@@ -94,4 +100,8 @@ export interface JiraRelease {
 export interface JiraReleaseList {
   project: string;
   releases: JiraRelease[];
+  /** How many the project has in total, so the picker can say "5 of 23". */
+  total: number;
+  has_more: boolean;
+  next_start: number;
 }

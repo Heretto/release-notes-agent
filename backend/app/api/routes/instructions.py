@@ -1,6 +1,6 @@
 """Instruction sets: the query, the agents by role, and the pipeline's guidance."""
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from typing import Dict, List, Optional
 from uuid import UUID
@@ -208,6 +208,8 @@ async def delete_instruction_set(
 @router.get("/{instruction_id}/releases")
 async def list_instruction_releases(
     instruction_id: UUID,
+    start_at: int = Query(0, ge=0),
+    max_results: int = Query(5, ge=1, le=50),
     context: CurrentUserContext = Depends(get_current_active_user_with_org),
     db: Session = Depends(get_db)
 ):
@@ -242,12 +244,18 @@ async def list_instruction_releases(
     )
 
     try:
-        releases = await jira_service.get_versions(project)
+        page = await jira_service.get_versions(project, start_at=start_at, max_results=max_results)
     except Exception as exc:
         logger.error("Failed to list releases for instruction set %s: %s", instruction_id, exc, exc_info=True)
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
-    return {"project": project.upper(), "releases": releases}
+    return {
+        "project": project.upper(),
+        "releases": page["releases"],
+        "total": page["total"],
+        "has_more": not page["is_last"],
+        "next_start": page["next_start"],
+    }
 
 
 def _resolve_jira_credential(instruction_set: InstructionSet, organization_id: UUID, db: Session) -> Credential:
@@ -323,7 +331,10 @@ async def test_instruction_query(
             if not release:
                 # A test is about the query shape, so the newest release is as good an
                 # example as any — and it saves the dialog from having to pick one.
-                versions = await jira_service.get_versions(instruction_set.jira_project or "")
+                newest = await jira_service.get_versions(
+                    instruction_set.jira_project or "", start_at=0, max_results=1
+                )
+                versions = newest["releases"]
                 if not versions:
                     raise ValueError(
                         f"No releases found in {(instruction_set.jira_project or '').upper()}"

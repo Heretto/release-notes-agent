@@ -19,6 +19,10 @@ import { CredentialsService, JiraCredentialOption } from '../../core/services/cr
 import { CHUNKING_STRATEGIES } from '../../core/services/jobs.service';
 import { JqlPart, JqlVariableSpec, defaultsOf, jqlParts, variableNames } from '../../core/jql-variables';
 
+/** The releases card opens on the most recent few; everything older is a press away. */
+const FIRST_RELEASES = 5;
+const MORE_RELEASES = 10;
+
 @Component({
   selector: 'app-instruction-dialog',
   standalone: true,
@@ -155,6 +159,11 @@ import { JqlPart, JqlVariableSpec, defaultsOf, jqlParts, variableNames } from '.
                     </div>
                   }
                 </div>
+              }
+              @if (releasesHasMore) {
+                <button type="button" class="load-more" (click)="loadMoreReleases()" [disabled]="loadingReleases">
+                  {{ loadingReleases ? 'Loading…' : 'Load ' + nextBatchSize + ' more' }}
+                </button>
               }
               <div class="vars-preview">
                 <span class="vars-col">Query for each release</span>
@@ -358,6 +367,9 @@ import { JqlPart, JqlVariableSpec, defaultsOf, jqlParts, variableNames } from '.
     .release-chip.released { background: var(--color-success-bg); color: var(--color-success-text); }
     .release-date { flex: 1; font-size: 12px; color: var(--text-tertiary); }
     .release-count { font-size: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+    .load-more { align-self: flex-start; background: none; border: none; padding: 6px 2px 0; cursor: pointer;
+      font: inherit; font-size: 13px; font-weight: 500; color: var(--color-primary); }
+    .load-more:disabled { color: var(--text-tertiary); cursor: default; }
     .jql-field { margin-bottom: 12px; }
     .vars-card { border: 1px solid var(--border-default); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; background: var(--bg-secondary); }
     .vars-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
@@ -436,7 +448,16 @@ export class InstructionDialogComponent implements OnInit {
   /** Jira's releases for the project key typed above, in "releases" mode. */
   releases: JiraRelease[] = [];
   releasesStatus = '';
+  releasesHasMore = false;
+  loadingReleases = false;
+  private releasesTotal = 0;
+  private releasesNextStart = 0;
   private releasesRequest?: Subscription;
+
+  /** The card opens on the most recent few; everything older is a press away. */
+  get nextBatchSize(): number {
+    return Math.min(MORE_RELEASES, Math.max(this.releasesTotal - this.releases.length, 1));
+  }
 
   get isReleasesMode(): boolean {
     return this.form?.get('source_mode')?.value === 'releases';
@@ -464,6 +485,9 @@ export class InstructionDialogComponent implements OnInit {
     if (!this.isReleasesMode) return;
     const project = (this.form.get('jira_project')?.value || '').trim();
     this.releases = [];
+    this.releasesTotal = 0;
+    this.releasesNextStart = 0;
+    this.releasesHasMore = false;
     if (!project) {
       this.releasesStatus = '';
       return;
@@ -472,18 +496,37 @@ export class InstructionDialogComponent implements OnInit {
       this.releasesStatus = 'Save the instruction set to see its releases';
       return;
     }
-    this.releasesStatus = 'Loading…';
+    this.fetchReleases(FIRST_RELEASES);
+  }
+
+  loadMoreReleases(): void {
+    if (!this.loadingReleases) this.fetchReleases(MORE_RELEASES);
+  }
+
+  private fetchReleases(count: number): void {
+    if (!this.data?.id) return;
+    this.loadingReleases = true;
+    if (!this.releases.length) this.releasesStatus = 'Loading…';
     this.releasesRequest?.unsubscribe();
-    this.releasesRequest = this.instructionsService.listReleases(this.data.id).subscribe({
-      next: result => {
-        this.releases = result.releases;
-        this.releasesStatus = `${result.releases.length} in ${result.project}`;
-      },
-      error: error => {
-        this.releases = [];
-        this.releasesStatus = error.error?.detail || 'Could not read releases from Jira';
-      }
-    });
+    this.releasesRequest = this.instructionsService
+      .listReleases(this.data.id, this.releasesNextStart, count)
+      .subscribe({
+        next: result => {
+          this.loadingReleases = false;
+          this.releases = [...this.releases, ...result.releases];
+          this.releasesTotal = result.total;
+          this.releasesNextStart = result.next_start;
+          this.releasesHasMore = result.has_more;
+          this.releasesStatus = this.releases.length
+            ? `${this.releases.length} of ${result.total} in ${result.project}`
+            : `No releases found in ${result.project}.`;
+        },
+        error: error => {
+          this.loadingReleases = false;
+          this.releasesHasMore = false;
+          this.releasesStatus = error.error?.detail || 'Could not read releases from Jira';
+        }
+      });
   }
 
   /** Spec metadata per variable, kept for tokens that come and go while editing. */

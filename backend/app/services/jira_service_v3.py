@@ -270,20 +270,37 @@ class JiraServiceV3:
             logger.error("Failed to get Jira projects: %s", e, exc_info=True)
             raise Exception("Failed to get projects — check your credentials and permissions")
     
-    async def get_versions(self, project_key: str) -> List[Dict[str, Any]]:
-        """Get a project's versions (Jira's "releases"), newest first.
+    async def get_versions(
+        self, project_key: str, start_at: int = 0, max_results: int = 5
+    ) -> Dict[str, Any]:
+        """One page of a project's versions (Jira's "releases"), newest first.
 
-        `expand=issuesstatus` makes Jira return the per-status issue counts alongside each
-        version, which is what lets the release picker show how many issues a release would
-        be read from without a second round trip per version.
+        Paginated at the Jira end rather than here: a long-lived project has hundreds of
+        versions, and the picker only ever shows the most recent handful.
+
+        `/project/{key}/version` (singular) is the paginated endpoint and the one that
+        honours `expand=issuesstatus`, which carries the per-status issue counts. The
+        unpaginated `/versions` sibling accepts the same parameter but does not always come
+        back with the counts, which is why every release read "0 issues"; `_fill_issue_counts`
+        covers the case where they are still missing.
+
+        `orderBy=-sequence` is the project's own version order, reversed — the release
+        someone is most likely to be writing notes for comes first. `status` excludes
+        archived versions, which cannot be the subject of release notes.
         """
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(
-                    f"{self.base_url}/project/{project_key}/versions",
-                    params={"expand": "issuesstatus"},
+                    f"{self.base_url}/project/{project_key}/version",
+                    params={
+                        "expand": "issuesstatus",
+                        "orderBy": "-sequence",
+                        "status": "released,unreleased",
+                        "startAt": start_at,
+                        "maxResults": max_results,
+                    },
                     headers=self.headers,
-                    timeout=10.0
+                    timeout=15.0,
                 )
 
                 if response.status_code == 404:
@@ -291,29 +308,64 @@ class JiraServiceV3:
                 if response.status_code != 200:
                     raise Exception(f"Failed to get versions: HTTP {response.status_code}")
 
-                versions = []
-                for version in response.json():
-                    counts = version.get("issuesStatusForFixVersion") or {}
-                    versions.append({
-                        "id": version.get("id"),
-                        "name": version.get("name"),
-                        "description": version.get("description") or "",
-                        "released": bool(version.get("released")),
-                        "archived": bool(version.get("archived")),
-                        # releaseDate once released, startDate while it is still the plan.
-                        "date": version.get("releaseDate") or version.get("startDate") or "",
-                        "issue_count": sum(
-                            value for value in counts.values() if isinstance(value, int)
-                        ),
-                    })
-                # Jira returns versions in project order (oldest first); the picker wants the
-                # release someone is most likely to be writing notes for at the top.
-                versions.reverse()
-                return [v for v in versions if not v["archived"]]
+                payload = response.json()
+                releases = [self._version_summary(v) for v in payload.get("values", [])]
+                await self._fill_issue_counts(client, releases)
+
+                return {
+                    "releases": releases,
+                    "total": payload.get("total", len(releases)),
+                    "is_last": bool(payload.get("isLast", True)),
+                    "next_start": start_at + len(releases),
+                }
 
         except Exception as e:
             logger.error("Failed to get versions for project %s: %s", project_key, e, exc_info=True)
             raise Exception("Failed to get versions — check your credentials and project key")
+
+    @staticmethod
+    def _version_summary(version: Dict[str, Any]) -> Dict[str, Any]:
+        counts = version.get("issuesStatusForFixVersion") or {}
+        # The expand also carries a `self` URL in some responses; only the status buckets
+        # are numbers, so summing the ints is both the count and the filter.
+        issue_count = sum(value for value in counts.values() if isinstance(value, int))
+        return {
+            "id": version.get("id"),
+            "name": version.get("name"),
+            "description": version.get("description") or "",
+            "released": bool(version.get("released")),
+            "archived": bool(version.get("archived")),
+            # releaseDate once released, startDate while it is still the plan.
+            "date": version.get("releaseDate") or version.get("startDate") or "",
+            "issue_count": issue_count,
+            # Distinguishes "the expand gave us nothing" from "this release really is empty".
+            "_counted": bool(counts),
+        }
+
+    async def _fill_issue_counts(self, client: httpx.AsyncClient, releases: List[Dict[str, Any]]) -> None:
+        """Ask per version for the counts the expand did not provide.
+
+        Only for versions the expand missed, and only for the page being returned, so this
+        is at most `max_results` small requests — the reason the list is paginated at all.
+        A failure here costs a count, not the list: the release is still pickable.
+        """
+        missing = [r for r in releases if not r.pop("_counted", False) and r.get("id")]
+        if not missing:
+            return
+
+        async def count(release: Dict[str, Any]) -> None:
+            try:
+                response = await client.get(
+                    f"{self.base_url}/version/{release['id']}/relatedIssueCounts",
+                    headers=self.headers,
+                    timeout=10.0,
+                )
+                if response.status_code == 200:
+                    release["issue_count"] = response.json().get("issuesFixedCount", 0) or 0
+            except Exception as e:  # noqa: BLE001 — a missing count must not fail the list
+                logger.warning("Could not count issues for version %s: %s", release.get("name"), e)
+
+        await asyncio.gather(*(count(release) for release in missing))
 
     async def get_issue(self, issue_key: str) -> JiraTicket:
         """Get a single issue by key."""

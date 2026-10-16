@@ -112,7 +112,12 @@ credentials stored by the old routes keep working.
   a model validator in `InstructionSetBase` and by swapping the Angular validators in
   `instruction-dialog.component.ts` — so do not put `min_length=1` back on `jql_query`.
   Release lists are read live from Jira (`GET /instructions/{id}/releases`), never stored:
-  a cached list would offer a version that no longer exists.
+  a cached list would offer a version that no longer exists. That endpoint is paginated
+  (`start_at`/`max_results`, five then ten at a time) and goes to Jira's **`/project/{key}/version`**
+  — singular, paginated. Its unpaginated `/versions` sibling accepts `expand=issuesstatus`
+  but does not reliably return the counts, which is why every release once read "0 issues";
+  `_fill_issue_counts` falls back to `/version/{id}/relatedIssueCounts` per version, which
+  is only affordable because the list is a page.
 - **Review is a separate axis from `status`, not a stage of it.** `status` (draft → review →
   approved) is where a note sits in the writer's flow; `reviewer_id`/`reviewed` are one
   person's answer to "have you read this?". A note can be approved with nobody having

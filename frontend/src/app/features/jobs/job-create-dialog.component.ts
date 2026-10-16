@@ -15,6 +15,10 @@ export interface JobCreateDialogData {
   selectedId?: string;
 }
 
+/** The picker opens on the most recent few; everything older is a press away. */
+const FIRST_RELEASES = 5;
+const MORE_RELEASES = 10;
+
 /** One `{name}` the chosen instruction set's query needs a value for. */
 interface StartVariable {
   name: string;
@@ -110,6 +114,11 @@ interface StartVariable {
             @if (!releases.length) {
               <p class="muted no-releases">{{ releasesStatus }}</p>
             }
+            @if (moreReleases) {
+              <button type="button" class="load-more" (click)="loadMoreReleases()" [disabled]="loadingReleases">
+                {{ loadingReleases ? 'Loading…' : 'Load ' + nextBatchSize + ' more' }}
+              </button>
+            }
           </div>
         }
 
@@ -193,6 +202,9 @@ interface StartVariable {
     .release-chip.released { background: var(--color-success-bg); color: var(--color-success-text); }
     .release-date { flex: 1; font-size: 12px; color: var(--text-tertiary); }
     .release-count { font-size: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+    .load-more { align-self: flex-start; background: none; border: none; padding: 4px 2px; cursor: pointer;
+      font: inherit; font-size: 13px; font-weight: 500; color: var(--color-primary); }
+    .load-more:disabled { color: var(--text-tertiary); cursor: default; }
     .preview-block { margin-bottom: 8px; }
     .preview-label { display: block; font-size: 12px; font-weight: 500; color: var(--text-secondary); margin-bottom: 4px; }
     .query-preview { background: var(--bg-secondary); border: 1px solid var(--border-default); border-radius: 6px;
@@ -217,6 +229,11 @@ export class JobCreateDialogComponent implements OnInit {
   releases: JiraRelease[] = [];
   releasesStatus = '';
   chosenRelease = '';
+  loadingReleases = false;
+  /** Jira's totals for the loaded page, so the card can say "5 of 23" and offer more. */
+  private releasesTotal = 0;
+  private releasesNextStart = 0;
+  private releasesHasMore = false;
 
   /**
    * Title and filename follow the instruction set and the variable values until the person
@@ -288,25 +305,53 @@ export class JobCreateDialogComponent implements OnInit {
     this.chosenRelease = release.name;
   }
 
+  get moreReleases(): boolean {
+    return this.releasesHasMore;
+  }
+
+  /** The first page is the five most recent; each press after that fetches ten. */
+  get nextBatchSize(): number {
+    return Math.min(MORE_RELEASES, Math.max(this.releasesTotal - this.releases.length, 1));
+  }
+
   /** Read live from Jira: a release list only exists there, and a stale copy would lie. */
   private loadReleases(): void {
     this.releases = [];
     this.chosenRelease = '';
+    this.releasesTotal = 0;
+    this.releasesNextStart = 0;
+    this.releasesHasMore = false;
     const set = this.selectedInstructionSet;
     if (!set?.id || !this.isReleasesMode) {
       this.releasesStatus = '';
       return;
     }
-    this.releasesStatus = 'Loading…';
-    this.instructionsService.listReleases(set.id).subscribe({
+    this.fetchReleases(set.id, FIRST_RELEASES);
+  }
+
+  loadMoreReleases(): void {
+    const set = this.selectedInstructionSet;
+    if (set?.id && !this.loadingReleases) this.fetchReleases(set.id, MORE_RELEASES);
+  }
+
+  private fetchReleases(instructionSetId: string, count: number): void {
+    this.loadingReleases = true;
+    this.releasesStatus = this.releases.length ? this.releasesStatus : 'Loading…';
+    this.instructionsService.listReleases(instructionSetId, this.releasesNextStart, count).subscribe({
       next: result => {
-        this.releases = result.releases;
-        this.releasesStatus = result.releases.length
-          ? `${result.releases.length} in ${result.project}`
+        this.loadingReleases = false;
+        this.releases = [...this.releases, ...result.releases];
+        this.releasesTotal = result.total;
+        this.releasesNextStart = result.next_start;
+        this.releasesHasMore = result.has_more;
+        this.releasesStatus = this.releases.length
+          ? `${this.releases.length} of ${result.total} in ${result.project}`
           : `No releases found in ${result.project}.`;
       },
       error: error => {
-        this.releases = [];
+        this.loadingReleases = false;
+        this.releasesHasMore = false;
+        if (!this.releases.length) this.releases = [];
         this.releasesStatus = error.error?.detail || 'Could not read releases from Jira';
       }
     });
