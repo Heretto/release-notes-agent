@@ -125,12 +125,14 @@ credentials stored by the old routes keep working.
   "signed in and in this organization", enforced by the API on every call; `/releases/:id/review`
   is a plain route with no token, so the Share-for-review link is just that URL.
   `PATCH /jobs/{id}/items/{item}` skips the idle check when the only fields sent are
-  `reviewer_id`/`reviewed`, so reviewing keeps working while the writer reruns — but
-  **approving is a status change and still needs an idle job**, because the pipeline writes
-  `status` too. `approved_by_id`/`approved_at` travel with the status: set on the way into
-  `approved`, cleared on the way out, since "approved by X" about a note that is now a draft
-  is a lie. Notes approved before that existed show a plain "Approved" with no name. Commenting
-  and resolving a comment are exempt for the same reason. **Resolving is not deleting** —
+  `reviewer_id`/`reviewed`, and commenting and resolving a comment skip it too: none of
+  them touch anything a run writes, and refusing them would break the review page every
+  time the writer reruns. **Approving is not in that set** — it is a status change, and the
+  pipeline writes `status` too, so it still needs an idle job.
+  `approved_by_id`/`approved_at` travel with the status: set on the way into `approved`,
+  cleared on the way out, since "approved by X" about a note that is now a draft is a lie.
+  Notes approved before those columns existed show a plain "Approved" with no name.
+  **Resolving is not deleting** —
   the comment stays readable, so what was asked for survives next to the change that
   answered it. "Ask the agent" in the Details pane hands a comment to the writer agent by
   sending it into the workspace chat (`chatPending` → the chat's `pendingMessage`), rather
