@@ -449,6 +449,14 @@ async def update_job_item(
     if update.status is not None and update.status != item.status:
         previous = item.status
         item.status = update.status
+        # The signature travels with the status: set on the way into approved, cleared on
+        # the way out, because "approved by X" about a note that is now a draft is a lie.
+        if item.status == ItemStatus.APPROVED:
+            item.approved_by_id = user_id
+            item.approved_at = datetime.now(timezone.utc)
+        elif previous == ItemStatus.APPROVED:
+            item.approved_by_id = None
+            item.approved_at = None
         record_history(db, item, HistoryEvent.STATUS_CHANGED, f"Status changed from {previous} to {item.status}",
                        actor="user", user_id=user_id, details={"from": previous, "to": item.status})
         changed = True

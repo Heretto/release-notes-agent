@@ -66,7 +66,12 @@ interface ReviewGroup {
                       <span class="rv-dot" [class.needs]="needsMe(note)" [class.done]="note.reviewed"
                             [matTooltip]="indicatorTitle(note)"></span>
                       <span class="rv-note-text">
-                        <span class="rv-note-title">{{ note.title }}</span>
+                        <span class="rv-note-title">
+                          {{ note.title }}
+                          @if (note.status === 'approved') {
+                            <mat-icon class="rv-approved-mark" [matTooltip]="approvalText(note)">verified</mat-icon>
+                          }
+                        </span>
                         <span class="muted">{{ noteMeta(note) }}</span>
                       </span>
                     </button>
@@ -88,21 +93,39 @@ interface ReviewGroup {
                   <span class="rv-assign" [class.mine]="isMine(selected)" [class.done]="selected.reviewed">
                     {{ assignLabel(selected) }}
                   </span>
+                  @if (selected.status === 'approved') {
+                    <span class="rv-assign done">Approved</span>
+                  }
                 </div>
                 <h2>{{ selected.title }}</h2>
                 <p class="rv-summary">{{ selected.summary }}</p>
 
                 <div class="rv-review-actions">
-                  @if (isMine(selected) && !selected.reviewed) {
-                    <button mat-flat-button color="primary" (click)="setReviewed(true)" [disabled]="saving">
-                      Mark as reviewed
+                  @if (selected.status === 'approved') {
+                    <span class="rv-approved">
+                      <mat-icon class="inline-icon">verified</mat-icon>
+                      {{ approvalText(selected) }}
+                    </span>
+                    <button mat-button (click)="setApproved(false)" [disabled]="saving">Undo approval</button>
+                  } @else {
+                    <button mat-flat-button color="primary" (click)="setApproved(true)" [disabled]="saving">
+                      <mat-icon>verified</mat-icon> Approve
                     </button>
-                    <span class="muted">Tells the writer you are done with this note.</span>
-                  } @else if (selected.reviewed) {
+                    <span class="muted">Says this note is ready to publish.</span>
+                  }
+                </div>
+
+                <div class="rv-review-actions rv-reviewed-row">
+                  @if (selected.reviewed) {
                     <span class="rv-reviewed"><mat-icon class="inline-icon">check</mat-icon> Reviewed</span>
                     @if (isMine(selected)) {
                       <button mat-button (click)="setReviewed(false)" [disabled]="saving">Undo</button>
                     }
+                  } @else if (isMine(selected)) {
+                    <button mat-stroked-button (click)="setReviewed(true)" [disabled]="saving">
+                      Mark as reviewed
+                    </button>
+                    <span class="muted">Tells the writer you are done reading this note.</span>
                   }
                 </div>
 
@@ -203,6 +226,11 @@ interface ReviewGroup {
       border-bottom: 1px solid var(--border-light); }
     .rv-reviewed { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 600;
       color: var(--color-success-text); }
+    .rv-reviewed-row { border-bottom: none; padding-bottom: 0; padding-top: 10px; }
+    .rv-approved { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 600;
+      color: var(--color-success-text); }
+    .rv-approved-mark { font-size: 14px; width: 14px; height: 14px; vertical-align: middle;
+      color: var(--color-success-text); margin-left: 4px; }
     .rv-note-view h3 { margin: 20px 0 10px; font-size: 13px; font-weight: 600; }
     .rv-comment { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border-light); }
     .rv-comment.resolved .rv-comment-text, .rv-comment.resolved .rv-comment-name { color: var(--text-tertiary); }
@@ -373,6 +401,36 @@ export class ReviewComponent implements OnInit {
     this.jobsService.getItem(this.job!.id, itemId).subscribe({
       next: item => this.selected = item,
       error: () => this.snackBar.open('Could not load that note', 'Close', { duration: 3000 })
+    });
+  }
+
+  /** "Approved by someone@example.com on 14 Oct" — or just "Approved" for older notes. */
+  approvalText(item: ReleaseNoteItem): string {
+    if (item.status !== 'approved') return '';
+    if (!item.approved_by_email) return 'Approved';
+    const when = item.approved_at ? new Date(item.approved_at).toLocaleString() : '';
+    return when
+      ? `Approved by ${item.approved_by_email} on ${when}`
+      : `Approved by ${item.approved_by_email}`;
+  }
+
+  setApproved(approved: boolean): void {
+    if (!this.selected || this.saving) return;
+    this.saving = true;
+    // Back to review, not draft: the note has been written and read, it is the sign-off
+    // that was withdrawn.
+    const status = approved ? 'approved' : 'review';
+    this.jobsService.updateItem(this.job!.id, this.selected.id, { status }).subscribe({
+      next: item => {
+        this.saving = false;
+        this.applyUpdate(item);
+      },
+      error: error => {
+        this.saving = false;
+        this.snackBar.open(
+          typeof error.error?.detail === 'string' ? error.error.detail : 'Could not save that',
+          'Close', { duration: 5000 });
+      }
     });
   }
 
