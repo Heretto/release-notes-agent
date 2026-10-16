@@ -142,9 +142,9 @@ interface ReviewGroup {
   `,
   changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
-    /* Inside the app shell, like the workspace — the same 96px of chrome comes off. */
-    :host { display: block; }
-    .review { display: flex; flex-direction: column; height: calc(100vh - 96px); min-height: 480px; background: var(--bg-primary); }
+    /* Standalone — this view owns the whole window, with no shell chrome above it. */
+    :host { display: block; height: 100vh; }
+    .review { display: flex; flex-direction: column; height: 100%; background: var(--bg-primary); }
     .loading { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 80px; }
     .rv-header { display: flex; align-items: center; gap: 12px; padding: 12px 20px;
       border-bottom: 1px solid var(--border-default); flex-shrink: 0; }
@@ -209,7 +209,7 @@ interface ReviewGroup {
       font: inherit; font-size: 14px; background: transparent; color: var(--text-primary); }
     .rv-compose-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 6px; }
     .rv-placeholder { display: flex; align-items: center; justify-content: center; height: 100%; font-size: 14px; }
-    @media (max-width: 1024px) { .review { height: auto; } .rv-body { grid-template-columns: 1fr; } }
+    @media (max-width: 1024px) { :host { height: auto; } .review { height: auto; } .rv-body { grid-template-columns: 1fr; } }
   `]
 })
 export class ReviewComponent implements OnInit {

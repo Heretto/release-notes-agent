@@ -61,10 +61,13 @@ interface ReviewerRow {
   `,
   changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
-    mat-dialog-content { min-width: 480px; max-width: 560px; }
-    .intro { color: var(--text-secondary); font-size: 13px; margin: 0 0 16px 0; }
+    /* Material caps dialog content at 65vh, which this content clears on a short window and
+       then scrolls for no reason. It is a short, fixed-shape dialog — give it room, and keep
+       a cap so a long reviewer list still scrolls rather than running off the screen. */
+    mat-dialog-content { min-width: 480px; max-width: 560px; max-height: 76vh; }
+    .intro { color: var(--text-secondary); font-size: 13px; margin: 0 0 14px 0; }
     .label { display: block; font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
-    .rows { display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px; }
+    .rows { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
     .row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border: 1px solid var(--border-default); border-radius: 6px; }
     .row.unassigned .name, .row.unassigned .count { color: var(--text-tertiary); }
     .avatar { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px;

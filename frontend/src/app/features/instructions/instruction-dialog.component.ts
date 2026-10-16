@@ -162,7 +162,9 @@ import { JqlPart, JqlVariableSpec, defaultsOf, jqlParts, variableNames } from '.
               </div>
             </div>
           } @else {
-          <mat-form-field appearance="outline" class="full-width">
+          <!-- subscriptSizing="dynamic": the hint wraps to two lines, and the default fixed
+               one-line subscript lets it run into the Variables card below. -->
+          <mat-form-field appearance="outline" class="full-width jql-field" subscriptSizing="dynamic">
             <mat-label>JQL query</mat-label>
             <textarea matInput formControlName="jql_query" rows="3" required
                       placeholder="e.g., project = MYPROJECT AND fixVersion = '1.0' ORDER BY created DESC"></textarea>
@@ -356,6 +358,7 @@ import { JqlPart, JqlVariableSpec, defaultsOf, jqlParts, variableNames } from '.
     .release-chip.released { background: var(--color-success-bg); color: var(--color-success-text); }
     .release-date { flex: 1; font-size: 12px; color: var(--text-tertiary); }
     .release-count { font-size: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+    .jql-field { margin-bottom: 12px; }
     .vars-card { border: 1px solid var(--border-default); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; background: var(--bg-secondary); }
     .vars-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
     .vars-title { font-size: 13px; font-weight: 600; }

@@ -9,6 +9,15 @@ export const routes: Routes = [
   { path: 'reset-password', loadComponent: () => import('@heretto/hop-ui').then(m => m.HopResetPasswordComponent) },
   { path: 'auth/sso/complete', loadComponent: () => import('@heretto/hop-ui').then(m => m.HopSSOCallbackComponent) },
 
+  // Protected, but deliberately outside the shell: review is a reading view for people who
+  // are not working in the app, so it carries no navigation. It must sit before the shell
+  // route or the shell would claim the URL and wrap it in the layout.
+  {
+    path: 'releases/:id/review',
+    canActivate: [hopAuthGuard],
+    loadComponent: () => import('./features/jobs/review/review.component').then(m => m.ReviewComponent),
+  },
+
   // Protected routes (with layout)
   {
     path: '',
@@ -38,10 +47,6 @@ export const routes: Routes = [
       {
         path: 'releases/:id',
         loadComponent: () => import('./features/jobs/job-detail.component').then(m => m.JobDetailComponent),
-      },
-      {
-        path: 'releases/:id/review',
-        loadComponent: () => import('./features/jobs/review/review.component').then(m => m.ReviewComponent),
       },
       {
         path: 'releases/:id/workspace',
