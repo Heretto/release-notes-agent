@@ -26,7 +26,7 @@ interface ReviewerRow {
   template: `
     <h2 mat-dialog-title>Share for review</h2>
 
-    <mat-dialog-content>
+    <mat-dialog-content class="share-content">
       <p class="intro">
         Anyone signed in to this organization can open the link and read every note and comment.
         Assigned reviewers see which notes are theirs.
@@ -61,10 +61,12 @@ interface ReviewerRow {
   `,
   changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
-    /* Material caps dialog content at 65vh, which this content clears on a short window and
-       then scrolls for no reason. It is a short, fixed-shape dialog — give it room, and keep
-       a cap so a long reviewer list still scrolls rather than running off the screen. */
-    mat-dialog-content { min-width: 480px; max-width: 560px; max-height: 76vh; }
+    /* Material caps dialog content at 65vh. This dialog grows with the reviewer list, so
+       cap it in pixels instead: it expands to 600px and only then scrolls. The min() keeps
+       the vh floor for a short window, where a flat 600px would run off the screen. The
+       class is here for specificity — Material's rule is a class selector, so a bare
+       element selector is a coin toss. */
+    mat-dialog-content.share-content { min-width: 480px; max-width: 560px; max-height: min(600px, 80vh); }
     .intro { color: var(--text-secondary); font-size: 13px; margin: 0 0 14px 0; }
     .label { display: block; font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
     .rows { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }

@@ -474,6 +474,8 @@ export class WorkspaceComponent implements OnInit, OnDestroy {
   shareForReview(): void {
     this.dialog.open(ShareReviewDialogComponent, {
       width: '560px',
+      // The content caps itself at 600px; this just stops the surface clipping it first.
+      maxHeight: '90vh',
       data: { jobId: this.job!.id, items: this.items }
     });
   }
