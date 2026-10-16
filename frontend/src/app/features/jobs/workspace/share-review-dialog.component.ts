@@ -61,13 +61,21 @@ interface ReviewerRow {
   `,
   changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
-    /* Material caps dialog content at 65vh, and a fixed pixel cap turned out to be no
-       better: whatever number is chosen, a reviewer list one row longer scrolls against it.
-       So there is no cap here. The content grows to fit, and the only limit is the dialog's
-       own maxHeight (95vh, set where it is opened) — it scrolls when the window genuinely
-       cannot take it, and not before. The class is for specificity: Material's rule is a
-       class selector, so a bare element selector is a coin toss. */
-    mat-dialog-content.share-content { min-width: 480px; max-width: 560px; max-height: none; }
+    /* The scrollbar here was never a height problem. Material gives a dialog that has
+       actions a padding of 20px 24px 0 — no bottom padding — and the last thing in this
+       content is a button, whose .mat-mdc-button-touch-target is 48px tall and centred, so
+       it hangs ~6px below a 36px button, overflows the content box and trips overflow:auto.
+       The bottom padding absorbs it. Specificity: Material's rule is two classes, so this
+       needs the class as well as the element to win.
+       The height cap can then do what it was meant to — expand to 600px, then scroll —
+       with the second term guarding a window too short for that (the space available is the
+       window minus this dialog's own chrome, not a fraction of it). */
+    mat-dialog-content.share-content {
+      min-width: 480px;
+      max-width: 560px;
+      max-height: min(600px, calc(100vh - 190px));
+      padding-bottom: 20px;
+    }
     .intro { color: var(--text-secondary); font-size: 13px; margin: 0 0 10px 0; }
     .label { display: block; font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px; }
     .rows { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
