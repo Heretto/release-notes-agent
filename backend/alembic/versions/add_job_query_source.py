@@ -14,7 +14,7 @@ NOTE: revision IDs must stay <= 32 characters — alembic_version.version_num is
 VARCHAR(32), and a longer ID fails the version-table write *after* the DDL runs.
 
 Revision ID: add_job_query_source
-Revises: add_comment_resolved
+Revises: add_item_approved_by
 Create Date: 2026-10-16
 """
 
@@ -22,7 +22,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = 'add_job_query_source'
-down_revision = 'add_comment_resolved'
+down_revision = 'add_item_approved_by'
 branch_labels = None
 depends_on = None
 
