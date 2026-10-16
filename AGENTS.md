@@ -27,8 +27,7 @@ evaluates them, consolidates and organizes release note items, writes one DITA f
 item, and assembles topics; a person then finishes the notes in the workspace
 (`/jobs/:id/workspace`) with the writer agent in chat. `docs/COLLABORATIVE_WORKFLOW.md` is the
 map: pipeline stages, rerun semantics (unchanged issues keep their notes; changes go to each
-note's history), the fragment shape (`<div outputclass="release-note">` inside group
-`<section>`s), and the chat tools. Backend entry points: `app/services/release_notes_pipeline.py`
+note's history), the fragment shape (a note stores **content**, and assembly wraps it), and the chat tools. Backend entry points: `app/services/release_notes_pipeline.py`
 (stages), `workspace_service.py` (assembly, history, publishing, response shapes),
 `workspace_chat.py` (agent tools), `topic_assembler.py` (fragment validation and chunking).
 `tests/integration/test_pipeline_with_fakes.py` runs the whole pipeline against the local
@@ -43,12 +42,12 @@ change in the output and reasonably reported the guidance as ignored. The block 
 itself on the way in: the writer is told to follow every rule about **this note** and to
 ignore rules about the topic around it. That is not politeness — a writer told to emit
 `<title>`, `<shortdesc>` or `<ul>` wrappers returns a fragment that fails DTD validation and
-the note silently falls back to its plain summary. Topic-level structure is
-`topic_assembler.build_topic_xml`, which is **not** configurable: it emits
-`<topic><title/><body>` with one `<section><title>` per group. A house style that wants a
-different topic shape (notes as `<li>` in one shared `<ul>`, a bold paragraph per product
-instead of a section title) cannot be delivered by prompting and needs that function and the
-`<div outputclass="release-note">` fragment contract to change together.
+the note silently falls back to its plain summary. Topic-level structure is `topic_assembler.build_topic_xml`, and it is
+being made configurable (`feature/configurable-topic-structure`): a note now stores
+**content**, and assembly decides the element around it. Whatever that element is, assembly
+stamps it with the note's `fragment_id` and `outputclass="release-note"` — the workspace
+preview maps rendered DITA back to a note through exactly that pair, so every layout mode
+must keep doing it.
 
 **Instruction sets name agents by role** (`writer_agent_id`, `analysis_agent_id`), not an
 ordered chain; the `instruction_set_agents` table is gone (migration

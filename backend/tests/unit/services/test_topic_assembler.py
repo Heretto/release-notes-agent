@@ -4,12 +4,13 @@ import uuid
 from types import SimpleNamespace
 
 import pytest
+from lxml import etree
 
 from app.models.database import ChunkingStrategy
 from app.services.llm_json import extract_json
 from app.services.topic_assembler import (
-    FragmentError, build_topic_xml, coerce_fragment, fragment_title, normalize_fragment, plan_topics,
-    plain_text_fragment, validate_fragment, validate_topic,
+    FragmentError, build_topic_xml, coerce_fragment, fragment_title, normalize_fragment,
+    note_element, plan_topics, plain_text_fragment, validate_fragment, validate_topic,
 )
 
 
@@ -25,9 +26,12 @@ def _item(title, group=None, position=0, status="draft", components=(), dita=Non
 
 
 class TestNormalizeFragment:
-    def test_bare_div_is_kept_and_identified(self):
+    """A note stores its content. The element around it is assembly's decision."""
+
+    def test_a_wrapping_div_is_unwrapped(self):
         out = normalize_fragment('<div><p><b>T</b></p><p>Body</p></div>', "rn-1", "T")
-        assert out.startswith('<div id="rn-1" outputclass="release-note">')
+        assert not out.lstrip().startswith("<div")
+        assert "outputclass" not in out and 'id="rn-1"' not in out
         assert "<p>Body</p>" in out
 
     def test_code_fences_and_declarations_are_stripped(self):
@@ -39,9 +43,14 @@ class TestNormalizeFragment:
         assert "<section" not in out and "<title>" not in out
         assert fragment_title(out) == "Lead"
 
-    def test_sibling_elements_are_wrapped(self):
+    def test_sibling_elements_are_kept_side_by_side(self):
         out = normalize_fragment("<p>One</p><ul><li>Two</li></ul>", "rn-1", "T")
-        assert out.count("<div") == 1 and "<li>Two</li>" in out
+        assert "<div" not in out
+        assert "<p>One</p>" in out and "<li>Two</li>" in out
+
+    def test_loose_text_becomes_a_paragraph(self):
+        # Bare text is not valid inside a <div> or an <li>, so it cannot be stored raw.
+        assert normalize_fragment("Just a sentence.", "rn-1", "T") == "<p>Just a sentence.</p>"
 
     def test_malformed_xml_is_rejected(self):
         with pytest.raises(FragmentError):
@@ -51,23 +60,42 @@ class TestNormalizeFragment:
         with pytest.raises(FragmentError):
             normalize_fragment("```\n```", "rn-1", "T")
 
-    def test_stray_attributes_are_dropped(self):
+    def test_the_wrappers_attributes_do_not_survive(self):
         out = normalize_fragment('<div class="x" id="other"><p>Body</p></div>', "rn-9", "T")
-        assert 'id="rn-9"' in out and ' class=' not in out and 'id="other"' not in out
+        assert ' class=' not in out and 'id="other"' not in out
+
+
+class TestNoteElement:
+    """The same stored content, placed in whichever element assembly asks for."""
+
+    def test_the_wrapper_carries_the_identity(self):
+        item = _item("A", None, 0, dita="<p>Body</p>")
+        for tag in ("div", "li"):
+            xml = etree.tostring(note_element(item, tag), encoding="unicode")
+            assert xml.startswith(f"<{tag} ")
+            assert f'id="{item.fragment_id}"' in xml
+            # The workspace finds a note in rendered DITA by this pair; every mode keeps it.
+            assert 'outputclass="release-note"' in xml
+            assert "<p>Body</p>" in xml
+
+    def test_unparseable_content_still_produces_an_element(self):
+        item = _item("A", None, 0, dita="<p>broken")
+        xml = etree.tostring(note_element(item, "li"), encoding="unicode")
+        assert "A summary" in xml
 
 
 class TestValidation:
     def test_valid_fragment_passes(self):
-        assert validate_fragment('<div id="rn-1"><p>ok <tt>x</tt></p><pre>y</pre><note type="tip"><p>n</p></note></div>') == []
+        assert validate_fragment('<p>ok <tt>x</tt></p><pre>y</pre><note type="tip"><p>n</p></note>') == []
 
     def test_invalid_element_is_reported_without_temp_paths(self):
-        errors = validate_fragment('<div id="rn-1"><p>ok</p><steps/></div>')
+        errors = validate_fragment('<p>ok</p><steps/>')
         assert errors and all(not e.startswith("/") for e in errors)
         assert any("steps" in e for e in errors)
 
     def test_coerce_raises_with_errors(self):
         with pytest.raises(FragmentError) as info:
-            coerce_fragment("<div><p>ok</p><steps/></div>", "rn-1", "T")
+            coerce_fragment("<p>ok</p><steps/>", "rn-1", "T")
         assert info.value.errors
 
 
@@ -112,7 +140,7 @@ class TestTopicXml:
         assert "<section" not in xml and validate_topic(xml) == []
 
     def test_a_broken_fragment_falls_back_to_plain_text(self):
-        item = _item("A", None, 0, dita="<div><p>broken</div>")
+        item = _item("A", None, 0, dita="<p>broken")
         plan = plan_topics([item], ChunkingStrategy.SINGLE, "R", "n")[0]
         xml = build_topic_xml(plan)
         assert validate_topic(xml) == [] and "A summary" in xml

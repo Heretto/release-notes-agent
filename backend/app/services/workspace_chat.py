@@ -58,7 +58,7 @@ TOOLS: List[ToolSpec] = [
           {"issue_key": {"type": "string", "description": "The Jira key, e.g. PROJ-123."}}, ["issue_key"]),
     _tool("update_note",
           "Change a note's headline, summary and/or DITA content. Send the COMPLETE fragment when "
-          "changing content — one <div outputclass=\"release-note\"> element. Invalid DITA is "
+          "changing content — the note's body elements, with no wrapper around them. Invalid DITA is "
           "rejected with the errors; fix them and call again.",
           {"note_id": NOTE_ID,
            "title": {"type": "string", "description": "New headline (optional)."},

@@ -196,7 +196,7 @@ import {
                 </ul>
               }
               <div class="editor-actions">
-                <span class="muted">One <code>&lt;div outputclass="release-note"&gt;</code>; validated against DITA 1.3 on save</span>
+                <span class="muted">The note's body elements, no wrapper; validated against DITA 1.3 on save</span>
                 <span class="spacer"></span>
                 <button mat-button (click)="resetDita()" [disabled]="!ditaDirty || saving">Reset</button>
                 <button mat-flat-button color="primary" (click)="saveDita()" [disabled]="!ditaDirty || saving">Save</button>

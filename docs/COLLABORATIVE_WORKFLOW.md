@@ -11,7 +11,7 @@ that the agent drafts and the writer then finishes with the agent in a workspace
 | `evaluate` | The analysis agent reads issues in batches and decides, per issue, whether it carries a change end users need to know about, and lists the candidate notes (an issue can yield several). | `job_jira_issues.relevance` |
 | `consolidate` | One pass over all candidates to merge duplicates and fix the final list; each note keeps the keys of every issue it came from. | `release_note_items` + `release_note_item_issues` |
 | `organize` | The analysis agent groups and orders the notes following the instruction set's organization guidance. | `release_note_items.group_name` / `position` |
-| `write` | The writer agent writes one DITA fragment per note (a `<div outputclass="release-note">`); each fragment is validated. | `release_note_items.dita_content` |
+| `write` | The writer agent writes the body of one note per item — DITA elements with no wrapper; each is validated. | `release_note_items.dita_content` |
 | `assemble` | Notes are placed into topics according to the chunking strategy (`single`, `by_group`, `by_component`), every topic is DTD-validated, and a download artifact is written per topic. | `release_note_topics`, `job_artifacts` |
 | `publish` | Optional: topics go to Heretto (create on first publish, update afterwards). | `release_note_topics.heretto_doc_id` |
 

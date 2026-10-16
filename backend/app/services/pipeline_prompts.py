@@ -181,16 +181,16 @@ def organize_input(items: Sequence[ReleaseNoteItem]) -> str:
 
 FRAGMENT_FORMAT = """## Output format
 
-Return exactly one DITA 1.3 fragment and nothing else: a single <div> element. No XML
-declaration, no DOCTYPE, no <topic>, no <section>, no <title>, no markdown, no commentary
-before or after it.
+Return the body of one release note and nothing else: DITA 1.3 elements, no wrapper around
+them. No XML declaration, no DOCTYPE, no <topic>, no <section>, no <title>, no <div>, no
+markdown, no commentary before or after. The element the note sits in is added when the
+notes are assembled into topics, and it differs between instruction sets — so returning one
+yourself gets it thrown away at best.
 
-<div outputclass="release-note">
-  <p><b>Headline for the change</b></p>
-  <p>What changed, written for the person it affects, and what they can now do or should do.</p>
-</div>
+<p><b>Headline for the change</b></p>
+<p>What changed, written for the person it affects, and what they can now do or should do.</p>
 
-Inside the <div> you may use <p>, <ul>/<ol> with <li>, <b>, <i>, <tt> (for code, names of
+You may use <p>, <ul>/<ol> with <li>, <b>, <i>, <tt> (for code, names of
 settings, paths and UI labels), <pre> (for code blocks), <note type="note|important|warning|tip">,
 <dl> with <dlentry><dt/><dd/></dlentry>, <simpletable>, and
 <xref href="https://…" scope="external" format="html">. Do NOT use <codeph>, <codeblock>,

@@ -1,6 +1,11 @@
 """Turning release note items into DITA topics.
 
-Every note is a body-level fragment — one ``<div outputclass="release-note">`` — so notes can
+Every note stores **content**, not a wrapper: the children that go inside whatever element
+assembly decides to put them in. The wrapper is assembly's business, so a note can be a
+``<div>`` in one instruction set and an ``<li>`` inside a shared ``<ul>`` in another without
+the stored note changing. Whatever the element, assembly stamps it with the note's
+``fragment_id`` and ``outputclass="release-note"`` — that pair is what lets the workspace map
+rendered DITA back to the note it came from, and nothing downstream should assume more. Notes can
 be grouped under ``<section>`` headings, split across topics, and re-split later without the
 writer agent rewriting anything. This module owns that fragment shape (normalizing what a
 model returns into it, validating it against the DITA 1.3 DTD), the chunking strategies that
@@ -63,10 +68,15 @@ def _strip_wrappers(text: str) -> str:
 
 
 def normalize_fragment(raw: str, fragment_id: str, title: str) -> str:
-    """Coerce a model's output into one ``<div id=... outputclass="release-note">``.
+    """Coerce a model's output into a note's **content** — body-level elements, no wrapper.
 
     Accepts a bare ``<div>``, several sibling elements, or a fragment wrapped in a
-    ``<section>``/``<topic>``; rejects anything that is not well-formed XML.
+    ``<section>``/``<topic>``; rejects anything that is not well-formed XML. A wrapping
+    ``<div>`` is unwrapped rather than kept: which element holds this content is decided
+    when the topic is assembled, so storing one here would fix it for every mode.
+
+    `fragment_id` is still taken so callers do not have to change and so the signature says
+    which note this is; it is no longer written into the content.
     """
     text = _strip_wrappers(raw)
     if not text:
@@ -127,33 +137,41 @@ def normalize_fragment(raw: str, fragment_id: str, title: str) -> str:
         bold.text = "".join(title_el.itertext()).strip()
         title_el.getparent().replace(title_el, lead)
 
-    for attr in list(div.attrib):
-        if attr not in ("outputclass",):
-            del div.attrib[attr]
-    div.set("id", fragment_id)
-    div.set("outputclass", "release-note")
-
     if not len(div) and not (div.text or "").strip():
         raise FragmentError("The fragment has no content")
 
-    return etree.tostring(div, encoding="unicode", pretty_print=True).strip()
+    # Serialize the children, not the holder. Loose text directly inside the holder would
+    # not be valid in a <div> or an <li> either, so it is wrapped first.
+    if (div.text or "").strip():
+        lead = etree.Element("p")
+        lead.text = div.text.strip()
+        div.text = None
+        div.insert(0, lead)
+
+    return "\n".join(
+        etree.tostring(child, encoding="unicode", pretty_print=True).strip()
+        for child in div
+        if isinstance(child.tag, str)
+    ).strip()
 
 
 def plain_text_fragment(fragment_id: str, title: str, summary: str) -> str:
-    """The fallback when a model cannot produce valid DITA: the plain summary, escaped."""
+    """The fallback when a model cannot produce valid DITA: the plain summary, escaped.
+
+    Content only, like everything else stored on a note. `fragment_id` is unused and kept
+    so the many call sites do not all have to change at once.
+    """
     body = escape((summary or "").strip() or title)
-    return (
-        f'<div id="{fragment_id}" outputclass="release-note">\n'
-        f"  <p><b>{escape(title)}</b></p>\n"
-        f"  <p>{body}</p>\n"
-        f"</div>"
-    )
+    return f"<p><b>{escape(title)}</b></p>\n<p>{body}</p>"
 
 
 def fragment_title(fragment: str) -> Optional[str]:
-    """The bold lead of a fragment, if it has one."""
+    """The bold lead of a note's content, if it has one.
+
+    Wrapped before parsing because a note is content now, not one element.
+    """
     try:
-        div = etree.fromstring(fragment, _parser())
+        div = etree.fromstring(f"<div>{fragment}</div>", _parser())
     except etree.XMLSyntaxError:
         return None
     first = next((c for c in div if isinstance(c.tag, str)), None)
@@ -162,10 +180,19 @@ def fragment_title(fragment: str) -> Optional[str]:
     return None
 
 
+#: What a note's content is wrapped in while it is validated. Assembly can place the same
+#: content in a different element (stage 2 makes that configurable); <div> is the most
+#: permissive body-level holder, so content that validates here validates anywhere it is
+#: later put.
+VALIDATION_WRAPPER = "div"
+
+
 def _wrap_for_validation(fragment: str) -> str:
     return (
         f'<?xml version="1.0" encoding="UTF-8"?>\n{DOCTYPE}\n'
-        f'<topic id="validation"><title>Validation</title><body>{fragment}</body></topic>'
+        f'<topic id="validation"><title>Validation</title><body>'
+        f'<{VALIDATION_WRAPPER}>{fragment}</{VALIDATION_WRAPPER}>'
+        f'</body></topic>'
     )
 
 
@@ -307,13 +334,19 @@ def plan_topics(
 
 # ── Topic XML ────────────────────────────────────────────────────────────────────────
 
-def _fragment_element(item: ReleaseNoteItem) -> etree._Element:
-    """The item's fragment as an element, falling back to plain text if it will not parse."""
-    source = item.dita_content or plain_text_fragment(item.fragment_id, item.title, item.summary)
+def note_element(item: ReleaseNoteItem, tag: str = "div") -> etree._Element:
+    """A note's stored content inside `tag`, identified so the workspace can find it again.
+
+    The id and `outputclass="release-note"` go on whatever element holds the content. The
+    workspace maps rendered DITA back to a note through exactly that pair, so every mode
+    must keep stamping it — see build_topic_xml and the preview in workspace.component.ts.
+    """
+    content = item.dita_content or plain_text_fragment(item.fragment_id, item.title, item.summary)
     try:
-        el = etree.fromstring(source, _parser())
+        el = etree.fromstring(f"<{tag}>{content}</{tag}>", _parser())
     except etree.XMLSyntaxError:
-        el = etree.fromstring(plain_text_fragment(item.fragment_id, item.title, item.summary), _parser())
+        fallback = plain_text_fragment(item.fragment_id, item.title, item.summary)
+        el = etree.fromstring(f"<{tag}>{fallback}</{tag}>", _parser())
     el.set("id", item.fragment_id)
     el.set("outputclass", "release-note")
     return el
@@ -339,11 +372,11 @@ def build_topic_xml(plan: TopicPlan, shortdesc: Optional[str] = None) -> str:
             section_title = etree.SubElement(section, "title")
             section_title.text = name or "Other changes"
             for item in group_items:
-                section.append(_fragment_element(item))
+                section.append(note_element(item))
     else:
         for _, group_items in plan.groups:
             for item in group_items:
-                body.append(_fragment_element(item))
+                body.append(note_element(item))
 
     xml = etree.tostring(topic, encoding="unicode", pretty_print=True)
     return f'<?xml version="1.0" encoding="UTF-8"?>\n{DOCTYPE}\n{xml}'
