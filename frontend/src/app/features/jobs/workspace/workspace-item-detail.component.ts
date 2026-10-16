@@ -89,6 +89,12 @@ import {
           }
         </div>
 
+        @if (approvalText) {
+          <p class="approval-line muted">
+            <mat-icon class="inline-icon">verified</mat-icon> {{ approvalText }}
+          </p>
+        }
+
         <div class="notes-block">
           <span class="notes-label">Notes</span>
           @if (editingNotes) {
@@ -320,6 +326,7 @@ import {
     .notes-empty:disabled { cursor: default; }
     .status-field { width: 150px; }
     .reviewer-field { flex: 1; }
+    .approval-line { display: flex; align-items: center; gap: 5px; margin: 0 16px 8px; }
     .reviewed-chip { display: inline-flex; align-items: center; gap: 4px; align-self: center; font-size: 12px;
       font-weight: 600; padding: 4px 10px; border-radius: 999px;
       background: var(--color-success-bg); color: var(--color-success-text); }
@@ -493,6 +500,16 @@ export class WorkspaceItemDetailComponent implements OnChanges, OnInit {
     const title = this.titleDraft.trim();
     if (!title || title === this.item?.title) { this.editingTitle = false; return; }
     this.save({ title }, 'Headline updated');
+  }
+
+  /** Who signed this note off and when, for the line under the status fields. */
+  get approvalText(): string {
+    const item = this.item;
+    if (!item || item.status !== 'approved' || !item.approved_by_email) return '';
+    const when = item.approved_at ? new Date(item.approved_at).toLocaleString() : '';
+    return when
+      ? `Approved by ${item.approved_by_email} on ${when}`
+      : `Approved by ${item.approved_by_email}`;
   }
 
   setReviewer(reviewerId: string | null): void {

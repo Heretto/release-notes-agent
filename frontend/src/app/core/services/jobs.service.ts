@@ -157,6 +157,9 @@ export interface ReleaseNoteItem {
   reviewer_email?: string | null;
   reviewed: boolean;
   comment_count: number;
+  /** Who put the note into `approved`, and when. Cleared if it leaves that status. */
+  approved_by_email?: string | null;
+  approved_at?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
 }
