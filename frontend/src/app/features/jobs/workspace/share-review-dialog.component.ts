@@ -61,15 +61,13 @@ interface ReviewerRow {
   `,
   changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
-    /* Material caps dialog content at 65vh. This dialog grows with the reviewer list, so
-       cap it in pixels instead: it expands to 600px and only then scrolls. The second term
-       is the guard for a window too short for that, and is a subtraction rather than a
-       fraction — what the content can have is the window minus this dialog's own chrome
-       (title, actions, overlay margin), which 80vh underestimated. The class is here for
-       specificity: Material's rule is a class selector, so a bare element selector is a
-       coin toss. */
-    mat-dialog-content.share-content { min-width: 480px; max-width: 560px;
-      max-height: min(600px, calc(100vh - 190px)); }
+    /* Material caps dialog content at 65vh, and a fixed pixel cap turned out to be no
+       better: whatever number is chosen, a reviewer list one row longer scrolls against it.
+       So there is no cap here. The content grows to fit, and the only limit is the dialog's
+       own maxHeight (95vh, set where it is opened) — it scrolls when the window genuinely
+       cannot take it, and not before. The class is for specificity: Material's rule is a
+       class selector, so a bare element selector is a coin toss. */
+    mat-dialog-content.share-content { min-width: 480px; max-width: 560px; max-height: none; }
     .intro { color: var(--text-secondary); font-size: 13px; margin: 0 0 10px 0; }
     .label { display: block; font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px; }
     .rows { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
