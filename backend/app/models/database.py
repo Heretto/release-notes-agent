@@ -188,6 +188,10 @@ class Job(Base):
     # {name: value} — the variable values it was resolved from, so a run can be explained
     # and rerun without re-deriving them.
     variables = Column(JSON, nullable=False, default=dict, server_default="{}")
+    # True when jql_query was built from the instruction set — its template, or a Jira
+    # release — so a rerun can rebuild it from the set as it stands now. False when the
+    # caller supplied a query of its own, which must survive a rerun untouched.
+    uses_instruction_query = Column(Boolean, nullable=False, default=True, server_default="true")
     status = Column(SQLEnum(JobStatus), nullable=False, default=JobStatus.PENDING)
     triggered_by = Column(SQLEnum(JobTrigger), nullable=False)
     output_filename = Column(String(255))

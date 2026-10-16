@@ -132,6 +132,18 @@ credentials stored by the old routes keep working.
   sending it into the workspace chat (`chatPending` → the chat's `pendingMessage`), rather
   than calling the agent behind the scenes, so what was asked and what the agent did sit in
   one transcript the person can read and undo.
+- **A rerun re-reads the instruction set, including its query.** Everything the pipeline
+  needs — agents, guidance, the Jira credential, publish settings — it already loads live
+  from `job.instruction_set`, so an edit to the set reaches the next run on its own. The
+  one exception was `jobs.jql_query`, resolved once when the release was started;
+  `_queue_run` now rebuilds it through `jql_variables.query_for_job`. That deliberately
+  leaves the stored query alone in three cases: `uses_instruction_query` is false (the
+  caller supplied its own query — the column exists exactly to protect it, and the
+  migration backfilled it by comparing each job's query with its set's template rather
+  than guessing a default), the set is gone, or the template now needs a variable the
+  release has no value for. The last is where **Edit release** comes in — it is the only
+  place a started release's variables, release choice, filename, topic split, cap and
+  publish settings can be changed, and it is refused while a run is in progress.
 - **JQL variables resolve on the server, never in the browser.** An instruction set's
   `jql_query` is a template whose `{name}` tokens a release fills in. The browser splits the
   template only to *display* it (`frontend/src/app/core/jql-variables.ts`); the query that

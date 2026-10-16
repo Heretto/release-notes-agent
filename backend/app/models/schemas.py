@@ -169,6 +169,20 @@ class JobCreate(BaseModel):
     max_tickets: Optional[int] = Field(None, ge=1, le=500)  # Capped by MAX_TICKETS_PER_JOB at runtime
     chunking_strategy: Optional[str] = Field(None, pattern=r'^(single|by_group|by_component)$')
 
+class JobUpdate(BaseModel):
+    """What Edit release can change. Everything is optional; omitted means unchanged."""
+    title: Optional[str] = Field(None, max_length=255)
+    output_filename: Optional[str] = Field(None, min_length=1, max_length=255)
+    max_tickets: Optional[int] = Field(None, ge=1, le=500)
+    chunking_strategy: Optional[str] = Field(None, pattern=r'^(single|by_group|by_component)$')
+    publish_to_heretto: Optional[bool] = None
+    heretto_folder_id: Optional[str] = Field(None, max_length=255)
+    # New values for the instruction set's JQL variables, or the chosen Jira release. Either
+    # one re-resolves the query from the set's current template — the server does the
+    # substituting, as everywhere else.
+    variables: Optional[Dict[str, str]] = None
+    release: Optional[str] = Field(None, max_length=255)
+
 class JobProgress(BaseModel):
     stage: str
     current: int
@@ -187,10 +201,19 @@ class JobResponse(BaseModel):
     id: UUID
     user_id: UUID
     instruction_set_id: Optional[UUID]
+    # Named here so the release can say which instructions it ran on without a second
+    # request, and still say so if the set is later deleted or renamed.
+    instruction_set_name: Optional[str] = None
     title: Optional[str] = None
     jql_query: str
     # The variable values this run resolved its query from.
     variables: Dict[str, str] = Field(default_factory=dict)
+    # False when the query was supplied by the caller rather than built from the set, which
+    # is what stops a rerun rebuilding it.
+    uses_instruction_query: bool = True
+    # The release's own publish settings, which override the instruction set's.
+    auto_publish: bool = False
+    heretto_folder_id: Optional[str] = None
     status: JobStatusEnum
     triggered_by: JobTriggerEnum
     output_filename: Optional[str]

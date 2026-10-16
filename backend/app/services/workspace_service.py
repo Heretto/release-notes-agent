@@ -384,7 +384,10 @@ def job_counts(job: Job) -> JobCounts:
 def job_to_response(job: Job) -> JobResponse:
     return JobResponse(
         id=job.id, user_id=job.user_id, instruction_set_id=job.instruction_set_id,
+        instruction_set_name=job.instruction_set.name if job.instruction_set else None,
         title=job.title, jql_query=job.jql_query, variables=job.variables or {},
+        uses_instruction_query=bool(getattr(job, "uses_instruction_query", True)),
+        auto_publish=bool(job.auto_publish), heretto_folder_id=job.heretto_folder_id,
         status=job.status, triggered_by=job.triggered_by, output_filename=job.output_filename,
         tickets_processed=job.tickets_processed or 0, max_tickets=job.max_tickets,
         error_message=job.error_message, stage=job.stage, stage_message=job.stage_message,
