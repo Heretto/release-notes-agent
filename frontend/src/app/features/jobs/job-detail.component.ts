@@ -194,7 +194,10 @@ type StepState = 'done' | 'current' | 'pending' | 'failed';
                 @if (instructionSet) {
                   <div class="fact">
                     <dt>Agents</dt>
-                    <dd>Writer: {{ instructionSet.writer_agent_name || '—' }} · Analysis: {{ instructionSet.analysis_agent_name || 'same as writer' }}</dd>
+                    <dd>
+                      <div class="agent-line">Writer: {{ instructionSet.writer_agent_name || '—' }}</div>
+                      <div class="agent-line">Analysis: {{ instructionSet.analysis_agent_name || 'same as writer' }}</div>
+                    </dd>
                   </div>
                   <div class="fact">
                     <dt>Guidance</dt>
@@ -349,12 +352,14 @@ type StepState = 'done' | 'current' | 'pending' | 'failed';
     .summary-card h2, .topics-card h2 { margin: 0 0 12px 0; font-size: 16px; }
     .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px 24px; margin: 0 0 16px 0; }
     .instructions-block { border-top: 1px solid var(--border-default); padding-top: 14px; margin-top: 4px; }
-    .instructions-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+    .instructions-head { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; margin-bottom: 12px; }
+    /* Label above, name beneath — the same reading order as every dt/dd in the facts. */
     .instructions-label { font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
       color: var(--text-tertiary); }
     .instructions-name { font-size: 16px; font-weight: 600; color: var(--text-primary); }
     a.instructions-name:hover { color: var(--color-primary); }
     .instructions-facts { margin-bottom: 12px; }
+    .agent-line + .agent-line { margin-top: 2px; }
     .fact dt { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-tertiary); margin-bottom: 2px; }
     .fact dd { margin: 0; font-size: 14px; }
     .vars-fact { font-family: var(--font-mono); font-size: 12px; }
