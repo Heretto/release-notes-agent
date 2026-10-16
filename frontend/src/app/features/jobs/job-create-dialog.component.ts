@@ -202,7 +202,7 @@ interface StartVariable {
     .release-chip.released { background: var(--color-success-bg); color: var(--color-success-text); }
     .release-date { flex: 1; font-size: 12px; color: var(--text-tertiary); }
     .release-count { font-size: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
-    .load-more { align-self: flex-start; background: none; border: none; padding: 4px 2px; cursor: pointer;
+    .load-more { align-self: flex-end; background: none; border: none; padding: 4px 2px; cursor: pointer;
       font: inherit; font-size: 13px; font-weight: 500; color: var(--color-primary); }
     .load-more:disabled { color: var(--text-tertiary); cursor: default; }
     .preview-block { margin-bottom: 8px; }

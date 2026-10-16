@@ -62,6 +62,12 @@
   border-radius: 8px;
   border-left: 3px solid transparent;
   transition: background-color 0.2s, border-color 0.2s;
+  // Selectable from here as well as from the notes list — see onPreviewClick.
+  cursor: pointer;
+}
+
+.topic-render .release-note:hover:not(.rn-selected) {
+  background: var(--bg-secondary);
 }
 
 .topic-render .release-note.rn-selected {

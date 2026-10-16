@@ -172,7 +172,7 @@ const HANDLE_WIDTH = 12;
               @if (!selectedTopic) {
                 <p class="muted empty-note">No topic yet. Approve or edit notes and the topic appears here.</p>
               } @else if (view === 'rendered') {
-                <div class="topic-render" [attr.data-topic]="selectedTopic.slug">
+                <div class="topic-render" [attr.data-topic]="selectedTopic.slug" (click)="onPreviewClick($event)">
                   <hop-dita-content [html]="selectedTopic.html || ''" (linkClick)="onLinkClick($event)"></hop-dita-content>
                 </div>
                 @if (selectedTopic.render_warnings.length) {
@@ -550,6 +550,25 @@ export class WorkspaceComponent implements OnInit, OnDestroy {
         target.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
     }, 60);
+  }
+
+  /**
+   * Clicking a note in the rendered topic selects it, the same as clicking its row in the
+   * notes list. The handler is on the container because the topic is sanitized HTML with no
+   * bindings of its own; each note carries `id="{topic.slug}__{item.fragment_id}"`, which is
+   * what highlightSelected() writes to in the other direction.
+   */
+  onPreviewClick(event: MouseEvent): void {
+    const target = event.target as HTMLElement | null;
+    // A link inside a note is still a link; onLinkClick deals with those.
+    if (target?.closest('a')) return;
+
+    const note = target?.closest('.release-note') as HTMLElement | null;
+    const fragmentId = note?.id.split('__').pop();
+    if (!fragmentId) return;
+
+    const item = this.items.find(i => i.fragment_id === fragmentId);
+    if (item && item.id !== this.selectedItemId) this.selectItem(item);
   }
 
   onLinkClick(event: HopDitaLinkEvent): void {
