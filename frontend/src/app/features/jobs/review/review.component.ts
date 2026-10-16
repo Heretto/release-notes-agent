@@ -191,6 +191,19 @@ interface ReviewGroup {
                 </button>
               </div>
 
+              <div class="rv-issue-action">
+                @if (openIssue.url) {
+                  <a mat-flat-button color="primary" [href]="openIssue.url" target="_blank" rel="noopener">
+                    <mat-icon>open_in_new</mat-icon> Open in Jira
+                  </a>
+                } @else {
+                  <button mat-stroked-button disabled
+                          matTooltip="No Jira link was recorded for this issue when the release was run">
+                    <mat-icon>link_off</mat-icon> No Jira link
+                  </button>
+                }
+              </div>
+
               <div class="rv-issue-body">
                 <p class="rv-issue-summary">{{ openIssue.summary }}</p>
 
@@ -234,13 +247,6 @@ interface ReviewGroup {
                 }
               </div>
 
-              @if (openIssue.url) {
-                <div class="rv-issue-foot">
-                  <a mat-stroked-button [href]="openIssue.url" target="_blank" rel="noopener">
-                    <mat-icon>open_in_new</mat-icon> Open {{ openIssue.issue_key }} in Jira
-                  </a>
-                </div>
-              }
             </aside>
           }
         </div>
@@ -355,8 +361,10 @@ interface ReviewGroup {
     .rv-issue-text.quoted { border-left: 2px solid var(--border-default); padding-left: 10px; color: var(--text-secondary); }
     .rv-issue-warning { margin: 12px 0 0; padding: 8px 10px; border-radius: 6px; font-size: 12px;
       background: var(--color-warning-bg); color: var(--color-warning-text); }
-    .rv-issue-foot { padding: 12px 16px; border-top: 1px solid var(--border-light); flex-shrink: 0; }
-    .rv-issue-foot a { width: 100%; }
+    /* Above the scrolling body, not below it: the panel's whole point is getting to the
+       issue, and at the foot it sat under however much description there was. */
+    .rv-issue-action { padding: 12px 16px; border-bottom: 1px solid var(--border-light); flex-shrink: 0; }
+    .rv-issue-action a, .rv-issue-action button { width: 100%; }
 
     /* Narrower: the card gets tighter rather than disappearing — hiding it would make
        clicking a key do nothing. Below the stacking breakpoint it falls under the note. */
