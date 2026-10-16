@@ -2,6 +2,14 @@
 
 @include hop.hop-core-theme();
 
+// hop-ui's base styles underline every `a` on hover. A Material button rendered as an
+// anchor (`<a mat-stroked-button routerLink=...>`) is a button to the eye, so the underline
+// reads as a mistake — opt those out. Needs the class to outweigh hop-ui's `a:hover`.
+a.mat-mdc-button-base:hover,
+a.mat-mdc-button-base:focus {
+  text-decoration: none;
+}
+
 // ─── Application-specific utilities ──────────────────────────────────────────
 
 .container {
