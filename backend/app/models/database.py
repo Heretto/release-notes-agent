@@ -156,6 +156,11 @@ class InstructionSet(Base):
     writer_agent_id = Column(UUID(as_uuid=True), ForeignKey("agents.id", ondelete="SET NULL"), nullable=True)
     analysis_agent_id = Column(UUID(as_uuid=True), ForeignKey("agents.id", ondelete="SET NULL"), nullable=True)
 
+    # How topics are laid out: {"mode": "structured", "structured": {...}} — see
+    # schemas.TopicLayout. JSON rather than columns because the template and agent modes
+    # that follow carry quite different settings, and none of them should cost a migration.
+    layout = Column(JSON, nullable=False, default=dict, server_default="{}")
+
     # Pipeline configuration
     product_name = Column(String(255), nullable=True)
     relevance_guidance = Column(Text, nullable=True)      # what counts as a change users must know about

@@ -14,7 +14,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatSelectModule } from '@angular/material/select';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { HopAgentService, AgentSummary } from '@heretto/hop-ui';
-import { InstructionSet, InstructionsService, JiraRelease } from '../../core/services/instructions.service';
+import { DEFAULT_LAYOUT, InstructionSet, InstructionsService, JiraRelease } from '../../core/services/instructions.service';
 import { CredentialsService, JiraCredentialOption } from '../../core/services/credentials.service';
 import { CHUNKING_STRATEGIES } from '../../core/services/jobs.service';
 import { JqlPart, JqlVariableSpec, defaultsOf, jqlParts, variableNames } from '../../core/jql-variables';
@@ -319,6 +319,65 @@ const MORE_RELEASES = 10;
         <div class="form-section">
           <h3>Output</h3>
 
+          <div class="layout-card">
+            <div class="vars-head">
+              <span class="vars-title">Topic layout</span>
+              <span class="muted">The shape of the DITA this instruction set produces</span>
+            </div>
+
+            <div class="layout-grid">
+              <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                <mat-label>Each group starts with</mat-label>
+                <mat-select formControlName="group_heading">
+                  <mat-option value="section">A section with a title</mat-option>
+                  <mat-option value="paragraph">A bold paragraph</mat-option>
+                  <mat-option value="none">Nothing</mat-option>
+                </mat-select>
+              </mat-form-field>
+
+              <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                <mat-label>Its notes are collected in</mat-label>
+                <mat-select formControlName="notes_wrapper">
+                  <mat-option value="none">Nothing</mat-option>
+                  <mat-option value="ul">A bulleted list</mat-option>
+                  <mat-option value="ol">A numbered list</mat-option>
+                </mat-select>
+              </mat-form-field>
+
+              <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                <mat-label>Each note is</mat-label>
+                <mat-select formControlName="note_element">
+                  <mat-option value="div">A block (&lt;div&gt;)</mat-option>
+                  <mat-option value="li">A list item (&lt;li&gt;)</mat-option>
+                </mat-select>
+                @if (form.get('note_element')?.value === 'li') {
+                  <mat-hint>List items need a list, so the notes are collected in one</mat-hint>
+                }
+              </mat-form-field>
+
+              <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                <mat-label>Short description</mat-label>
+                <mat-select formControlName="shortdesc">
+                  <mat-option value="omit">Leave it out</mat-option>
+                  <mat-option value="empty">Empty, for the writer to fill in</mat-option>
+                  <mat-option value="text">Always the same text</mat-option>
+                </mat-select>
+              </mat-form-field>
+            </div>
+
+            @if (form.get('shortdesc')?.value === 'text') {
+              <mat-form-field appearance="outline" class="full-width" subscriptSizing="dynamic">
+                <mat-label>Short description text</mat-label>
+                <input matInput formControlName="shortdesc_text">
+              </mat-form-field>
+            }
+
+            <div class="vars-preview">
+              <span class="vars-col">A topic will look like</span>
+              <pre class="query-preview layout-preview">{{ layoutPreview }}</pre>
+            </div>
+          </div>
+
           <mat-form-field appearance="outline" class="full-width">
             <mat-label>Topics</mat-label>
             <mat-select formControlName="chunking_strategy">
@@ -377,6 +436,12 @@ const MORE_RELEASES = 10;
       font: inherit; font-size: 13px; font-weight: 500; color: var(--color-primary); }
     .load-more:disabled { color: var(--text-tertiary); cursor: default; }
     .jql-field { margin-bottom: 12px; }
+    .layout-card { border: 1px solid var(--border-default); border-radius: 8px; padding: 12px 14px;
+      margin-bottom: 16px; background: var(--bg-secondary); }
+    .layout-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 10px; align-items: start; margin-bottom: 10px; }
+    .layout-grid mat-form-field { width: 100%; }
+    .layout-preview { margin: 0; white-space: pre; overflow-x: auto; }
     .vars-card { border: 1px solid var(--border-default); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; background: var(--bg-secondary); }
     .vars-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
     .vars-title { font-size: 13px; font-weight: 600; }
@@ -431,6 +496,7 @@ export class InstructionDialogComponent implements OnInit {
     @Inject(MAT_DIALOG_DATA) public data: InstructionSet | null
   ) {
     this.variableSpecs = { ...(data?.variables || {}) };
+    const layout = { ...DEFAULT_LAYOUT, ...(data?.layout?.structured || {}) };
     this.form = this.fb.group({
       name: [data?.name || '', Validators.required],
       description: [data?.description || ''],
@@ -445,6 +511,11 @@ export class InstructionDialogComponent implements OnInit {
       relevance_guidance: [data?.relevance_guidance || ''],
       organization_guidance: [data?.organization_guidance || ''],
       chunking_strategy: [data?.chunking_strategy || 'single'],
+      group_heading: [layout.group_heading],
+      notes_wrapper: [layout.notes_wrapper],
+      note_element: [layout.note_element],
+      shortdesc: [layout.shortdesc],
+      shortdesc_text: [layout.shortdesc_text],
       heretto_folder_id: [data?.heretto_folder_id || ''],
       publish_to_heretto: [data?.publish_to_heretto || false],
       is_default: [data?.is_default || false]
@@ -535,6 +606,37 @@ export class InstructionDialogComponent implements OnInit {
       });
   }
 
+  /**
+   * The DITA skeleton the current choices produce — the same shape build_topic_xml emits,
+   * written out so a choice can be judged without starting a release to see it.
+   */
+  get layoutPreview(): string {
+    const heading = this.form?.get('group_heading')?.value;
+    const wrapper = this.form?.get('notes_wrapper')?.value;
+    const note = this.form?.get('note_element')?.value;
+    const shortdesc = this.form?.get('shortdesc')?.value;
+
+    const lines = ['<topic>', '  <title>Release notes</title>'];
+    if (shortdesc === 'empty') lines.push('  <shortdesc/>');
+    if (shortdesc === 'text') lines.push(`  <shortdesc>${this.form?.get('shortdesc_text')?.value || '…'}</shortdesc>`);
+    lines.push('  <body>');
+
+    const indent = heading === 'section' ? '      ' : '    ';
+    if (heading === 'section') {
+      lines.push('    <section>', '      <title>New features</title>');
+    } else if (heading === 'paragraph') {
+      lines.push('    <p><b>New features</b></p>');
+    }
+    if (wrapper !== 'none') lines.push(`${indent}<${wrapper}>`);
+    const noteIndent = wrapper === 'none' ? indent : indent + '  ';
+    lines.push(`${noteIndent}<${note} outputclass="release-note">…the note…</${note}>`);
+    if (wrapper !== 'none') lines.push(`${indent}</${wrapper}>`);
+    if (heading === 'section') lines.push('    </section>');
+
+    lines.push('  </body>', '</topic>');
+    return lines.join('\n');
+  }
+
   /** Spec metadata per variable, kept for tokens that come and go while editing. */
   variableSpecs: Record<string, JqlVariableSpec> = {};
 
@@ -574,6 +676,19 @@ export class InstructionDialogComponent implements OnInit {
       this.jiraCredentials = credentials;
     });
 
+    // An <li> outside a list is not DITA and the API refuses it, so choosing one turns a
+    // list on rather than letting the person save something that cannot assemble.
+    this.form.get('note_element')?.valueChanges.subscribe(value => {
+      if (value === 'li' && this.form.get('notes_wrapper')?.value === 'none') {
+        this.form.patchValue({ notes_wrapper: 'ul' });
+      }
+    });
+    this.form.get('notes_wrapper')?.valueChanges.subscribe(value => {
+      if (value === 'none' && this.form.get('note_element')?.value === 'li') {
+        this.form.patchValue({ note_element: 'div' });
+      }
+    });
+
     // Only the active mode's field is required, so the validators move with the switch.
     this.applyModeValidators();
     this.form.get('source_mode')?.valueChanges.subscribe(() => {
@@ -610,6 +725,34 @@ export class InstructionDialogComponent implements OnInit {
     for (const key of ['description', 'product_name', 'relevance_guidance', 'organization_guidance', 'heretto_folder_id']) {
       if (typeof value[key] === 'string' && !value[key].trim()) value[key] = null;
     }
+    value.layout = {
+      mode: 'structured',
+      structured: {
+        group_heading: value.group_heading,
+        notes_wrapper: value.notes_wrapper,
+        note_element: value.note_element,
+        shortdesc: value.shortdesc,
+        shortdesc_text: value.shortdesc === 'text' ? (value.shortdesc_text || '').trim() : ''
+      }
+    };
+    for (const key of ['group_heading', 'notes_wrapper', 'note_element', 'shortdesc', 'shortdesc_text']) {
+      delete value[key];
+    }
+
+    value.layout = {
+      mode: 'structured',
+      structured: {
+        group_heading: value.group_heading,
+        notes_wrapper: value.notes_wrapper,
+        note_element: value.note_element,
+        shortdesc: value.shortdesc,
+        shortdesc_text: value.shortdesc === 'text' ? (value.shortdesc_text || '').trim() : ''
+      }
+    };
+    for (const key of ['group_heading', 'notes_wrapper', 'note_element', 'shortdesc', 'shortdesc_text']) {
+      delete value[key];
+    }
+
     if (this.isReleasesMode) {
       // The query is built per release from these two; a template would have nothing to fill.
       value.jira_project = (value.jira_project || '').trim().toUpperCase();

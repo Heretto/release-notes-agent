@@ -13,7 +13,8 @@ from app.models.database import get_db, InstructionSet, Agent, Credential, Crede
 from app.models.schemas import (
     InstructionSetCreate,
     InstructionSetUpdate,
-    InstructionSetResponse
+    InstructionSetResponse,
+    TopicLayout,
 )
 from app.services.jql_variables import defaults_of, normalize_specs, release_query, resolve as resolve_jql
 from app.api.dependencies import get_current_active_user_with_org, CurrentUserContext
@@ -26,7 +27,7 @@ _INSTRUCTION_UPDATABLE_FIELDS = {
     "dita_template_id", "heretto_folder_id",
     "publish_to_heretto", "is_default",
     "writer_agent_id", "analysis_agent_id", "product_name",
-    "relevance_guidance", "organization_guidance", "chunking_strategy",
+    "relevance_guidance", "organization_guidance", "chunking_strategy", "layout",
 }
 
 
@@ -54,6 +55,7 @@ def _to_response(instruction_set: InstructionSet) -> InstructionSetResponse:
         relevance_guidance=instruction_set.relevance_guidance,
         organization_guidance=instruction_set.organization_guidance,
         chunking_strategy=instruction_set.chunking_strategy or "single",
+        layout=TopicLayout(**(instruction_set.layout or {})) if instruction_set.layout else TopicLayout(),
         created_at=instruction_set.created_at,
         updated_at=instruction_set.updated_at,
     )
@@ -116,7 +118,7 @@ async def create_instruction_set(
             InstructionSet.is_default == True
         ).update({"is_default": False})
 
-    fields = instruction_data.model_dump()
+    fields = instruction_data.model_dump(mode="json")
     # Keep the specs keyed by the tokens the query actually contains, whatever was sent.
     fields["variables"] = normalize_specs(fields.get("jql_query") or "", fields.get("variables"))
     new_instruction = InstructionSet(
@@ -165,7 +167,8 @@ async def update_instruction_set(
             InstructionSet.is_default == True
         ).update({"is_default": False})
 
-    update_data = instruction_data.model_dump(exclude_unset=True)
+    # mode="json" so nested models (layout) land on the JSON column as plain dicts.
+    update_data = instruction_data.model_dump(exclude_unset=True, mode="json")
     if "jira_credential_id" in update_data:
         _validate_jira_credential_id(update_data["jira_credential_id"], context.organization_id, db)
     if "writer_agent_id" in update_data:

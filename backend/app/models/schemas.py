@@ -81,6 +81,46 @@ class JqlVariableSpec(BaseModel):
     default: str = Field("", max_length=500)
     hint: str = Field("", max_length=300)
 
+class StructuredLayout(BaseModel):
+    """How a topic is laid out, as a set of choices rather than a template.
+
+    The combination that produced this feature: heading="paragraph", wrapper="ul",
+    note="li" gives a bold paragraph per group followed by one list holding that group's
+    notes — a house style this app previously could not express.
+    """
+    #: section = <section><title>Group</title>…; paragraph = <p><b>Group</b></p>; none = no heading.
+    group_heading: str = Field("section", pattern=r'^(section|paragraph|none)$')
+    #: What a group's notes are collected in, if anything.
+    notes_wrapper: str = Field("none", pattern=r'^(none|ul|ol)$')
+    #: The element each note's content is placed in.
+    note_element: str = Field("div", pattern=r'^(div|li)$')
+    #: omit = no <shortdesc>; empty = <shortdesc/>; text = <shortdesc>shortdesc_text</shortdesc>.
+    shortdesc: str = Field("omit", pattern=r'^(omit|empty|text)$')
+    shortdesc_text: str = Field("", max_length=2000)
+
+    @model_validator(mode="after")
+    def _list_items_need_a_list(self):
+        # <li> outside a list is not DITA, and the DTD check would reject every topic.
+        if self.note_element == "li" and self.notes_wrapper == "none":
+            raise ValueError(
+                "Notes can only be <li> when they are collected in a <ul> or <ol>."
+            )
+        if self.shortdesc == "text" and not self.shortdesc_text.strip():
+            raise ValueError("Choose what the shortdesc should say, or set it to empty or omit.")
+        return self
+
+
+class TopicLayout(BaseModel):
+    """How an instruction set's topics are built.
+
+    `mode` selects between laying topics out from the options below, from a DITA template
+    the writer authors, or by asking an agent. Only "structured" is implemented so far;
+    the field exists now so the other two do not each need their own migration.
+    """
+    mode: str = Field("structured", pattern=r'^(structured)$')
+    structured: StructuredLayout = Field(default_factory=StructuredLayout)
+
+
 class InstructionSetBase(BaseModel):
     name: str
     description: Optional[str] = None
@@ -139,6 +179,7 @@ class InstructionSetUpdate(BaseModel):
     relevance_guidance: Optional[str] = Field(None, max_length=8000)
     organization_guidance: Optional[str] = Field(None, max_length=8000)
     chunking_strategy: Optional[str] = Field(None, pattern=r'^(single|by_group|by_component)$')
+    layout: Optional[TopicLayout] = None
 
 class InstructionSetResponse(InstructionSetBase):
     id: UUID

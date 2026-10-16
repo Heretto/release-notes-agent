@@ -34,8 +34,8 @@ from app.models.schemas import (
 )
 from app.services.heretto_service import HerettoService
 from app.services.topic_assembler import (
-    FragmentError, build_topic_xml, coerce_fragment, included_items, plan_topics, render_topic_html,
-    validate_topic,
+    FragmentError, Layout, build_topic_xml, coerce_fragment, included_items, plan_topics,
+    render_topic_html, validate_topic,
 )
 
 logger = logging.getLogger(__name__)
@@ -142,8 +142,9 @@ def assemble_job_topics(
     existing = {topic.slug: topic for topic in job.topics}
     kept: List[ReleaseNoteTopic] = []
 
+    layout = Layout.of(job.instruction_set)
     for position, plan in enumerate(plans):
-        xml = build_topic_xml(plan)
+        xml = build_topic_xml(plan, layout=layout)
         errors = validate_topic(xml, validator)
         if errors:
             raise FragmentError(f"Assembled topic '{plan.title}' is not valid DITA", errors)

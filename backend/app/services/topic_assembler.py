@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import copy
 import re
+import dataclasses
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 from xml.sax.saxutils import escape
@@ -352,14 +353,75 @@ def note_element(item: ReleaseNoteItem, tag: str = "div") -> etree._Element:
     return el
 
 
-def build_topic_xml(plan: TopicPlan, shortdesc: Optional[str] = None) -> str:
-    """A complete, DTD-valid DITA topic for one plan."""
+@dataclass(frozen=True)
+class Layout:
+    """The resolved structured layout. See schemas.StructuredLayout for what each means."""
+
+    group_heading: str = "section"
+    notes_wrapper: str = "none"
+    note_element: str = "div"
+    shortdesc: str = "omit"
+    shortdesc_text: str = ""
+
+    @classmethod
+    def of(cls, instruction_set) -> "Layout":
+        """The layout an instruction set asks for, falling back to today's shape.
+
+        Anything unreadable gives the default rather than raising: a release that cannot be
+        assembled is worse than one assembled the old way, and the editor validates on save.
+        """
+        stored = getattr(instruction_set, "layout", None) or {}
+        options = (stored.get("structured") or {}) if isinstance(stored, dict) else {}
+        if not isinstance(options, dict):
+            return cls()
+        fields = {f.name for f in dataclasses.fields(cls)}
+        return cls(**{k: v for k, v in options.items() if k in fields and isinstance(v, str)})
+
+
+def _add_shortdesc(topic: etree._Element, layout: Layout, shortdesc: Optional[str]) -> None:
+    """A caller-supplied shortdesc wins; otherwise the layout decides."""
+    if shortdesc:
+        etree.SubElement(topic, "shortdesc").text = shortdesc
+    elif layout.shortdesc == "empty":
+        etree.SubElement(topic, "shortdesc")
+    elif layout.shortdesc == "text" and layout.shortdesc_text.strip():
+        etree.SubElement(topic, "shortdesc").text = layout.shortdesc_text.strip()
+
+
+def _group_container(body: etree._Element, slug: str, index: int, name: str, layout: Layout):
+    """Where a group's notes go, and the heading that introduces them.
+
+    Returns the element the notes are appended to. With a section heading the notes live
+    inside the section; with a paragraph or no heading they sit directly in the body —
+    which is what lets a <ul> follow a <p><b>Group</b></p> as a sibling, the shape a
+    section cannot produce.
+    """
+    if layout.group_heading == "section":
+        section = etree.SubElement(body, "section", id=f"{slug}-g{index}")
+        etree.SubElement(section, "title").text = name or "Other changes"
+        host = section
+    else:
+        if layout.group_heading == "paragraph":
+            para = etree.SubElement(body, "p")
+            etree.SubElement(para, "b").text = name or "Other changes"
+        host = body
+
+    if layout.notes_wrapper in ("ul", "ol"):
+        return etree.SubElement(host, layout.notes_wrapper)
+    return host
+
+
+def build_topic_xml(
+    plan: TopicPlan,
+    shortdesc: Optional[str] = None,
+    layout: Optional[Layout] = None,
+) -> str:
+    """A complete, DTD-valid DITA topic for one plan, laid out as the layout asks."""
+    layout = layout or Layout()
     topic = etree.Element("topic", id=plan.slug)
     title = etree.SubElement(topic, "title")
     title.text = plan.title
-    if shortdesc:
-        sd = etree.SubElement(topic, "shortdesc")
-        sd.text = shortdesc
+    _add_shortdesc(topic, layout, shortdesc)
     body = etree.SubElement(topic, "body")
 
     has_groups = any(name for name, _ in plan.groups)
@@ -368,15 +430,17 @@ def build_topic_xml(plan: TopicPlan, shortdesc: Optional[str] = None) -> str:
         para.text = "No release notes."
     elif has_groups:
         for index, (name, group_items) in enumerate(plan.groups, start=1):
-            section = etree.SubElement(body, "section", id=f"{plan.slug}-g{index}")
-            section_title = etree.SubElement(section, "title")
-            section_title.text = name or "Other changes"
+            host = _group_container(body, plan.slug, index, name, layout)
             for item in group_items:
-                section.append(note_element(item))
+                host.append(note_element(item, layout.note_element))
     else:
+        # No groups: the wrapper still applies, so <li> notes remain inside a list.
+        host = body
+        if layout.notes_wrapper in ("ul", "ol"):
+            host = etree.SubElement(body, layout.notes_wrapper)
         for _, group_items in plan.groups:
             for item in group_items:
-                body.append(note_element(item))
+                host.append(note_element(item, layout.note_element))
 
     xml = etree.tostring(topic, encoding="unicode", pretty_print=True)
     return f'<?xml version="1.0" encoding="UTF-8"?>\n{DOCTYPE}\n{xml}'

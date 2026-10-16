@@ -9,7 +9,7 @@ from lxml import etree
 from app.models.database import ChunkingStrategy
 from app.services.llm_json import extract_json
 from app.services.topic_assembler import (
-    FragmentError, build_topic_xml, coerce_fragment, fragment_title, normalize_fragment,
+    FragmentError, Layout, build_topic_xml, coerce_fragment, fragment_title, normalize_fragment,
     note_element, plan_topics, plain_text_fragment, validate_fragment, validate_topic,
 )
 
@@ -159,3 +159,49 @@ class TestExtractJson:
     def test_garbage_raises(self):
         with pytest.raises(ValueError):
             extract_json("nothing here")
+
+
+class TestLayout:
+    """Stage 2: the shape of a topic is the instruction set's choice."""
+
+    def _plan(self):
+        items = [_item("A", "New features", 0, dita="<p>One</p>"),
+                 _item("B", "Fixes", 1, dita="<p>Two</p>")]
+        return plan_topics(items, ChunkingStrategy.SINGLE, "R", "n")[0]
+
+    def test_default_is_the_shape_this_app_always_produced(self):
+        xml = build_topic_xml(self._plan())
+        assert "<section" in xml and "<div" in xml and "<ul>" not in xml
+        assert validate_topic(xml) == []
+
+    def test_bold_heading_with_list_items(self):
+        """The reported house style: a bold paragraph per group, its notes as one list."""
+        layout = Layout(group_heading="paragraph", notes_wrapper="ul",
+                        note_element="li", shortdesc="empty")
+        xml = build_topic_xml(self._plan(), layout=layout)
+        assert "<shortdesc/>" in xml
+        assert "<section" not in xml
+        assert "<b>New features</b>" in xml
+        assert '<li id="rn-' in xml and 'outputclass="release-note"' in xml
+        assert validate_topic(xml) == []
+
+    def test_the_identity_survives_every_layout(self):
+        """The workspace finds a note by id + outputclass; no layout may drop that pair."""
+        for layout in (
+            Layout(),
+            Layout(group_heading="none", notes_wrapper="ol", note_element="li"),
+            Layout(group_heading="paragraph"),
+        ):
+            xml = build_topic_xml(self._plan(), layout=layout)
+            assert xml.count('outputclass="release-note"') == 2
+            assert xml.count('id="rn-') >= 2
+
+    def test_shortdesc_text(self):
+        layout = Layout(shortdesc="text", shortdesc_text="What changed this month.")
+        assert "<shortdesc>What changed this month.</shortdesc>" in build_topic_xml(self._plan(), layout=layout)
+
+    def test_unreadable_stored_layout_falls_back_to_the_default(self):
+        class Set:
+            layout = {"structured": "not a dict"}
+        assert Layout.of(Set()) == Layout()
+        assert Layout.of(None) == Layout()

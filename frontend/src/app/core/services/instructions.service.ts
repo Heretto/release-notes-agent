@@ -26,6 +26,8 @@ export interface InstructionSet {
   relevance_guidance?: string | null;
   organization_guidance?: string | null;
   chunking_strategy: ChunkingStrategy;
+  /** How topics are laid out; absent means the default shape. */
+  layout?: TopicLayout;
   dita_template_id?: string;
   heretto_folder_id?: string;
   publish_to_heretto: boolean;
@@ -86,6 +88,28 @@ export class InstructionsService {
 }
 
 /** One Jira release (fix version) an instruction set in "releases" mode can run on. */
+/** How an instruction set lays its topics out. Only the structured mode exists so far. */
+export interface StructuredLayout {
+  group_heading: 'section' | 'paragraph' | 'none';
+  notes_wrapper: 'none' | 'ul' | 'ol';
+  note_element: 'div' | 'li';
+  shortdesc: 'omit' | 'empty' | 'text';
+  shortdesc_text: string;
+}
+
+export interface TopicLayout {
+  mode: 'structured';
+  structured: StructuredLayout;
+}
+
+export const DEFAULT_LAYOUT: StructuredLayout = {
+  group_heading: 'section',
+  notes_wrapper: 'none',
+  note_element: 'div',
+  shortdesc: 'omit',
+  shortdesc_text: ''
+};
+
 export interface JiraRelease {
   id: string;
   name: string;

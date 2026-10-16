@@ -43,8 +43,13 @@ itself on the way in: the writer is told to follow every rule about **this note*
 ignore rules about the topic around it. That is not politeness — a writer told to emit
 `<title>`, `<shortdesc>` or `<ul>` wrappers returns a fragment that fails DTD validation and
 the note silently falls back to its plain summary. Topic-level structure is `topic_assembler.build_topic_xml`, and it is
-being made configurable (`feature/configurable-topic-structure`): a note now stores
-**content**, and assembly decides the element around it. Whatever that element is, assembly
+configured per instruction set by `instruction_sets.layout` (`schemas.TopicLayout`): a note
+stores **content**, and the layout decides the element around it — a `<section>` with a
+title or a bold paragraph per group, its notes loose or collected in a `<ul>`/`<ol>`, each
+note a `<div>` or an `<li>`, and what the `<shortdesc>` does. `layout.mode` exists for the
+template and agent modes that follow; only `structured` is accepted today.
+An `<li>` outside a list is not DITA, so the schema refuses that pair and the editor moves
+the other control rather than letting it be saved. Whatever that element is, assembly
 stamps it with the note's `fragment_id` and `outputclass="release-note"` — the workspace
 preview maps rendered DITA back to a note through exactly that pair, so every layout mode
 must keep doing it.
