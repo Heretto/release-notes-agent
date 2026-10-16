@@ -59,8 +59,20 @@ migration. It handles three cases, mirroring `install.sh`: an empty database get
 `create_all()` + `stamp head` (this project's baseline schema is **not** built by Alembic —
 the migrations are incremental patches on top, so replaying them over current-shape tables
 fails); a stamped database gets `upgrade head`; a database with tables but no
-`alembic_version` is **refused**, because neither stamping nor upgrading is safe to guess.
-Running on the host still means `backend/venv/bin/alembic upgrade head` by hand.
+`alembic_version` is **refused**, because neither stamping nor upgrading is safe to guess;
+and an `alembic_version` holding several revisions when the graph has one head is
+**refused** too — that table is corrupted, and Alembic's own message for it ("requested
+revision X overlaps with other requested revisions Y") names neither the stale row nor the
+fix. `dev.sh` runs the same script before starting uvicorn, so a host run migrates itself
+as well. Running Alembic by hand (`backend/venv/bin/alembic upgrade head`) still works and
+is the right tool for a repair, but is no longer a step anyone has to remember.
+
+**`create_all()` runs on every backend start**, not just the first one — it is in hop-core's
+`create_hop_app` lifespan. It creates a missing *table* and never alters an existing one, so
+it silently re-creates a table a migration dropped while the model still exists, and it does
+nothing at all for a column a migration adds. That is why a migration that creates a new ORM
+table needs an "already there?" guard (`add_item_review`, `add_instruction_set_agents`) and
+why the backend must not start before the migration has run.
 
 **Three environment files, not interchangeable.** `backend/.env` for host runs (uvicorn,
 celery, alembic — it carries localhost `DATABASE_URL`/`REDIS_URL`); the repository-root
