@@ -112,6 +112,10 @@ class HistoryEvent:
     FLAGGED = "flagged"
     ISSUE_REMOVED = "issue_removed"
     NOTES_EDITED = "notes_edited"
+    REVIEWER_ASSIGNED = "reviewer_assigned"
+    REVIEWED = "reviewed"
+    COMMENT_ADDED = "comment_added"
+    COMMENT_RESOLVED = "comment_resolved"
 
 
 # --- Domain models ---
@@ -124,7 +128,21 @@ class InstructionSet(Base):
     organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(255), nullable=False)
     description = Column(Text)
+    # "jql" — jql_query below is the template — or "releases": the agent reads the fix
+    # versions Jira tracks for jira_project and the query is built per release. Stored as a
+    # plain string rather than an enum so adding a source later is a code change, not a
+    # migration on every existing row.
+    source_mode = Column(String(32), nullable=False, default="jql", server_default="jql")
+    # Releases mode only: the Jira project whose versions are offered, and an optional JQL
+    # fragment ANDed into every release's query.
+    jira_project = Column(String(255), nullable=True)
+    extra_jql = Column(Text, nullable=True)
+    # A JQL *template*: {name} tokens are filled in when a release is started. See
+    # app/services/jql_variables.py — resolution is server-side and always injects a value
+    # as one quoted literal, so a value can never rewrite the query.
     jql_query = Column(Text, nullable=False)
+    # {name: {label, default, hint}} for the tokens above, kept in step with them on save.
+    variables = Column(JSON, nullable=False, default=dict, server_default="{}")
     jira_credential_id = Column(UUID(as_uuid=True), ForeignKey("credentials.id", ondelete="SET NULL"), nullable=True)
     dita_template_id = Column(UUID(as_uuid=True), ForeignKey("dita_templates.id"))
     heretto_folder_id = Column(String(255))
@@ -165,7 +183,11 @@ class Job(Base):
     organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True)
     instruction_set_id = Column(UUID(as_uuid=True), ForeignKey("instruction_sets.id"))
     title = Column(String(255), nullable=True)
+    # The resolved query this run actually used; the instruction set keeps the template.
     jql_query = Column(Text, nullable=False)
+    # {name: value} — the variable values it was resolved from, so a run can be explained
+    # and rerun without re-deriving them.
+    variables = Column(JSON, nullable=False, default=dict, server_default="{}")
     status = Column(SQLEnum(JobStatus), nullable=False, default=JobStatus.PENDING)
     triggered_by = Column(SQLEnum(JobTrigger), nullable=False)
     output_filename = Column(String(255))
@@ -262,13 +284,23 @@ class ReleaseNoteItem(Base):
     # thread or design doc. Replaced the structured references table; URLs in it are linked
     # when rendered. Never shown to readers — it does not reach the assembled topic.
     notes = Column(Text, nullable=False, default="", server_default="")
+    # Who is asked to read this note, and whether they have said they are done with it.
+    # Review is its own axis: `status` is where the note is in the writer's flow, `reviewed`
+    # is one reviewer's answer, and a note can be approved without having been reviewed or
+    # reviewed while still a draft. SET NULL: removing someone from the org must leave the
+    # note, unassigned, not delete it.
+    reviewer_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reviewed = Column(Boolean, nullable=False, default=False, server_default="false")
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     job = relationship("Job", back_populates="items")
     topic = relationship("ReleaseNoteTopic", back_populates="items")
+    reviewer = relationship("User", foreign_keys=[reviewer_id])
     issue_links = relationship("ReleaseNoteItemIssue", back_populates="item", cascade="all, delete-orphan")
     history = relationship("ReleaseNoteItemHistory", back_populates="item", cascade="all, delete-orphan", order_by="ReleaseNoteItemHistory.created_at.desc()")
+    comments = relationship("ReleaseNoteItemComment", back_populates="item", cascade="all, delete-orphan", order_by="ReleaseNoteItemComment.created_at")
 
     @property
     def issues(self):
@@ -290,6 +322,30 @@ class ReleaseNoteItemIssue(Base):
 
     item = relationship("ReleaseNoteItem", back_populates="issue_links")
     issue = relationship("JobJiraIssue", back_populates="item_links")
+
+
+class ReleaseNoteItemComment(Base):
+    """What a reviewer said about one note.
+
+    Flat, not threaded: a note is small enough that a reply is just the next comment, and
+    the review screen reads top to bottom.
+    """
+    __tablename__ = "release_note_item_comments"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    item_id = Column(UUID(as_uuid=True), ForeignKey("release_note_items.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    body = Column(Text, nullable=False)
+    # Resolved means "dealt with", not "deleted": the comment stays readable, so the note's
+    # history of what was asked for survives alongside the change that answered it.
+    resolved = Column(Boolean, nullable=False, default=False, server_default="false")
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+    resolved_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    item = relationship("ReleaseNoteItem", back_populates="comments")
+    user = relationship("User", foreign_keys=[user_id])
+    resolved_by = relationship("User", foreign_keys=[resolved_by_id])
 
 
 class ReleaseNoteItemHistory(Base):

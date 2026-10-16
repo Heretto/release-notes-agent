@@ -1,4 +1,4 @@
-import { Component, ElementRef, EventEmitter, Input, OnInit, Output, ViewChild, inject, ChangeDetectionStrategy } from '@angular/core';
+import { Component, ElementRef, EventEmitter, Input, OnChanges, OnInit, Output, SimpleChanges, ViewChild, inject, ChangeDetectionStrategy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -93,7 +93,7 @@ import { JobsService, ChatMessage, ChatSendResponse, ReleaseNoteItem } from '../
     .composer textarea:focus { outline: none; border-color: var(--border-focus); box-shadow: var(--focus-ring); }
   `]
 })
-export class WorkspaceChatComponent implements OnInit {
+export class WorkspaceChatComponent implements OnInit, OnChanges {
   private jobsService = inject(JobsService);
   private snackBar = inject(MatSnackBar);
 
@@ -101,8 +101,16 @@ export class WorkspaceChatComponent implements OnInit {
   @Input() selectedItem: ReleaseNoteItem | null = null;
   @Input() agentName: string | null = null;
   @Input() disabled = false;
+  /**
+   * A message to ask the agent straight away — set when someone sends a reviewer's comment
+   * over from the Details pane. It is sent rather than left in the composer: the point of
+   * the button is "do this", and the transcript is where it stays visible and undoable.
+   */
+  @Input() pendingMessage: string | null = null;
   /** The agent changed notes and/or topics; the workspace reloads them. */
   @Output() changed = new EventEmitter<ChatSendResponse>();
+  /** Sent — the workspace clears it so toggling the pane cannot send it twice. */
+  @Output() pendingMessageSent = new EventEmitter<void>();
 
   @ViewChild('transcript') transcript?: ElementRef<HTMLDivElement>;
 
@@ -115,8 +123,26 @@ export class WorkspaceChatComponent implements OnInit {
       next: (messages) => {
         this.messages = messages;
         this.scrollToEnd();
-      }
+        // After the transcript loads, or the load would overwrite what the send appended.
+        this.sendPending();
+      },
+      error: () => this.sendPending()
     });
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    // Only fires when the chat pane is already open; switching to it builds the component
+    // fresh and ngOnInit handles it instead.
+    if (changes['pendingMessage'] && !changes['pendingMessage'].firstChange) this.sendPending();
+  }
+
+  private sendPending(): void {
+    const message = (this.pendingMessage || '').trim();
+    if (!message || this.sending) return;
+    this.pendingMessage = null;
+    this.pendingMessageSent.emit();
+    this.draft = message;
+    this.send();
   }
 
   onKeydown(event: KeyboardEvent): void {

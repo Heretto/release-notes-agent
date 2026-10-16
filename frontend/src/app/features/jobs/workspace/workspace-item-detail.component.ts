@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Input, OnChanges, Output, SimpleChanges, inject, ChangeDetectionStrategy } from '@angular/core';
+import { Component, EventEmitter, Input, OnChanges, OnInit, Output, SimpleChanges, inject, ChangeDetectionStrategy } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
@@ -11,8 +11,9 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatExpansionModule } from '@angular/material/expansion';
 import { MatSnackBar } from '@angular/material/snack-bar';
+import { HopOrganizationService, OrganizationMember } from '@heretto/hop-ui';
 import {
-  JobsService, ReleaseNoteItemDetail, ItemStatus, ITEM_STATUSES, ItemHistoryEntry, JobIssue
+  JobsService, ReleaseNoteItemDetail, ItemComment, ItemStatus, ITEM_STATUSES, ItemHistoryEntry, JobIssue
 } from '../../../core/services/jobs.service';
 
 @Component({
@@ -40,13 +41,21 @@ import {
             }
             <div class="muted">
               {{ item.group_name || 'No group' }}
-              @for (key of item.issue_keys; track key) { · {{ key }} }
+              @if (item.issues.length) {
+                ·
+                @for (issue of item.issues; track issue.id; let last = $last) {
+                  <a [href]="issue.url" target="_blank" rel="noopener" class="issue-link">{{ issue.issue_key }}</a>@if (!last) {, }
+                }
+              }
               @if (item.user_edited) { · <mat-icon class="inline-icon" matTooltip="Edited by a person">edit</mat-icon> }
             </div>
           </div>
           <button mat-icon-button matTooltip="Back to chat" (click)="closed.emit()"><mat-icon>close</mat-icon></button>
         </div>
 
+        <!-- Everything below the pinned header scrolls as one unit: the fields, the notes
+             and the tab content move together rather than each tab scrolling on its own. -->
+        <div class="detail-body">
         <div class="status-row">
           <mat-form-field appearance="outline" class="status-field" subscriptSizing="dynamic">
             <mat-label>Status</mat-label>
@@ -63,6 +72,21 @@ import {
               @for (group of groups; track group) { <option [value]="group"></option> }
             </datalist>
           </mat-form-field>
+        </div>
+
+        <div class="status-row">
+          <mat-form-field appearance="outline" class="reviewer-field" subscriptSizing="dynamic">
+            <mat-label>Reviewer</mat-label>
+            <mat-select [value]="item.reviewer_id || null" (selectionChange)="setReviewer($event.value)" [disabled]="saving">
+              <mat-option [value]="null">No reviewer</mat-option>
+              @for (member of members; track member.user_id) {
+                <mat-option [value]="member.user_id">{{ member.user_email }}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+          @if (item.reviewed) {
+            <span class="reviewed-chip"><mat-icon class="inline-icon">check</mat-icon> Reviewed</span>
+          }
         </div>
 
         <div class="notes-block">
@@ -174,6 +198,50 @@ import {
             </div>
           </mat-tab>
 
+          <mat-tab label="Comments ({{ item.comments.length }})">
+            <div class="tab-body">
+              @for (comment of item.comments; track comment.id) {
+                <div class="comment-row" [class.resolved]="comment.resolved">
+                  <span class="avatar">{{ initialsOf(comment.user_email) }}</span>
+                  <div class="comment-body">
+                    <div class="comment-head">
+                      <span class="comment-name">{{ comment.user_email || 'Someone' }}</span>
+                      <span class="muted">{{ comment.created_at | date:'short' }}</span>
+                      @if (comment.resolved) {
+                        <span class="resolved-tag"><mat-icon class="inline-icon">check</mat-icon> Resolved</span>
+                      }
+                    </div>
+                    <div class="comment-text">{{ comment.body }}</div>
+                    <div class="comment-row-actions">
+                      @if (!comment.resolved) {
+                        <button mat-button (click)="askAgentToFix(comment)" [disabled]="disabled || saving"
+                                matTooltip="Send this comment to the agent in the chat">
+                          <mat-icon>auto_fix_high</mat-icon> Ask the agent
+                        </button>
+                        <button mat-button (click)="setResolved(comment, true)" [disabled]="saving">Resolve</button>
+                      } @else {
+                        <span class="muted">
+                          @if (comment.resolved_by_email) { by {{ comment.resolved_by_email }} }
+                        </span>
+                        <button mat-button (click)="setResolved(comment, false)" [disabled]="saving">Reopen</button>
+                      }
+                    </div>
+                  </div>
+                </div>
+              } @empty {
+                <p class="muted">No comments yet.</p>
+              }
+              <div class="comment-compose">
+                <textarea [(ngModel)]="commentDraft" rows="2" placeholder="Leave a comment…"
+                          [disabled]="saving"></textarea>
+                <div class="comment-actions">
+                  <button mat-flat-button color="primary" (click)="addComment()"
+                          [disabled]="!commentDraft.trim() || saving">Comment</button>
+                </div>
+              </div>
+            </div>
+          </mat-tab>
+
           <mat-tab label="History ({{ item.history.length }})">
             <div class="tab-body">
               <ol class="timeline">
@@ -216,6 +284,7 @@ import {
             </div>
           </mat-tab>
         </mat-tab-group>
+        </div>
       }
     </div>
   `,
@@ -224,7 +293,12 @@ import {
     :host { display: block; height: 100%; }
     .detail { display: flex; flex-direction: column; height: 100%; min-height: 0; }
     .loading { display: flex; justify-content: center; padding: 40px; }
-    .detail-head { display: flex; align-items: flex-start; gap: 8px; padding: 12px 16px 8px; }
+    /* Pinned: the title and the Jira keys stay put while the body scrolls under them. */
+    .detail-head { display: flex; align-items: flex-start; gap: 8px; padding: 12px 16px 8px;
+      flex-shrink: 0; border-bottom: 1px solid var(--border-subtle); background: var(--bg-primary); }
+    .detail-body { flex: 1; min-height: 0; overflow-y: auto; }
+    .issue-link { color: inherit; text-decoration: underline; }
+    .issue-link:hover { color: var(--color-primary); }
     .title-block { flex: 1; min-width: 0; }
     .title-block h3 { margin: 0 0 2px; font-size: 16px; cursor: text; line-height: 1.3; }
     .title-input { width: 100%; font: inherit; font-size: 16px; font-weight: 600; padding: 4px 8px; border: 1px solid var(--border-focus); border-radius: 6px; }
@@ -245,13 +319,33 @@ import {
     .notes-empty:hover:not(:disabled) { color: var(--color-primary); }
     .notes-empty:disabled { cursor: default; }
     .status-field { width: 150px; }
+    .reviewer-field { flex: 1; }
+    .reviewed-chip { display: inline-flex; align-items: center; gap: 4px; align-self: center; font-size: 12px;
+      font-weight: 600; padding: 4px 10px; border-radius: 999px;
+      background: var(--color-success-bg); color: var(--color-success-text); }
+    .comment-row { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border-light); }
+    .comment-row.resolved .comment-text, .comment-row.resolved .comment-name { color: var(--text-tertiary); }
+    .comment-row.resolved .avatar { opacity: 0.6; }
+    .resolved-tag { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 600;
+      padding: 2px 8px; border-radius: 999px; background: var(--color-success-bg); color: var(--color-success-text); }
+    .comment-row-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; margin-top: 2px; }
+    .comment-row-actions .mat-mdc-button { min-width: 0; }
+    .avatar { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px;
+      border-radius: 50%; background: var(--bg-secondary); font-size: 11px; font-weight: 600; flex-shrink: 0; }
+    .comment-body { flex: 1; min-width: 0; }
+    .comment-head { display: flex; gap: 8px; align-items: baseline; }
+    .comment-name { font-size: 13px; font-weight: 600; }
+    .comment-text { font-size: 13px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+    .comment-compose { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+    .comment-compose textarea { width: 100%; box-sizing: border-box; resize: vertical; padding: 8px 10px;
+      border: 1px solid var(--border-default); border-radius: 4px; font: inherit; font-size: 13px; }
+    .comment-compose textarea:focus { outline: none; border-color: var(--color-primary); }
+    .comment-actions { display: flex; justify-content: flex-end; }
     .group-field { flex: 1; }
     .attention-banner { display: flex; align-items: center; gap: 10px; margin: 0 16px 8px; padding: 10px 12px; background: var(--color-warning-bg); color: var(--color-warning-text); border-radius: 8px; font-size: 13px; }
     .attention-banner mat-icon { color: var(--color-warning); }
     .attention-text { flex: 1; }
-    .detail-tabs { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-    .detail-tabs ::ng-deep .mat-mdc-tab-body-wrapper { flex: 1; min-height: 0; }
-    .detail-tabs ::ng-deep .mat-mdc-tab-body-content { overflow-y: auto; }
+    .detail-tabs ::ng-deep .mat-mdc-tab-body-content { overflow: visible; }
     .tab-body { padding: 12px 16px 16px; font-size: 14px; }
     .summary { margin: 0 0 12px; color: var(--text-secondary); }
     .issue-card { border: 1px solid var(--border-default); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
@@ -285,9 +379,10 @@ import {
     .diff-pair .to { color: var(--color-success-text); }
   `]
 })
-export class WorkspaceItemDetailComponent implements OnChanges {
+export class WorkspaceItemDetailComponent implements OnChanges, OnInit {
   private jobsService = inject(JobsService);
   private snackBar = inject(MatSnackBar);
+  private organizationService = inject(HopOrganizationService);
 
   @Input({ required: true }) jobId!: string;
   @Input({ required: true }) itemId!: string;
@@ -295,6 +390,8 @@ export class WorkspaceItemDetailComponent implements OnChanges {
   @Input() disabled = false;
   @Output() updated = new EventEmitter<ReleaseNoteItemDetail>();
   @Output() closed = new EventEmitter<void>();
+  /** A comment to put to the agent, sent by the workspace into the chat pane. */
+  @Output() askAgent = new EventEmitter<string>();
 
   item: ReleaseNoteItemDetail | null = null;
   loading = true;
@@ -308,6 +405,8 @@ export class WorkspaceItemDetailComponent implements OnChanges {
   ditaErrors: string[] = [];
   editingNotes = false;
   notesDraft = '';
+  commentDraft = '';
+  members: OrganizationMember[] = [];
 
   get ditaDirty(): boolean {
     return !!this.item && this.ditaDraft.trim() !== (this.item.dita_content || '').trim();
@@ -321,6 +420,15 @@ export class WorkspaceItemDetailComponent implements OnChanges {
       .split(/(https?:\/\/[^\s]+)/g)
       .filter(part => part !== '')
       .map(part => ({ text: part, isLink: /^https?:\/\//.test(part) }));
+  }
+
+  ngOnInit(): void {
+    // Reviewers are the organization's members — review is for signed-in members only, so
+    // there is no separate list of people to keep.
+    this.organizationService.listMembers().subscribe({
+      next: members => this.members = members,
+      error: () => this.members = []
+    });
   }
 
   ngOnChanges(changes: SimpleChanges): void {
@@ -387,6 +495,73 @@ export class WorkspaceItemDetailComponent implements OnChanges {
     this.save({ title }, 'Headline updated');
   }
 
+  setReviewer(reviewerId: string | null): void {
+    if ((reviewerId || null) !== (this.item?.reviewer_id || null)) {
+      this.save({ reviewer_id: reviewerId }, reviewerId ? 'Reviewer assigned' : 'Reviewer cleared');
+    }
+  }
+
+  addComment(): void {
+    const body = this.commentDraft.trim();
+    if (!body || !this.item || this.saving) return;
+    this.saving = true;
+    this.jobsService.addComment(this.jobId, this.item.id, body).subscribe({
+      next: () => {
+        this.saving = false;
+        this.commentDraft = '';
+        // Reload rather than push: the comment also lands in the note's history.
+        this.load();
+      },
+      error: () => {
+        this.saving = false;
+        this.snackBar.open('Failed to add the comment', 'Close', { duration: 3000 });
+      }
+    });
+  }
+
+  setResolved(comment: ItemComment, resolved: boolean): void {
+    if (!this.item || this.saving) return;
+    this.saving = true;
+    this.jobsService.resolveComment(this.jobId, this.item.id, comment.id, resolved).subscribe({
+      next: updated => {
+        this.saving = false;
+        // Patch in place rather than reloading: the note itself has not changed, and a
+        // reload would throw away an unsent comment draft.
+        if (this.item) {
+          this.item = {
+            ...this.item,
+            comments: this.item.comments.map(c => c.id === updated.id ? updated : c)
+          };
+        }
+      },
+      error: () => {
+        this.saving = false;
+        this.snackBar.open('Failed to update the comment', 'Close', { duration: 3000 });
+      }
+    });
+  }
+
+  /**
+   * Hand a comment to the writer agent as an instruction. The workspace shows the chat and
+   * sends it there, so what was asked and what the agent did stay in one transcript.
+   */
+  askAgentToFix(comment: ItemComment): void {
+    if (!this.item) return;
+    const who = comment.user_email || 'A reviewer';
+    this.askAgent.emit(
+      `${who} commented on the note “${this.item.title}”:\n\n` +
+      `"${comment.body}"\n\n` +
+      `Please update that note to address the comment.`
+    );
+  }
+
+  /** Initials from an email, for the comment avatars. */
+  initialsOf(email: string | null | undefined): string {
+    const name = (email || '?').split('@')[0];
+    const parts = name.split(/[._-]+/).filter(Boolean);
+    return ((parts[0]?.[0] || '?') + (parts[1]?.[0] || '')).toUpperCase();
+  }
+
   setStatus(status: ItemStatus): void {
     if (status !== this.item?.status) this.save({ status });
   }
@@ -444,7 +619,8 @@ export class WorkspaceItemDetailComponent implements OnChanges {
     const icons: Record<string, string> = {
       created: 'add_circle', jira_changed: 'sync_problem', regenerated: 'auto_fix_high', content_edited: 'edit',
       status_changed: 'flag_circle', moved: 'low_priority', flagged: 'flag', issue_removed: 'link_off',
-      notes_edited: 'sticky_note_2',
+      notes_edited: 'sticky_note_2', reviewer_assigned: 'person_add', reviewed: 'task_alt',
+      comment_added: 'comment', comment_resolved: 'mark_chat_read',
     };
     return icons[entry.event_type] || 'history';
   }

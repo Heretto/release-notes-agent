@@ -14,6 +14,7 @@ import { JobsService, CHUNKING_STRATEGIES } from '../../core/services/jobs.servi
 import { InstructionDialogComponent } from './instruction-dialog.component';
 import { TestQueryDialogComponent } from './test-query-dialog.component';
 import { JobCreateDialogComponent } from '../jobs/job-create-dialog.component';
+import { JqlPart, jqlParts, variableNames } from '../../core/jql-variables';
 
 @Component({
   selector: 'app-instructions',
@@ -105,8 +106,17 @@ import { JobCreateDialogComponent } from '../jobs/job-create-dialog.component';
               </div>
 
               <div class="hop-query-block">
-                <span class="hop-query-block-label">JQL</span>
-                <code>{{ instruction.jql_query }}</code>
+                <span class="hop-query-block-label">{{ isReleasesMode(instruction) ? 'JIRA RELEASES' : 'JQL' }}</span>
+                @if (isReleasesMode(instruction)) {
+                  <code>{{ releaseQuery(instruction) }}</code>
+                } @else {
+                  <code>
+                    @for (part of queryParts(instruction.jql_query); track $index) {
+                      @if (part.isEmpty) { <span class="jql-var">{{ part.text }}</span> }
+                      @else { <span>{{ part.text }}</span> }
+                    }
+                  </code>
+                }
               </div>
 
               <dl class="facts">
@@ -132,6 +142,22 @@ import { JobCreateDialogComponent } from '../jobs/job-create-dialog.component';
                   <dt>Topics</dt>
                   <dd>{{ chunkingLabel(instruction.chunking_strategy) }}</dd>
                 </div>
+                <div class="fact">
+                  <dt>Source</dt>
+                  <dd>
+                    @if (isReleasesMode(instruction)) {
+                      Jira releases in {{ instruction.jira_project }}
+                    } @else {
+                      JQL query
+                    }
+                  </dd>
+                </div>
+                @if (variablesFact(instruction); as vars) {
+                  <div class="fact">
+                    <dt>Variables</dt>
+                    <dd class="vars-fact">{{ vars }}</dd>
+                  </div>
+                }
                 <div class="fact">
                   <dt>Heretto</dt>
                   <dd>
@@ -197,6 +223,8 @@ import { JobCreateDialogComponent } from '../jobs/job-create-dialog.component';
     .card-subtitle { margin: 0; color: var(--text-secondary); }
     .actions { display: flex; gap: 2px; flex-shrink: 0; }
     .hop-query-block { margin: 16px 0; }
+    .jql-var { display: inline-block; padding: 0 5px; border-radius: 4px; background: var(--color-primary-bg); color: var(--color-primary-text); font-weight: 600; }
+    .vars-fact { font-family: var(--font-mono); font-size: 12px; }
     .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px 24px; margin: 0; }
     .fact dt { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-tertiary); margin-bottom: 2px; }
     .fact dd { margin: 0; font-size: 14px; }
@@ -237,6 +265,33 @@ export class InstructionsComponent implements OnInit {
         this.snackBar.open('Failed to load instruction sets', 'Close', { duration: 3000 });
       }
     });
+  }
+
+  isReleasesMode(instruction: InstructionSet): boolean {
+    return instruction.source_mode === 'releases';
+  }
+
+  /** The query each Jira release runs, with the release name standing in. */
+  releaseQuery(instruction: InstructionSet): string {
+    const project = (instruction.jira_project || '').trim().toUpperCase();
+    const extra = (instruction.extra_jql || '').trim();
+    return `project = ${project} AND fixVersion = "…"${extra ? ` AND (${extra})` : ''} ORDER BY created ASC`;
+  }
+
+  /** The query split so its `{name}` tokens can be highlighted. */
+  queryParts(jql: string | undefined): JqlPart[] {
+    return jqlParts(jql || '');
+  }
+
+  /** `{name} = default` for each variable, or '' when the query has none (hides the fact). */
+  variablesFact(instruction: InstructionSet): string {
+    if (this.isReleasesMode(instruction)) return '';
+    return variableNames(instruction.jql_query || '')
+      .map(name => {
+        const value = instruction.variables?.[name]?.default;
+        return value ? `{${name}} = ${value}` : `{${name}}`;
+      })
+      .join(' · ');
   }
 
   chunkingLabel(strategy: string | undefined): string {

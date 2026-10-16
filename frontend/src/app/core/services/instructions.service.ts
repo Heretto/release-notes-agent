@@ -2,13 +2,21 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../../environments/environment';
+import { JqlVariableSpec } from '../jql-variables';
 import { ChunkingStrategy } from './jobs.service';
 
 export interface InstructionSet {
   id?: string;
   name: string;
   description?: string;
+  /** A JQL template: {name} tokens are filled in when a release is started. */
   jql_query: string;
+  /** Keyed by the {name} tokens in jql_query; the server keeps the two in step. */
+  variables?: Record<string, JqlVariableSpec>;
+  /** 'jql' — jql_query is a template — or 'releases' — one query per Jira fix version. */
+  source_mode?: 'jql' | 'releases';
+  jira_project?: string | null;
+  extra_jql?: string | null;
   jira_credential_id?: string | null;
   writer_agent_id?: string | null;
   analysis_agent_id?: string | null;
@@ -57,9 +65,43 @@ export class InstructionsService {
     return this.updateInstructionSet(id, { is_default: true });
   }
 
-  testQuery(instructionId: string, credentialId: string): Observable<any> {
-    return this.http.post<any>(`${this.apiUrl}/${instructionId}/test`, {
-      credential_id: credentialId
+  /** `variables` fill the query's `{name}` tokens; the server does the substituting. */
+  /**
+   * One page of the Jira releases this instruction set can run on, newest first.
+   * Paginated because a long-lived project has hundreds of versions and the picker shows
+   * a handful; `next_start` continues where the last page stopped.
+   */
+  listReleases(instructionId: string, startAt = 0, maxResults = 5): Observable<JiraReleaseList> {
+    return this.http.get<JiraReleaseList>(`${this.apiUrl}/${instructionId}/releases`, {
+      params: { start_at: startAt, max_results: maxResults }
     });
   }
+
+  testQuery(instructionId: string, credentialId: string, variables: Record<string, string> = {}): Observable<any> {
+    return this.http.post<any>(`${this.apiUrl}/${instructionId}/test`, {
+      credential_id: credentialId,
+      variables
+    });
+  }
+}
+
+/** One Jira release (fix version) an instruction set in "releases" mode can run on. */
+export interface JiraRelease {
+  id: string;
+  name: string;
+  description: string;
+  released: boolean;
+  archived: boolean;
+  /** Release date once released, otherwise the planned start date; '' when Jira has none. */
+  date: string;
+  issue_count: number;
+}
+
+export interface JiraReleaseList {
+  project: string;
+  releases: JiraRelease[];
+  /** How many the project has in total, so the picker can say "5 of 23". */
+  total: number;
+  has_more: boolean;
+  next_start: number;
 }

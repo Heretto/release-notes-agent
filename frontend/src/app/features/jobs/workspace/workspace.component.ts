@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, inject, ChangeDetectionStrategy } from '@angular/core';
+import { Component, OnInit, OnDestroy, ViewChild, ElementRef, inject, ChangeDetectionStrategy } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
@@ -19,6 +19,7 @@ import {
 import { InstructionsService, InstructionSet } from '../../../core/services/instructions.service';
 import { WorkspaceChatComponent } from './workspace-chat.component';
 import { WorkspaceItemDetailComponent } from './workspace-item-detail.component';
+import { ShareReviewDialogComponent } from './share-review-dialog.component';
 
 interface ItemGroup {
   name: string;
@@ -26,6 +27,21 @@ interface ItemGroup {
 }
 
 type ListFilter = 'all' | 'attention' | ItemStatus;
+
+/** Pane widths, in pixels. The middle pane takes whatever is left. */
+interface PaneWidths { left: number; right: number; }
+
+/** Where the dragged pane widths are remembered between visits. */
+const PANES_KEY = 'rn-workspace-panes';
+
+/**
+ * What a pane may be dragged to. Dragging squeezes the middle pane first; once it is down to
+ * MIDDLE_MIN the opposite side pane gives way instead, so a drag never collapses the topic.
+ */
+const PANE_LIMITS = { leftMin: 200, leftMax: 480, rightMin: 280, rightMax: 600, middleMin: 380 };
+
+/** Each drag handle occupies a track of its own, so two of these come off the usable width. */
+const HANDLE_WIDTH = 12;
 
 @Component({
   selector: 'app-workspace',
@@ -66,6 +82,10 @@ type ListFilter = 'all' | 'attention' | ItemStatus;
                 </button>
               }
             </mat-menu>
+            <button mat-stroked-button (click)="shareForReview()" matTooltip="Assign reviewers and hand out the review link">
+              <mat-icon>ios_share</mat-icon>
+              Share for review
+            </button>
             <button mat-stroked-button [matMenuTriggerFor]="moreMenu"><mat-icon>more_horiz</mat-icon> More</button>
             <mat-menu #moreMenu="matMenu">
               <button mat-menu-item (click)="downloadAll()"><mat-icon>download</mat-icon><span>Download DITA ({{ topics.length }})</span></button>
@@ -83,7 +103,7 @@ type ListFilter = 'all' | 'attention' | ItemStatus;
           </div>
         }
 
-        <div class="columns">
+        <div class="columns" #columns [style.grid-template-columns]="gridTemplate">
           <!-- Notes -->
           <aside class="notes-pane">
             <div class="pane-head">
@@ -125,6 +145,9 @@ type ListFilter = 'all' | 'attention' | ItemStatus;
             </div>
           </aside>
 
+          <div class="pane-handle" role="separator" aria-orientation="vertical"
+               aria-label="Resize the notes list" (pointerdown)="startResize($event, 'left')"></div>
+
           <!-- Topic -->
           <section class="topic-pane">
             <div class="pane-head topic-head">
@@ -149,7 +172,7 @@ type ListFilter = 'all' | 'attention' | ItemStatus;
               @if (!selectedTopic) {
                 <p class="muted empty-note">No topic yet. Approve or edit notes and the topic appears here.</p>
               } @else if (view === 'rendered') {
-                <div class="topic-render" [attr.data-topic]="selectedTopic.slug">
+                <div class="topic-render" [attr.data-topic]="selectedTopic.slug" (click)="onPreviewClick($event)">
                   <hop-dita-content [html]="selectedTopic.html || ''" (linkClick)="onLinkClick($event)"></hop-dita-content>
                 </div>
                 @if (selectedTopic.render_warnings.length) {
@@ -162,6 +185,9 @@ type ListFilter = 'all' | 'attention' | ItemStatus;
               }
             </div>
           </section>
+
+          <div class="pane-handle" role="separator" aria-orientation="vertical"
+               aria-label="Resize the details pane" (pointerdown)="startResize($event, 'right')"></div>
 
           <!-- Chat / note details -->
           <aside class="side-pane">
@@ -176,11 +202,13 @@ type ListFilter = 'all' | 'attention' | ItemStatus;
             <div class="side-body">
               @if (rightPane === 'item' && selectedItemId) {
                 <app-workspace-item-detail [jobId]="job.id" [itemId]="selectedItemId" [groups]="groupNames" [disabled]="!editable"
-                                           (updated)="onItemUpdated($event)" (closed)="rightPane = 'chat'">
+                                           (updated)="onItemUpdated($event)" (closed)="rightPane = 'chat'"
+                                           (askAgent)="askAgent($event)">
                 </app-workspace-item-detail>
               } @else {
                 <app-workspace-chat [jobId]="job.id" [selectedItem]="selectedItem" [agentName]="instructionSet?.writer_agent_name || null"
-                                    [disabled]="!editable" (changed)="onChatChanged($event)">
+                                    [disabled]="!editable" [pendingMessage]="chatPending"
+                                    (pendingMessageSent)="chatPending = null" (changed)="onChatChanged($event)">
                 </app-workspace-chat>
               }
             </div>
@@ -201,9 +229,17 @@ type ListFilter = 'all' | 'attention' | ItemStatus;
     .muted { color: var(--text-tertiary); font-size: 12px; }
     .attention { color: var(--color-warning-text); }
     .running-banner { display: flex; align-items: center; gap: 8px; padding: 8px 14px; margin-bottom: 10px; border-radius: 8px; background: var(--color-info-bg); color: var(--color-info-text); font-size: 13px; }
-    .columns { display: grid; grid-template-columns: 300px minmax(0, 1fr) 380px; gap: 12px; flex: 1; min-height: 0; }
-    @media (max-width: 1280px) { .columns { grid-template-columns: 260px minmax(0, 1fr) 340px; } }
-    @media (max-width: 1024px) { .workspace { height: auto; } .columns { grid-template-columns: 1fr; } .notes-pane, .topic-pane, .side-pane { height: 60vh; } }
+    /* Widths come from gridTemplate so the handles can drive them; see startResize(). */
+    .columns { display: grid; flex: 1; min-height: 0; }
+    /* Each handle is its own 12px track, matching the design; no grid gap. */
+    .pane-handle { cursor: col-resize; display: flex; align-items: center; justify-content: center;
+      touch-action: none; }
+    .pane-handle::after { content: ''; width: 2px; height: 36px; border-radius: 1px;
+      background: var(--border-default); transition: background 120ms; }
+    .pane-handle:hover::after, .pane-handle.dragging::after { background: var(--color-primary); }
+    @media (max-width: 1024px) { .workspace { height: auto; } .columns { grid-template-columns: 1fr; }
+      .pane-handle { display: none; }
+      .notes-pane, .topic-pane, .side-pane { height: 60vh; } }
     .notes-pane, .topic-pane, .side-pane { display: flex; flex-direction: column; min-height: 0; border: 1px solid var(--border-default); border-radius: 12px; background: var(--card-bg); overflow: hidden; }
     .pane-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--border-default); min-height: 44px; }
     .spacer { flex: 1; }
@@ -243,6 +279,7 @@ type ListFilter = 'all' | 'attention' | ItemStatus;
   `]
 })
 export class WorkspaceComponent implements OnInit, OnDestroy {
+  @ViewChild('columns') columnsRef?: ElementRef<HTMLElement>;
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private jobsService = inject(JobsService);
@@ -253,6 +290,8 @@ export class WorkspaceComponent implements OnInit, OnDestroy {
   job: Job | null = null;
   instructionSet: InstructionSet | null = null;
   items: ReleaseNoteItem[] = [];
+  /** Queued for the chat pane; cleared as soon as the chat reports it sent. */
+  chatPending: string | null = null;
   topics: ReleaseNoteTopic[] = [];
   loading = true;
   busy = false;
@@ -265,7 +304,99 @@ export class WorkspaceComponent implements OnInit, OnDestroy {
 
   private jobPoll?: Subscription;
 
+  // ── Resizable panes ───────────────────────────────────────────────────────────────
+
+  panes: PaneWidths = { left: 260, right: 340 };
+  private dragging: { side: 'left' | 'right'; startX: number; startLeft: number; startRight: number } | null = null;
+  private stopDrag: (() => void) | null = null;
+
+  get gridTemplate(): string {
+    return `${this.panes.left}px ${HANDLE_WIDTH}px minmax(0, 1fr) ${HANDLE_WIDTH}px ${this.panes.right}px`;
+  }
+
+  private restorePanes(): void {
+    try {
+      const raw = localStorage.getItem(PANES_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as Partial<PaneWidths>;
+      if (typeof saved.left === 'number' && typeof saved.right === 'number') {
+        this.panes = {
+          left: this.clamp(saved.left, PANE_LIMITS.leftMin, PANE_LIMITS.leftMax),
+          right: this.clamp(saved.right, PANE_LIMITS.rightMin, PANE_LIMITS.rightMax),
+        };
+      }
+    } catch {
+      // A private window, cleared site data, or storage the browser refuses: keep defaults.
+    }
+  }
+
+  private persistPanes(): void {
+    try {
+      localStorage.setItem(PANES_KEY, JSON.stringify(this.panes));
+    } catch {
+      // Not worth telling anyone about — the layout simply will not be remembered.
+    }
+  }
+
+  private clamp(value: number, min: number, max: number): number {
+    return Math.min(max, Math.max(min, value));
+  }
+
+  startResize(event: PointerEvent, side: 'left' | 'right'): void {
+    event.preventDefault();
+    const handle = event.target as HTMLElement;
+    handle.classList.add('dragging');
+    this.dragging = { side, startX: event.clientX, startLeft: this.panes.left, startRight: this.panes.right };
+
+    const move = (e: PointerEvent) => this.onResizeMove(e);
+    const up = () => {
+      handle.classList.remove('dragging');
+      this.dragging = null;
+      this.persistPanes();
+      this.stopDrag?.();
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up, { once: true });
+    this.stopDrag = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      this.stopDrag = null;
+    };
+  }
+
+  private onResizeMove(event: PointerEvent): void {
+    const drag = this.dragging;
+    const container = this.columnsRef?.nativeElement;
+    if (!drag || !container) return;
+
+    const total = container.clientWidth - HANDLE_WIDTH * 2;
+    const delta = event.clientX - drag.startX;
+
+    if (drag.side === 'left') {
+      let left = this.clamp(drag.startLeft + delta, PANE_LIMITS.leftMin, PANE_LIMITS.leftMax);
+      let right = drag.startRight;
+      // Squeeze the middle first; when it runs out, take it from the right pane.
+      const overflow = PANE_LIMITS.middleMin - (total - left - right);
+      if (overflow > 0) {
+        right = Math.max(PANE_LIMITS.rightMin, right - overflow);
+        left = Math.min(left, total - right - PANE_LIMITS.middleMin);
+      }
+      this.panes = { left: Math.round(left), right: Math.round(right) };
+    } else {
+      // The right handle grows the pane as the pointer moves left, hence the negated delta.
+      let right = this.clamp(drag.startRight - delta, PANE_LIMITS.rightMin, PANE_LIMITS.rightMax);
+      let left = drag.startLeft;
+      const overflow = PANE_LIMITS.middleMin - (total - left - right);
+      if (overflow > 0) {
+        left = Math.max(PANE_LIMITS.leftMin, left - overflow);
+        right = Math.min(right, total - left - PANE_LIMITS.middleMin);
+      }
+      this.panes = { left: Math.round(left), right: Math.round(right) };
+    }
+  }
+
   ngOnInit(): void {
+    this.restorePanes();
     const jobId = this.route.snapshot.paramMap.get('id');
     if (!jobId) { this.router.navigate(['/releases']); return; }
     this.jobsService.getJob(jobId).subscribe({
@@ -283,6 +414,8 @@ export class WorkspaceComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.jobPoll?.unsubscribe();
+    // A drag in progress keeps window listeners alive past this component otherwise.
+    this.stopDrag?.();
   }
 
   // ── Derived state ────────────────────────────────────────────────────────
@@ -326,6 +459,25 @@ export class WorkspaceComponent implements OnInit, OnDestroy {
       group.items.push(item);
     }
     return groups;
+  }
+
+  /** A comment handed to the agent: show the chat, which sends it as soon as it mounts. */
+  askAgent(message: string): void {
+    if (!this.editable) {
+      this.snackBar.open('A run is in progress — the agent cannot edit notes until it finishes', 'Close', { duration: 4000 });
+      return;
+    }
+    this.chatPending = message;
+    this.rightPane = 'chat';
+  }
+
+  shareForReview(): void {
+    this.dialog.open(ShareReviewDialogComponent, {
+      width: '560px',
+      // The content caps itself at 600px; this just stops the surface clipping it first.
+      maxHeight: '95vh',
+      data: { jobId: this.job!.id, items: this.items }
+    });
   }
 
   chunkingLabel(strategy: ChunkingStrategy): string {
@@ -398,6 +550,25 @@ export class WorkspaceComponent implements OnInit, OnDestroy {
         target.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
     }, 60);
+  }
+
+  /**
+   * Clicking a note in the rendered topic selects it, the same as clicking its row in the
+   * notes list. The handler is on the container because the topic is sanitized HTML with no
+   * bindings of its own; each note carries `id="{topic.slug}__{item.fragment_id}"`, which is
+   * what highlightSelected() writes to in the other direction.
+   */
+  onPreviewClick(event: MouseEvent): void {
+    const target = event.target as HTMLElement | null;
+    // A link inside a note is still a link; onLinkClick deals with those.
+    if (target?.closest('a')) return;
+
+    const note = target?.closest('.release-note') as HTMLElement | null;
+    const fragmentId = note?.id.split('__').pop();
+    if (!fragmentId) return;
+
+    const item = this.items.find(i => i.fragment_id === fragmentId);
+    if (item && item.id !== this.selectedItemId) this.selectItem(item);
   }
 
   onLinkClick(event: HopDitaLinkEvent): void {

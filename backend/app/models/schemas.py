@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field, validator
+from pydantic import BaseModel, EmailStr, Field, model_validator, validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from uuid import UUID
@@ -75,10 +75,24 @@ class ResetPasswordRequest(BaseModel):
 # Instruction set schemas
 CHUNKING_STRATEGIES = ("single", "by_group", "by_component")
 
+class JqlVariableSpec(BaseModel):
+    """How one {name} token in a JQL template is presented when a release is started."""
+    label: str = Field("", max_length=120)
+    default: str = Field("", max_length=500)
+    hint: str = Field("", max_length=300)
+
 class InstructionSetBase(BaseModel):
     name: str
     description: Optional[str] = None
-    jql_query: str = Field(..., min_length=1, max_length=4096)
+    # "jql": jql_query below is the template. "releases": the query is built per Jira
+    # release from jira_project and extra_jql, and jql_query is unused.
+    source_mode: str = Field("jql", pattern=r'^(jql|releases)$')
+    jira_project: Optional[str] = Field(None, max_length=255)
+    extra_jql: Optional[str] = Field(None, max_length=2048)
+    # Required in "jql" mode only — see the validator below.
+    jql_query: str = Field("", max_length=4096)
+    # Keyed by the {name} tokens in jql_query; normalized against them on save.
+    variables: Dict[str, JqlVariableSpec] = Field(default_factory=dict)
     jira_credential_id: Optional[UUID] = None
     dita_template_id: Optional[UUID] = None
     heretto_folder_id: Optional[str] = None
@@ -93,13 +107,27 @@ class InstructionSetBase(BaseModel):
     organization_guidance: Optional[str] = Field(None, max_length=8000)
     chunking_strategy: str = Field("single", pattern=r'^(single|by_group|by_component)$')
 
+    @model_validator(mode="after")
+    def _require_the_fields_the_mode_uses(self):
+        """Each mode needs its own field, and neither is required by the other."""
+        if self.source_mode == "releases":
+            if not (self.jira_project or "").strip():
+                raise ValueError("A Jira project key is required when the source is Jira releases")
+        elif not (self.jql_query or "").strip():
+            raise ValueError("A JQL query is required")
+        return self
+
 class InstructionSetCreate(InstructionSetBase):
     pass
 
 class InstructionSetUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
-    jql_query: Optional[str] = Field(None, min_length=1, max_length=4096)
+    source_mode: Optional[str] = Field(None, pattern=r'^(jql|releases)$')
+    jira_project: Optional[str] = Field(None, max_length=255)
+    extra_jql: Optional[str] = Field(None, max_length=2048)
+    jql_query: Optional[str] = Field(None, max_length=4096)
+    variables: Optional[Dict[str, JqlVariableSpec]] = None
     jira_credential_id: Optional[UUID] = None
     dita_template_id: Optional[UUID] = None
     heretto_folder_id: Optional[str] = None
@@ -125,8 +153,15 @@ class InstructionSetResponse(InstructionSetBase):
 
 # Job schemas
 class JobCreate(BaseModel):
-    jql_query: str = Field(..., min_length=1, max_length=4096)
+    # Optional: given, it overrides the instruction set's template outright (the "custom
+    # query" path). Omitted, the server resolves the set's template with `variables`.
+    jql_query: Optional[str] = Field(None, min_length=1, max_length=4096)
     instruction_set_id: UUID
+    # {name: value} for the instruction set's JQL variables.
+    variables: Dict[str, str] = Field(default_factory=dict)
+    # The chosen Jira release, for an instruction set whose source is Jira releases. The
+    # server builds the query from it; the browser never sends one.
+    release: Optional[str] = Field(None, max_length=255)
     title: Optional[str] = Field(None, max_length=255)
     output_filename: str = Field(..., min_length=1, max_length=255)
     publish_to_heretto: bool = False
@@ -154,6 +189,8 @@ class JobResponse(BaseModel):
     instruction_set_id: Optional[UUID]
     title: Optional[str] = None
     jql_query: str
+    # The variable values this run resolved its query from.
+    variables: Dict[str, str] = Field(default_factory=dict)
     status: JobStatusEnum
     triggered_by: JobTriggerEnum
     output_filename: Optional[str]
@@ -223,13 +260,36 @@ class ReleaseNoteItemResponse(BaseModel):
     user_edited: bool = False
     issue_keys: List[str] = Field(default_factory=list)
     has_notes: bool = False
+    # Review is its own axis, separate from `status`: who was asked to read this note,
+    # whether they have said they are done, and how much they said.
+    reviewer_id: Optional[UUID] = None
+    reviewer_email: Optional[str] = None
+    reviewed: bool = False
+    comment_count: int = 0
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+class ItemCommentResponse(BaseModel):
+    id: UUID
+    user_id: Optional[UUID] = None
+    user_email: Optional[str] = None
+    body: str
+    resolved: bool = False
+    resolved_at: Optional[datetime] = None
+    resolved_by_email: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+class ItemCommentCreate(BaseModel):
+    body: str = Field(..., min_length=1, max_length=8000)
+
+class ItemCommentUpdate(BaseModel):
+    resolved: bool
 
 class ReleaseNoteItemDetailResponse(ReleaseNoteItemResponse):
     issues: List[JobIssueResponse] = Field(default_factory=list)
     notes: str = ""
     history: List[ItemHistoryResponse] = Field(default_factory=list)
+    comments: List[ItemCommentResponse] = Field(default_factory=list)
 
 class ReleaseNoteItemUpdate(BaseModel):
     title: Optional[str] = Field(None, min_length=1, max_length=500)
@@ -239,6 +299,10 @@ class ReleaseNoteItemUpdate(BaseModel):
     group_name: Optional[str] = Field(None, max_length=255)
     notes: Optional[str] = Field(None, max_length=20_000)
     clear_attention: Optional[bool] = None
+    # Sent as null to unassign, so the route tests membership in model_fields_set rather
+    # than `is not None` — null here is a value, not an omission.
+    reviewer_id: Optional[UUID] = None
+    reviewed: Optional[bool] = None
 
 class ReleaseNoteTopicResponse(BaseModel):
     id: UUID

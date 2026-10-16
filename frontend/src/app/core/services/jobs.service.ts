@@ -33,7 +33,12 @@ export const ITEM_STATUSES: { value: ItemStatus; label: string }[] = [
 ];
 
 export interface JobCreate {
-  jql_query: string;
+  /** Omit to have the server resolve the instruction set's template from `variables`. */
+  jql_query?: string;
+  /** {name: value} for the instruction set's JQL variables. */
+  variables?: Record<string, string>;
+  /** The chosen Jira release, when the instruction set's source is Jira releases. */
+  release?: string;
   instruction_set_id: string;
   title?: string;
   output_filename: string;
@@ -54,6 +59,8 @@ export interface JobCounts {
 
 export interface Job {
   id: string;
+  /** The variable values this run resolved its query from. */
+  variables?: Record<string, string>;
   user_id: string;
   instruction_set_id?: string;
   title?: string | null;
@@ -125,14 +132,32 @@ export interface ReleaseNoteItem {
   user_edited: boolean;
   issue_keys: string[];
   has_notes: boolean;
+  /** Review is its own axis, separate from `status`: who was asked, and their answer. */
+  reviewer_id?: string | null;
+  reviewer_email?: string | null;
+  reviewed: boolean;
+  comment_count: number;
   created_at?: string | null;
   updated_at?: string | null;
+}
+
+export interface ItemComment {
+  id: string;
+  user_id?: string | null;
+  user_email?: string | null;
+  body: string;
+  /** Dealt with, not deleted — a resolved comment stays readable alongside the change. */
+  resolved: boolean;
+  resolved_at?: string | null;
+  resolved_by_email?: string | null;
+  created_at?: string | null;
 }
 
 export interface ReleaseNoteItemDetail extends ReleaseNoteItem {
   issues: JobIssue[];
   notes: string;
   history: ItemHistoryEntry[];
+  comments: ItemComment[];
 }
 
 export interface ReleaseNoteItemUpdate {
@@ -143,6 +168,9 @@ export interface ReleaseNoteItemUpdate {
   group_name?: string;
   notes?: string;
   clear_attention?: boolean;
+  /** `null` unassigns — the field is only sent when it is meant to change. */
+  reviewer_id?: string | null;
+  reviewed?: boolean;
 }
 
 export interface ReleaseNoteTopic {
@@ -274,6 +302,19 @@ export class JobsService {
 
   updateItem(jobId: string, itemId: string, update: ReleaseNoteItemUpdate): Observable<ReleaseNoteItemDetail> {
     return this.http.patch<ReleaseNoteItemDetail>(`${this.apiUrl}/${jobId}/items/${itemId}`, update);
+  }
+
+  listComments(jobId: string, itemId: string): Observable<ItemComment[]> {
+    return this.http.get<ItemComment[]>(`${this.apiUrl}/${jobId}/items/${itemId}/comments`);
+  }
+
+  addComment(jobId: string, itemId: string, body: string): Observable<ItemComment> {
+    return this.http.post<ItemComment>(`${this.apiUrl}/${jobId}/items/${itemId}/comments`, { body });
+  }
+
+  resolveComment(jobId: string, itemId: string, commentId: string, resolved: boolean): Observable<ItemComment> {
+    return this.http.patch<ItemComment>(
+      `${this.apiUrl}/${jobId}/items/${itemId}/comments/${commentId}`, { resolved });
   }
 
   moveItem(jobId: string, itemId: string, move: { group_name?: string; position?: number }): Observable<ReleaseNoteItem[]> {

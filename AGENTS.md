@@ -59,8 +59,20 @@ migration. It handles three cases, mirroring `install.sh`: an empty database get
 `create_all()` + `stamp head` (this project's baseline schema is **not** built by Alembic —
 the migrations are incremental patches on top, so replaying them over current-shape tables
 fails); a stamped database gets `upgrade head`; a database with tables but no
-`alembic_version` is **refused**, because neither stamping nor upgrading is safe to guess.
-Running on the host still means `backend/venv/bin/alembic upgrade head` by hand.
+`alembic_version` is **refused**, because neither stamping nor upgrading is safe to guess;
+and an `alembic_version` holding several revisions when the graph has one head is
+**refused** too — that table is corrupted, and Alembic's own message for it ("requested
+revision X overlaps with other requested revisions Y") names neither the stale row nor the
+fix. `dev.sh` runs the same script before starting uvicorn, so a host run migrates itself
+as well. Running Alembic by hand (`backend/venv/bin/alembic upgrade head`) still works and
+is the right tool for a repair, but is no longer a step anyone has to remember.
+
+**`create_all()` runs on every backend start**, not just the first one — it is in hop-core's
+`create_hop_app` lifespan. It creates a missing *table* and never alters an existing one, so
+it silently re-creates a table a migration dropped while the model still exists, and it does
+nothing at all for a column a migration adds. That is why a migration that creates a new ORM
+table needs an "already there?" guard (`add_item_review`, `add_instruction_set_agents`) and
+why the backend must not start before the migration has run.
 
 **Three environment files, not interchangeable.** `backend/.env` for host runs (uvicorn,
 celery, alembic — it carries localhost `DATABASE_URL`/`REDIS_URL`); the repository-root
@@ -93,6 +105,41 @@ credentials stored by the old routes keep working.
 - **`backend/Dockerfile` installs `git`.** The hop-core pin is a `git+https://` URL, so pip
   shells out to git at image build time. `python:3.11-slim` does not ship it.
 - **One Celery worker.** No distributed lock; a second replica would double-run jobs.
+- **An instruction set has two sources, and only one of its query fields is required.**
+  `source_mode = 'jql'` means `jql_query` is the template; `source_mode = 'releases'` means
+  the query is built per Jira fix version from `jira_project` and `extra_jql` and
+  `jql_query` is unused (stored as `''`). The requirement moves with the mode — enforced by
+  a model validator in `InstructionSetBase` and by swapping the Angular validators in
+  `instruction-dialog.component.ts` — so do not put `min_length=1` back on `jql_query`.
+  Release lists are read live from Jira (`GET /instructions/{id}/releases`), never stored:
+  a cached list would offer a version that no longer exists. That endpoint is paginated
+  (`start_at`/`max_results`, five then ten at a time) and goes to Jira's **`/project/{key}/version`**
+  — singular, paginated. Its unpaginated `/versions` sibling accepts `expand=issuesstatus`
+  but does not reliably return the counts, which is why every release once read "0 issues";
+  `_fill_issue_counts` falls back to `/version/{id}/relatedIssueCounts` per version, which
+  is only affordable because the list is a page.
+- **Review is a separate axis from `status`, not a stage of it.** `status` (draft → review →
+  approved) is where a note sits in the writer's flow; `reviewer_id`/`reviewed` are one
+  person's answer to "have you read this?". A note can be approved with nobody having
+  reviewed it, or reviewed while still a draft — do not collapse the two. Review access is
+  "signed in and in this organization", enforced by the API on every call; `/releases/:id/review`
+  is a plain route with no token, so the Share-for-review link is just that URL.
+  `PATCH /jobs/{id}/items/{item}` skips the idle check when the only fields sent are
+  `reviewer_id`/`reviewed`, so reviewing keeps working while the writer reruns. Commenting
+  and resolving a comment are exempt for the same reason. **Resolving is not deleting** —
+  the comment stays readable, so what was asked for survives next to the change that
+  answered it. "Ask the agent" in the Details pane hands a comment to the writer agent by
+  sending it into the workspace chat (`chatPending` → the chat's `pendingMessage`), rather
+  than calling the agent behind the scenes, so what was asked and what the agent did sit in
+  one transcript the person can read and undo.
+- **JQL variables resolve on the server, never in the browser.** An instruction set's
+  `jql_query` is a template whose `{name}` tokens a release fills in. The browser splits the
+  template only to *display* it (`frontend/src/app/core/jql-variables.ts`); the query that
+  runs is built by `backend/app/services/jql_variables.py`, which injects every value as one
+  quoted JQL literal. That is what stops a value like `1.0" OR project = "SECRET` from
+  rewriting the query and reading another project's issues — a plain string replace, which is
+  what the design prototype does, does not. The start dialog and the test dialog both send
+  values and let the server substitute; neither sends a built query.
 - **Do not pass `temperature` to agents.** Several Anthropic models reject it with HTTP 400
   ("temperature is deprecated for this model"); the pipeline and the workspace chat leave it
   unset and take the provider default. `tests/unit/services/test_anthropic_temperature.py`

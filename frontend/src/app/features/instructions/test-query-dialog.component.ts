@@ -13,6 +13,7 @@ import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { FormsModule } from '@angular/forms';
 import { InstructionSet, InstructionsService } from '../../core/services/instructions.service';
 import { CredentialsService, JiraCredentialOption } from '../../core/services/credentials.service';
+import { JqlPart, defaultsOf, jqlParts, missingValues, variableNames } from '../../core/jql-variables';
 
 interface TestResult {
   success: boolean;
@@ -94,9 +95,26 @@ interface TestResult {
               </mat-select>
             </mat-form-field>
           }
+          @if (!isReleasesMode && variableNames.length) {
+            <div class="query-vars">
+              <h4>Query Variables:</h4>
+              @for (name of variableNames; track name) {
+                <label class="query-var">
+                  <span class="query-var-label">{{ labelOf(name) }} <code>{{ token(name) }}</code></span>
+                  <input class="query-var-input" [value]="values[name] || ''"
+                         (input)="setValue(name, $any($event.target).value)" placeholder="Required">
+                </label>
+              }
+            </div>
+          }
           <div class="query-info">
             <h4>Query to Test:</h4>
-            <pre class="jql-query">{{ data.jql_query }}</pre>
+            @if (isReleasesMode) {
+              <pre class="jql-query">{{ releaseQueryPreview }}</pre>
+              <p class="hint">Tests against the newest release in {{ data.jira_project }}.</p>
+            } @else {
+              <pre class="jql-query">@for (part of previewParts; track $index) {@if (part.isEmpty) {<span class="jql-missing">{{ part.text }}</span>} @else {<span>{{ part.text }}</span>}}</pre>
+            }
           </div>
         </div>
       }
@@ -268,7 +286,7 @@ interface TestResult {
       @if (!testResult && jiraCredentials.length > 0) {
         <button mat-raised-button color="primary"
           (click)="runTest()"
-          [disabled]="!selectedCredentialId || testing"
+          [disabled]="!selectedCredentialId || testing || missing.length > 0"
           >
           <mat-icon>play_arrow</mat-icon>
           Run Test
@@ -539,6 +557,17 @@ interface TestResult {
     mat-divider {
       margin: 15px 0;
     }
+
+    .query-vars { margin-top: 16px; }
+    .query-vars h4 { margin: 0 0 8px 0; }
+    .query-var { display: block; margin-bottom: 10px; }
+    .query-var-label { display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
+    .query-var-label code { font-family: var(--font-mono); font-size: 11px; }
+    .query-var-input { width: 100%; box-sizing: border-box; font: 13px var(--font-mono); padding: 7px 9px;
+      border: 1px solid var(--border-default); border-radius: 4px; background: var(--bg-primary); color: var(--text-primary); }
+    .query-var-input:focus { outline: none; border-color: var(--color-primary); }
+    .jql-missing { display: inline-block; padding: 0 4px; border-radius: 4px;
+      background: var(--color-error-bg); color: var(--color-error-text); font-weight: 600; }
   `]
 })
 export class TestQueryDialogComponent implements OnInit {
@@ -559,8 +588,49 @@ export class TestQueryDialogComponent implements OnInit {
     @Inject(MAT_DIALOG_DATA) public data: InstructionSet
   ) {}
 
+  /** Values for the query's {name} tokens, seeded from each variable's stored default. */
+  values: Record<string, string> = {};
+
   ngOnInit() {
+    this.values = defaultsOf(this.data.variables);
     this.loadJiraCredentials();
+  }
+
+  get isReleasesMode(): boolean {
+    return this.data.source_mode === 'releases';
+  }
+
+  /** The query a release runs, with the release name standing in. */
+  get releaseQueryPreview(): string {
+    const project = (this.data.jira_project || '').trim().toUpperCase();
+    const extra = (this.data.extra_jql || '').trim();
+    return `project = ${project} AND fixVersion = "…"${extra ? ` AND (${extra})` : ''} ORDER BY created ASC`;
+  }
+
+  get variableNames(): string[] {
+    return variableNames(this.data.jql_query || '');
+  }
+
+  get previewParts(): JqlPart[] {
+    return jqlParts(this.data.jql_query || '', this.values);
+  }
+
+  get missing(): string[] {
+    if (this.isReleasesMode) return [];
+    return missingValues(this.data.jql_query || '', this.values);
+  }
+
+  labelOf(name: string): string {
+    return this.data.variables?.[name]?.label || name;
+  }
+
+  /** The literal token text — built here because `{{` beside a brace confuses the parser. */
+  token(name: string): string {
+    return `{${name}}`;
+  }
+
+  setValue(name: string, value: string): void {
+    this.values = { ...this.values, [name]: value };
   }
 
   loadJiraCredentials() {
@@ -585,12 +655,12 @@ export class TestQueryDialogComponent implements OnInit {
   }
 
   runTest() {
-    if (!this.data.id || !this.selectedCredentialId) return;
+    if (!this.data.id || !this.selectedCredentialId || this.missing.length) return;
 
     this.testing = true;
     
     // Call the test endpoint
-    this.instructionsService.testQuery(this.data.id, this.selectedCredentialId).subscribe({
+    this.instructionsService.testQuery(this.data.id, this.selectedCredentialId, this.values).subscribe({
       next: (result) => {
         this.testResult = result;
         this.testing = false;

@@ -48,6 +48,21 @@ if ! "$BACKEND_DIR/venv/bin/pip" check; then
   echo "⚠️  pip check found dependency conflicts (see above) — likely an app/hop-core version mismatch"
 fi
 
+# Same one-shot the `migrate` compose service runs, so a host run and a container run
+# bring the schema to head the same way. It has to finish before uvicorn starts: hop-core's
+# lifespan calls create_all() on every start, which creates missing *tables* but never adds
+# a column, so a backend started against an un-migrated database half-hides the problem and
+# then fails on the first query.
+# PYTHONPATH because the script imports `app.*` and lives in scripts/, so Python puts
+# scripts/ on the path rather than the backend root. The image sets PYTHONPATH=/app for the
+# same reason (backend/Dockerfile).
+echo "Applying database migrations..."
+if ! (cd "$BACKEND_DIR" && PYTHONPATH="$BACKEND_DIR" venv/bin/python scripts/startup_migrate.py); then
+  echo "ERROR: migrations failed — not starting the backend against a schema the code does not match"
+  docker compose stop postgres redis mailpit 2>/dev/null || true
+  exit 1
+fi
+
 echo "Starting backend..."
 (
   cd "$BACKEND_DIR"

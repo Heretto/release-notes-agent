@@ -15,6 +15,9 @@ top (see AGENTS.md):
   tables, no stamp      refuse. The schema could be any age, so neither stamping (skips
                         real migrations) nor upgrading (re-applies applied ones) is safe to
                         guess at. An operator stamps the right revision by hand, once.
+  several revisions     refuse, when the graph has only one head: the version table is
+                        corrupted, and Alembic's own error for it names neither the stale
+                        row nor the fix.
 """
 
 from __future__ import annotations
@@ -23,7 +26,8 @@ import sys
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import inspect
+from alembic.script import ScriptDirectory
+from sqlalchemy import inspect, text
 
 from app.config import get_settings
 from hop_core.db import init_engine, get_engine
@@ -60,9 +64,32 @@ def main() -> int:
         )
         return 1
 
+    stamped_revisions = _stamped_revisions(engine)
+    heads = ScriptDirectory.from_config(config).get_heads()
+    if len(stamped_revisions) > 1 and len(heads) == 1:
+        # Several rows are legitimate only when the graph really has several heads. With one
+        # head they are a corrupted version table — usually an ancestor left behind beside
+        # its descendant — and Alembic reports it as an unhelpful "requested revision
+        # overlaps with other requested revisions". Name it instead.
+        print(
+            "migrate: alembic_version holds more than one revision "
+            f"({', '.join(sorted(stamped_revisions))}) but the migrations have a single head "
+            f"({heads[0]}). One of those rows is stale. Work out which revision the schema "
+            "actually matches, delete the other row, then start again:\n"
+            "    delete from alembic_version where version_num = '<stale revision>';",
+            file=sys.stderr,
+            flush=True,
+        )
+        return 1
+
     command.upgrade(config, "head")
     print("migrate: upgraded to head", flush=True)
     return 0
+
+
+def _stamped_revisions(engine) -> list[str]:
+    with engine.connect() as connection:
+        return [row[0] for row in connection.execute(text("select version_num from alembic_version"))]
 
 
 if __name__ == "__main__":

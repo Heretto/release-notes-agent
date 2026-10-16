@@ -1,6 +1,7 @@
 import { Component, Inject, OnInit, ChangeDetectionStrategy } from '@angular/core';
+import { Subscription, debounceTime, distinctUntilChanged } from 'rxjs';
 import { RouterLink } from '@angular/router';
-import { FormBuilder, FormGroup, Validators, ReactiveFormsModule } from '@angular/forms';
+import { FormBuilder, FormGroup, Validators, ReactiveFormsModule, FormsModule } from '@angular/forms';
 import { MatDialogModule, MatDialogRef, MAT_DIALOG_DATA } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
@@ -11,10 +12,16 @@ import { MatExpansionModule } from '@angular/material/expansion';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatSelectModule } from '@angular/material/select';
+import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { HopAgentService, AgentSummary } from '@heretto/hop-ui';
-import { InstructionSet } from '../../core/services/instructions.service';
+import { InstructionSet, InstructionsService, JiraRelease } from '../../core/services/instructions.service';
 import { CredentialsService, JiraCredentialOption } from '../../core/services/credentials.service';
 import { CHUNKING_STRATEGIES } from '../../core/services/jobs.service';
+import { JqlPart, JqlVariableSpec, defaultsOf, jqlParts, variableNames } from '../../core/jql-variables';
+
+/** The releases card opens on the most recent few; everything older is a press away. */
+const FIRST_RELEASES = 5;
+const MORE_RELEASES = 10;
 
 @Component({
   selector: 'app-instruction-dialog',
@@ -22,6 +29,7 @@ import { CHUNKING_STRATEGIES } from '../../core/services/jobs.service';
   imports: [
     RouterLink,
     ReactiveFormsModule,
+    FormsModule,
     MatDialogModule,
     MatFormFieldModule,
     MatInputModule,
@@ -31,7 +39,8 @@ import { CHUNKING_STRATEGIES } from '../../core/services/jobs.service';
     MatExpansionModule,
     MatIconModule,
     MatTooltipModule,
-    MatSelectModule
+    MatSelectModule,
+    MatButtonToggleModule
   ],
   template: `
     <h2 mat-dialog-title>
@@ -100,16 +109,131 @@ import { CHUNKING_STRATEGIES } from '../../core/services/jobs.service';
             </mat-form-field>
           }
 
-          <mat-form-field appearance="outline" class="full-width">
+          <div class="source-switch">
+            <span class="source-label">Source</span>
+            <mat-button-toggle-group formControlName="source_mode" aria-label="Issue source">
+              <mat-button-toggle value="jql">JQL query</mat-button-toggle>
+              <mat-button-toggle value="releases">Jira releases</mat-button-toggle>
+            </mat-button-toggle-group>
+            <p class="muted source-help">
+              @if (isReleasesMode) {
+                The agent reads the releases (fix versions) Jira tracks for a project. You pick one when you start a release.
+              } @else {
+                Write the query yourself, with variables for anything that changes per release.
+              }
+            </p>
+          </div>
+
+          @if (isReleasesMode) {
+            <!-- subscriptSizing="dynamic": the hint wraps in a half-width field, and the
+                 default fixed one-line subscript lets it run into the card below. -->
+            <div class="two-up">
+              <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                <mat-label>Project key</mat-label>
+                <input matInput class="mono upper" formControlName="jira_project" placeholder="HER" required>
+                @if (form.get('jira_project')?.hasError('required')) {
+                  <mat-error>A Jira project key is required</mat-error>
+                }
+              </mat-form-field>
+
+              <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                <mat-label>Additional filter</mat-label>
+                <input matInput class="mono" formControlName="extra_jql" placeholder="status in (Done, Released)">
+                <mat-hint>Optional JQL added to every release query</mat-hint>
+              </mat-form-field>
+            </div>
+
+            <div class="vars-card">
+              <div class="vars-head">
+                <span class="vars-title">Releases detected</span>
+                <span class="muted">{{ releasesStatus }}</span>
+              </div>
+              @if (releases.length) {
+                <div class="release-list">
+                  @for (release of releases; track release.name) {
+                    <div class="release-row">
+                      <span class="release-name">{{ release.name }}</span>
+                      <span class="release-chip" [class.released]="release.released">
+                        {{ release.released ? 'Released' : 'Unreleased' }}
+                      </span>
+                      <span class="release-date">{{ releaseDateText(release) }}</span>
+                      <span class="release-count">{{ release.issue_count }} issues</span>
+                    </div>
+                  }
+                </div>
+              }
+              @if (releasesHasMore) {
+                <button type="button" class="load-more" (click)="loadMoreReleases()" [disabled]="loadingReleases">
+                  {{ loadingReleases ? 'Loading…' : 'Load ' + nextBatchSize + ' more' }}
+                </button>
+              }
+              <div class="vars-preview">
+                <span class="vars-col">Query for each release</span>
+                <div class="query-preview">{{ releaseQueryPreview }}</div>
+              </div>
+            </div>
+          } @else {
+          <!-- subscriptSizing="dynamic": the hint wraps to two lines, and the default fixed
+               one-line subscript lets it run into the Variables card below. -->
+          <mat-form-field appearance="outline" class="full-width jql-field" subscriptSizing="dynamic">
             <mat-label>JQL query</mat-label>
             <textarea matInput formControlName="jql_query" rows="3" required
                       placeholder="e.g., project = MYPROJECT AND fixVersion = '1.0' ORDER BY created DESC"></textarea>
             @if (form.get('jql_query')?.hasError('required')) {
               <mat-error>JQL query is required</mat-error>
             }
-            <mat-hint>Selects the issues a job evaluates for release notes</mat-hint>
+            <mat-hint>Selects the issues a job evaluates for release notes. Wrap anything that changes per release in braces — <code>&#123;version&#125;</code> — to make it a variable.</mat-hint>
           </mat-form-field>
 
+          <div class="vars-card">
+            <div class="vars-head">
+              <span class="vars-title">Variables</span>
+              <span class="muted">
+                {{ variableNames.length ? variableNames.length + ' found in the query' : 'None found in the query' }}
+              </span>
+            </div>
+
+            @if (variableNames.length) {
+              <div class="vars-grid">
+                <span class="vars-col">Variable</span>
+                <span class="vars-col">Label</span>
+                <span class="vars-col">Default value</span>
+                <span class="vars-col">Hint</span>
+                @for (name of variableNames; track name) {
+                  <code class="var-token">{{ token(name) }}</code>
+                  <input class="var-input" [ngModel]="variableSpecs[name].label" [ngModelOptions]="{standalone: true}"
+                         (ngModelChange)="setVariable(name, 'label', $event)" [placeholder]="name">
+                  <input class="var-input mono" [ngModel]="variableSpecs[name].default" [ngModelOptions]="{standalone: true}"
+                         (ngModelChange)="setVariable(name, 'default', $event)" placeholder="Optional">
+                  <input class="var-input" [ngModel]="variableSpecs[name].hint" [ngModelOptions]="{standalone: true}"
+                         (ngModelChange)="setVariable(name, 'hint', $event)" placeholder="Where to find this value">
+                }
+              </div>
+
+              <div class="vars-preview">
+                <span class="vars-col">Query with defaults</span>
+                <div class="query-preview">
+                  @for (part of previewParts; track $index) {
+                    @if (part.isVar) {
+                      <span class="chip-filled">{{ part.text }}</span>
+                    } @else if (part.isEmpty) {
+                      <span class="chip-missing" matTooltip="No default — whoever starts a release fills this in">{{ part.text }}</span>
+                    } @else {
+                      <span>{{ part.text }}</span>
+                    }
+                  }
+                </div>
+              </div>
+            } @else {
+              <p class="muted vars-empty">
+                No variables yet. Example: <code>fixVersion = &#123;version&#125; ORDER BY created ASC</code>
+              </p>
+            }
+          </div>
+
+          }
+
+          @if (!isReleasesMode) {
           <mat-expansion-panel class="jql-help">
             <mat-expansion-panel-header>
               <mat-panel-title>
@@ -126,6 +250,7 @@ import { CHUNKING_STRATEGIES } from '../../core/services/jobs.service';
               </ul>
             </div>
           </mat-expansion-panel>
+          }
         </div>
 
         <div class="form-section">
@@ -229,6 +354,44 @@ import { CHUNKING_STRATEGIES } from '../../core/services/jobs.service';
   `,
   changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
+    .source-switch { margin-bottom: 16px; }
+    .source-label { display: block; font-size: 12px; font-weight: 500; color: var(--text-secondary); margin-bottom: 6px; }
+    .source-help { margin: 6px 0 0; font-size: 12px; }
+    .two-up { display: grid; grid-template-columns: 160px 1fr; gap: 12px; align-items: start; margin-bottom: 18px; }
+    .two-up mat-form-field { width: 100%; }
+    .upper { text-transform: uppercase; }
+    .release-list { display: flex; flex-direction: column; gap: 6px; }
+    .release-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border: 1px solid var(--border-default);
+      border-radius: 6px; background: var(--bg-primary); }
+    .release-name { font-family: var(--font-mono); font-size: 13px; font-weight: 600; min-width: 72px; }
+    .release-chip { display: inline-flex; align-items: center; font-size: 11px; font-weight: 600; padding: 4px 8px;
+      border-radius: 999px; background: var(--color-info-bg, var(--bg-secondary)); color: var(--color-info-text, var(--text-secondary)); }
+    .release-chip.released { background: var(--color-success-bg); color: var(--color-success-text); }
+    .release-date { flex: 1; font-size: 12px; color: var(--text-tertiary); }
+    .release-count { font-size: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+    .load-more { align-self: flex-start; background: none; border: none; padding: 6px 2px 0; cursor: pointer;
+      font: inherit; font-size: 13px; font-weight: 500; color: var(--color-primary); }
+    .load-more:disabled { color: var(--text-tertiary); cursor: default; }
+    .jql-field { margin-bottom: 12px; }
+    .vars-card { border: 1px solid var(--border-default); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; background: var(--bg-secondary); }
+    .vars-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+    .vars-title { font-size: 13px; font-weight: 600; }
+    .vars-grid { display: grid; grid-template-columns: 130px 1fr 1fr 1.3fr; gap: 6px 8px; align-items: center; }
+    .vars-col { font-size: 11px; font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.03em; }
+    .var-token { font-family: var(--font-mono); font-size: 12px; font-weight: 600; padding: 6px 8px; border-radius: 4px;
+      background: var(--color-accent-bg, var(--bg-primary)); color: var(--color-accent-text, var(--text-primary));
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .var-input { font: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid var(--border-default);
+      border-radius: 4px; background: var(--bg-primary); color: var(--text-primary); min-width: 0; }
+    .var-input.mono { font-family: var(--font-mono); }
+    .var-input:focus { outline: none; border-color: var(--color-primary); }
+    .vars-preview { margin-top: 12px; display: flex; flex-direction: column; gap: 4px; }
+    .query-preview { background: var(--bg-primary); border: 1px solid var(--border-default); border-radius: 6px;
+      padding: 8px 10px; font-family: var(--font-mono); font-size: 12px; line-height: 1.6; word-break: break-word; }
+    .chip-filled { background: var(--color-primary-bg); color: var(--color-primary-text); font-weight: 600; padding: 0 5px; border-radius: 4px; }
+    .chip-missing { background: var(--color-error-bg); color: var(--color-error-text); font-weight: 600; padding: 0 5px; border-radius: 4px; }
+    .vars-empty { font-size: 13px; margin: 0; }
+    .vars-empty code, mat-hint code { font-family: var(--font-mono); font-size: 12px; }
     mat-dialog-content { min-width: 600px; max-width: 800px; max-height: 70vh; overflow-y: auto; }
     .form-section { margin-bottom: 28px; }
     .form-section h3 { color: var(--text-primary); margin-bottom: 8px; font-size: 16px; font-weight: 500; }
@@ -260,13 +423,18 @@ export class InstructionDialogComponent implements OnInit {
     private dialogRef: MatDialogRef<InstructionDialogComponent>,
     private agentService: HopAgentService,
     private credentialsService: CredentialsService,
+    private instructionsService: InstructionsService,
     @Inject(MAT_DIALOG_DATA) public data: InstructionSet | null
   ) {
+    this.variableSpecs = { ...(data?.variables || {}) };
     this.form = this.fb.group({
       name: [data?.name || '', Validators.required],
       description: [data?.description || ''],
       product_name: [data?.product_name || ''],
-      jql_query: [data?.jql_query || '', Validators.required],
+      source_mode: [data?.source_mode || 'jql'],
+      jira_project: [data?.jira_project || ''],
+      extra_jql: [data?.extra_jql || ''],
+      jql_query: [data?.jql_query || ''],
       jira_credential_id: [data?.jira_credential_id || null],
       writer_agent_id: [data?.writer_agent_id || null, Validators.required],
       analysis_agent_id: [data?.analysis_agent_id || null],
@@ -277,6 +445,117 @@ export class InstructionDialogComponent implements OnInit {
       publish_to_heretto: [data?.publish_to_heretto || false],
       is_default: [data?.is_default || false]
     });
+  }
+
+  /** Jira's releases for the project key typed above, in "releases" mode. */
+  releases: JiraRelease[] = [];
+  releasesStatus = '';
+  releasesHasMore = false;
+  loadingReleases = false;
+  private releasesTotal = 0;
+  private releasesNextStart = 0;
+  private releasesRequest?: Subscription;
+
+  /** The card opens on the most recent few; everything older is a press away. */
+  get nextBatchSize(): number {
+    return Math.min(MORE_RELEASES, Math.max(this.releasesTotal - this.releases.length, 1));
+  }
+
+  get isReleasesMode(): boolean {
+    return this.form?.get('source_mode')?.value === 'releases';
+  }
+
+  /** The query every release in this mode runs, with the release name standing in. */
+  get releaseQueryPreview(): string {
+    const project = (this.form?.get('jira_project')?.value || '').trim().toUpperCase();
+    const extra = (this.form?.get('extra_jql')?.value || '').trim();
+    if (!project) return 'Enter a project key to see the query each release will run.';
+    return `project = ${project} AND fixVersion = "…"${extra ? ` AND (${extra})` : ''} ORDER BY created ASC`;
+  }
+
+  releaseDateText(release: JiraRelease): string {
+    if (!release.date) return '';
+    return `${release.released ? 'Released ' : 'Due '}${release.date}`;
+  }
+
+  /**
+   * Jira is the only place a release list exists, so it is read live. Only a saved
+   * instruction set can be asked — the endpoint resolves the Jira credential from the
+   * stored row — so a new one shows the project key's query and nothing else until saved.
+   */
+  private loadReleases(): void {
+    if (!this.isReleasesMode) return;
+    const project = (this.form.get('jira_project')?.value || '').trim();
+    this.releases = [];
+    this.releasesTotal = 0;
+    this.releasesNextStart = 0;
+    this.releasesHasMore = false;
+    if (!project) {
+      this.releasesStatus = '';
+      return;
+    }
+    if (!this.data?.id) {
+      this.releasesStatus = 'Save the instruction set to see its releases';
+      return;
+    }
+    this.fetchReleases(FIRST_RELEASES);
+  }
+
+  loadMoreReleases(): void {
+    if (!this.loadingReleases) this.fetchReleases(MORE_RELEASES);
+  }
+
+  private fetchReleases(count: number): void {
+    if (!this.data?.id) return;
+    this.loadingReleases = true;
+    if (!this.releases.length) this.releasesStatus = 'Loading…';
+    this.releasesRequest?.unsubscribe();
+    this.releasesRequest = this.instructionsService
+      .listReleases(this.data.id, this.releasesNextStart, count)
+      .subscribe({
+        next: result => {
+          this.loadingReleases = false;
+          this.releases = [...this.releases, ...result.releases];
+          this.releasesTotal = result.total;
+          this.releasesNextStart = result.next_start;
+          this.releasesHasMore = result.has_more;
+          this.releasesStatus = this.releases.length
+            ? `${this.releases.length} of ${result.total} in ${result.project}`
+            : `No releases found in ${result.project}.`;
+        },
+        error: error => {
+          this.loadingReleases = false;
+          this.releasesHasMore = false;
+          this.releasesStatus = error.error?.detail || 'Could not read releases from Jira';
+        }
+      });
+  }
+
+  /** Spec metadata per variable, kept for tokens that come and go while editing. */
+  variableSpecs: Record<string, JqlVariableSpec> = {};
+
+  /** The tokens currently in the query — the editor rows follow this, not the stored keys. */
+  get variableNames(): string[] {
+    const names = variableNames(this.form?.get('jql_query')?.value || '');
+    // A token typed just now has no spec yet; give it a blank one so the row can bind.
+    for (const name of names) {
+      if (!this.variableSpecs[name]) this.variableSpecs[name] = { label: '', default: '', hint: '' };
+    }
+    return names;
+  }
+
+  /** The query as it would run using each variable's default. */
+  get previewParts(): JqlPart[] {
+    return jqlParts(this.form?.get('jql_query')?.value || '', defaultsOf(this.variableSpecs));
+  }
+
+  /** The literal token text. Built here because `&#123;{{ name }}` confuses the template parser. */
+  token(name: string): string {
+    return `{${name}}`;
+  }
+
+  setVariable(name: string, field: keyof JqlVariableSpec, value: string): void {
+    this.variableSpecs[name] = { ...this.variableSpecs[name], [field]: value };
   }
 
   ngOnInit(): void {
@@ -290,6 +569,31 @@ export class InstructionDialogComponent implements OnInit {
     this.credentialsService.getJiraCredentials().subscribe(credentials => {
       this.jiraCredentials = credentials;
     });
+
+    // Only the active mode's field is required, so the validators move with the switch.
+    this.applyModeValidators();
+    this.form.get('source_mode')?.valueChanges.subscribe(() => {
+      this.applyModeValidators();
+      this.loadReleases();
+    });
+    this.form.get('jira_project')?.valueChanges
+      .pipe(debounceTime(400), distinctUntilChanged())
+      .subscribe(() => this.loadReleases());
+    this.loadReleases();
+  }
+
+  private applyModeValidators(): void {
+    const jql = this.form.get('jql_query');
+    const project = this.form.get('jira_project');
+    if (this.isReleasesMode) {
+      jql?.clearValidators();
+      project?.setValidators(Validators.required);
+    } else {
+      jql?.setValidators(Validators.required);
+      project?.clearValidators();
+    }
+    jql?.updateValueAndValidity({ emitEvent: false });
+    project?.updateValueAndValidity({ emitEvent: false });
   }
 
   onCancel(): void {
@@ -301,6 +605,20 @@ export class InstructionDialogComponent implements OnInit {
     const value = { ...this.form.value };
     for (const key of ['description', 'product_name', 'relevance_guidance', 'organization_guidance', 'heretto_folder_id']) {
       if (typeof value[key] === 'string' && !value[key].trim()) value[key] = null;
+    }
+    if (this.isReleasesMode) {
+      // The query is built per release from these two; a template would have nothing to fill.
+      value.jira_project = (value.jira_project || '').trim().toUpperCase();
+      value.extra_jql = (value.extra_jql || '').trim() || null;
+      value.jql_query = '';
+      value.variables = {};
+    } else {
+      value.jira_project = null;
+      value.extra_jql = null;
+      // Send specs only for tokens the query still contains. The server normalizes too, but
+      // sending the stale ones would make the request disagree with what the editor showed.
+      const names = this.variableNames;
+      value.variables = Object.fromEntries(names.map(name => [name, this.variableSpecs[name]]));
     }
     this.dialogRef.close(value);
   }
