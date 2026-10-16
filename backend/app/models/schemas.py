@@ -409,6 +409,9 @@ class WebhookConfigResponse(BaseModel):
 class WebhookConfigCreateResponse(WebhookConfigResponse):
     """Returned only on creation — includes the secret token (shown once)."""
     secret_token: str
+    #: Where to point this webhook in Jira, relative to the API root. Each configuration has
+    #: its own address and its own secret; the shared /webhooks/jira endpoint is deprecated.
+    webhook_path: str
 
 # DITA template schemas
 class DitaTemplateCreate(BaseModel):

@@ -25,16 +25,25 @@ from typing import Optional
 from app.config import get_settings
 
 
-def verify_jira_webhook_signature(body: bytes, signature: Optional[str]) -> bool:
-    """Verify Jira webhook signature."""
-    settings = get_settings()
-    if not signature or not settings.jira_webhook_secret:
+def verify_webhook_signature(body: bytes, signature: Optional[str], secret: Optional[str]) -> bool:
+    """Is this body signed with this secret?
+
+    HMAC-SHA256 over the raw body, compared in constant time. Refuses when either the
+    signature or the secret is missing, so a deployment that never set one cannot be driven
+    by unsigned requests.
+    """
+    if not signature or not secret:
         return False
 
-    expected_signature = hmac.new(
-        settings.jira_webhook_secret.encode(),
-        body,
-        hashlib.sha256,
-    ).hexdigest()
+    expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(signature, f"sha256={expected}")
 
-    return hmac.compare_digest(signature, f"sha256={expected_signature}")
+
+def verify_jira_webhook_signature(body: bytes, signature: Optional[str]) -> bool:
+    """Verify against the deployment-wide Jira webhook secret.
+
+    Only the legacy un-addressed endpoint uses this. A webhook that names its configuration
+    is verified against that configuration's own secret instead — one secret per webhook,
+    so holding one cannot start work in another organization.
+    """
+    return verify_webhook_signature(body, signature, get_settings().jira_webhook_secret)

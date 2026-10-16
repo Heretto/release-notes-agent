@@ -8,15 +8,21 @@ started from a request outlives that request's session.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Dict, Optional
 from uuid import UUID
 
 from sqlalchemy.orm import Session
 
 from app.models.database import Job, SessionLocal, WebhookConfig
+from app.services.jql_variables import escape_value
 from app.services.release_notes_pipeline import ReleaseNotesPipeline, sanitize_job_error
 
 logger = logging.getLogger(__name__)
+
+#: PROJ-123. Jira's own issue-key shape, checked before the key is used to build a query or
+#: a filename — the key arrives in a webhook payload and is not ours.
+ISSUE_KEY_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*-\d+$")
 
 
 class JobOrchestrator:
@@ -50,11 +56,20 @@ class JobOrchestrator:
             config = db.query(WebhookConfig).filter(WebhookConfig.id == config_id).first()
             if not config or not config.is_active:
                 return
+
+            # The key comes from the webhook body. Signed, but signed by whoever holds that
+            # configuration's secret — so it is checked for shape and then injected as a
+            # quoted literal, exactly as a release's variables are. Interpolating it raw let
+            # a crafted payload widen the query past the issue it claimed to be about.
+            if not ISSUE_KEY_RE.match(issue_key or ""):
+                logger.warning("Webhook %s carried an unusable issue key; ignoring", config_id)
+                return
+
             job = Job(
                 user_id=config.user_id,
                 organization_id=config.organization_id,
                 instruction_set_id=config.instruction_set_id,
-                jql_query=f"key = {issue_key}",
+                jql_query=f'key = "{escape_value(issue_key)}"',
                 triggered_by="webhook",
                 status="pending",
                 auto_publish=config.auto_publish,

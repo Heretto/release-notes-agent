@@ -105,6 +105,16 @@ credentials stored by the old routes keep working.
 - **`backend/Dockerfile` installs `git`.** The hop-core pin is a `git+https://` URL, so pip
   shells out to git at image build time. `python:3.11-slim` does not ship it.
 - **One Celery worker.** No distributed lock; a second replica would double-run jobs.
+- **A Jira webhook is addressed to one configuration and signed with that configuration's
+  own secret** (`POST /webhooks/jira/{config_id}`). `webhook_configs.secret_token` had been
+  generated and returned since the feature shipped but never actually verified: the old
+  shared `/webhooks/jira` checked one deployment-wide secret and then fanned the event out
+  to **every** organization's active configurations, so one secret could start runs — and
+  spend credentials — in an organization its holder had no account in. That endpoint still
+  exists for single-organization deployments mid-migration and **refuses outright once a
+  second organization has an active configuration**. The issue key in a webhook body is
+  checked against Jira's key shape and injected as a quoted literal, like every other
+  untrusted value that reaches JQL; it used to be interpolated raw.
 - **An instruction set has two sources, and only one of its query fields is required.**
   `source_mode = 'jql'` means `jql_query` is the template; `source_mode = 'releases'` means
   the query is built per Jira fix version from `jira_project` and `extra_jql` and
