@@ -137,6 +137,12 @@ type StepState = 'done' | 'current' | 'pending' | 'failed';
                 <dt>Output file</dt>
                 <dd>{{ job.output_filename || '—' }}</dd>
               </div>
+              @if (variablesUsed(); as vars) {
+                <div class="fact">
+                  <dt>Variables</dt>
+                  <dd class="vars-fact">{{ vars }}</dd>
+                </div>
+              }
               <div class="fact">
                 <dt>Created</dt>
                 <dd>{{ job.created_at | date:'medium' }}</dd>
@@ -295,6 +301,7 @@ type StepState = 'done' | 'current' | 'pending' | 'failed';
     .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px 24px; margin: 0 0 16px 0; }
     .fact dt { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-tertiary); margin-bottom: 2px; }
     .fact dd { margin: 0; font-size: 14px; }
+    .vars-fact { font-family: var(--font-mono); font-size: 12px; }
     .attention { color: var(--color-warning-text); }
     .muted { color: var(--text-tertiary); font-size: 13px; }
     .topic-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border-light); }
@@ -416,6 +423,13 @@ export class JobDetailComponent implements OnInit, OnDestroy {
   statusLabel(job: Job): string {
     if (job.status === 'completed') return 'Ready for review';
     return job.status.charAt(0).toUpperCase() + job.status.slice(1);
+  }
+
+  /** `name = value` for the variables this run resolved its query from, '' when it had none. */
+  variablesUsed(): string {
+    return Object.entries(this.job?.variables || {})
+      .map(([name, value]) => `${name} = ${value}`)
+      .join(' · ');
   }
 
   chunkingLabel(strategy: string): string {

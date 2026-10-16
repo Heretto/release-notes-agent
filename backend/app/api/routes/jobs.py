@@ -29,6 +29,7 @@ from app.models.schemas import (
     ReleaseNoteItemUpdate, ReleaseNoteTopicResponse,
 )
 from app.services.job_orchestrator import JobOrchestrator
+from app.services.jql_variables import resolve as resolve_jql
 from app.services.topic_assembler import FragmentError
 from app.services.workspace_chat import ChatUnavailable, WorkspaceChat
 from app.services.workspace_service import (
@@ -141,13 +142,27 @@ async def create_job(
             detail="The instruction set has no writer agent. Pick one before running a job.",
         )
 
+    # Resolve the query server-side. A custom query sent by the client wins outright;
+    # otherwise the set's template is filled from the submitted variable values. Values are
+    # injected as quoted literals by jql_variables.resolve, so one can never rewrite the
+    # query — see that module for why this never happens in the browser.
+    if job_data.jql_query:
+        resolved_jql = job_data.jql_query
+        used_variables: dict[str, str] = {}
+    else:
+        used_variables = {name: (value or "").strip() for name, value in job_data.variables.items()}
+        try:
+            resolved_jql = resolve_jql(instruction_set.jql_query or "", used_variables)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
 
     job = Job(
         user_id=context.user.id,
         organization_id=context.organization_id,
         instruction_set_id=job_data.instruction_set_id,
         title=(job_data.title or "").strip() or None,
-        jql_query=job_data.jql_query,
+        jql_query=resolved_jql,
+        variables=used_variables,
         output_filename=job_data.output_filename,
         heretto_folder_id=job_data.heretto_folder_id,
         auto_publish=job_data.publish_to_heretto,

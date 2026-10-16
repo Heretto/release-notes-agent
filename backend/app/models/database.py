@@ -124,7 +124,12 @@ class InstructionSet(Base):
     organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(255), nullable=False)
     description = Column(Text)
+    # A JQL *template*: {name} tokens are filled in when a release is started. See
+    # app/services/jql_variables.py — resolution is server-side and always injects a value
+    # as one quoted literal, so a value can never rewrite the query.
     jql_query = Column(Text, nullable=False)
+    # {name: {label, default, hint}} for the tokens above, kept in step with them on save.
+    variables = Column(JSON, nullable=False, default=dict, server_default="{}")
     jira_credential_id = Column(UUID(as_uuid=True), ForeignKey("credentials.id", ondelete="SET NULL"), nullable=True)
     dita_template_id = Column(UUID(as_uuid=True), ForeignKey("dita_templates.id"))
     heretto_folder_id = Column(String(255))
@@ -165,7 +170,11 @@ class Job(Base):
     organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True)
     instruction_set_id = Column(UUID(as_uuid=True), ForeignKey("instruction_sets.id"))
     title = Column(String(255), nullable=True)
+    # The resolved query this run actually used; the instruction set keeps the template.
     jql_query = Column(Text, nullable=False)
+    # {name: value} — the variable values it was resolved from, so a run can be explained
+    # and rerun without re-deriving them.
+    variables = Column(JSON, nullable=False, default=dict, server_default="{}")
     status = Column(SQLEnum(JobStatus), nullable=False, default=JobStatus.PENDING)
     triggered_by = Column(SQLEnum(JobTrigger), nullable=False)
     output_filename = Column(String(255))

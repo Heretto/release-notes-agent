@@ -93,6 +93,14 @@ credentials stored by the old routes keep working.
 - **`backend/Dockerfile` installs `git`.** The hop-core pin is a `git+https://` URL, so pip
   shells out to git at image build time. `python:3.11-slim` does not ship it.
 - **One Celery worker.** No distributed lock; a second replica would double-run jobs.
+- **JQL variables resolve on the server, never in the browser.** An instruction set's
+  `jql_query` is a template whose `{name}` tokens a release fills in. The browser splits the
+  template only to *display* it (`frontend/src/app/core/jql-variables.ts`); the query that
+  runs is built by `backend/app/services/jql_variables.py`, which injects every value as one
+  quoted JQL literal. That is what stops a value like `1.0" OR project = "SECRET` from
+  rewriting the query and reading another project's issues — a plain string replace, which is
+  what the design prototype does, does not. The start dialog and the test dialog both send
+  values and let the server substitute; neither sends a built query.
 - **Do not pass `temperature` to agents.** Several Anthropic models reject it with HTTP 400
   ("temperature is deprecated for this model"); the pipeline and the workspace chat leave it
   unset and take the provider default. `tests/unit/services/test_anthropic_temperature.py`

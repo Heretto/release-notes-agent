@@ -368,7 +368,7 @@ def job_counts(job: Job) -> JobCounts:
 def job_to_response(job: Job) -> JobResponse:
     return JobResponse(
         id=job.id, user_id=job.user_id, instruction_set_id=job.instruction_set_id,
-        title=job.title, jql_query=job.jql_query,
+        title=job.title, jql_query=job.jql_query, variables=job.variables or {},
         status=job.status, triggered_by=job.triggered_by, output_filename=job.output_filename,
         tickets_processed=job.tickets_processed or 0, max_tickets=job.max_tickets,
         error_message=job.error_message, stage=job.stage, stage_message=job.stage_message,

@@ -33,7 +33,10 @@ export const ITEM_STATUSES: { value: ItemStatus; label: string }[] = [
 ];
 
 export interface JobCreate {
-  jql_query: string;
+  /** Omit to have the server resolve the instruction set's template from `variables`. */
+  jql_query?: string;
+  /** {name: value} for the instruction set's JQL variables. */
+  variables?: Record<string, string>;
   instruction_set_id: string;
   title?: string;
   output_filename: string;
@@ -54,6 +57,8 @@ export interface JobCounts {
 
 export interface Job {
   id: string;
+  /** The variable values this run resolved its query from. */
+  variables?: Record<string, string>;
   user_id: string;
   instruction_set_id?: string;
   title?: string | null;

@@ -75,10 +75,18 @@ class ResetPasswordRequest(BaseModel):
 # Instruction set schemas
 CHUNKING_STRATEGIES = ("single", "by_group", "by_component")
 
+class JqlVariableSpec(BaseModel):
+    """How one {name} token in a JQL template is presented when a release is started."""
+    label: str = Field("", max_length=120)
+    default: str = Field("", max_length=500)
+    hint: str = Field("", max_length=300)
+
 class InstructionSetBase(BaseModel):
     name: str
     description: Optional[str] = None
     jql_query: str = Field(..., min_length=1, max_length=4096)
+    # Keyed by the {name} tokens in jql_query; normalized against them on save.
+    variables: Dict[str, JqlVariableSpec] = Field(default_factory=dict)
     jira_credential_id: Optional[UUID] = None
     dita_template_id: Optional[UUID] = None
     heretto_folder_id: Optional[str] = None
@@ -100,6 +108,7 @@ class InstructionSetUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     jql_query: Optional[str] = Field(None, min_length=1, max_length=4096)
+    variables: Optional[Dict[str, JqlVariableSpec]] = None
     jira_credential_id: Optional[UUID] = None
     dita_template_id: Optional[UUID] = None
     heretto_folder_id: Optional[str] = None
@@ -125,8 +134,12 @@ class InstructionSetResponse(InstructionSetBase):
 
 # Job schemas
 class JobCreate(BaseModel):
-    jql_query: str = Field(..., min_length=1, max_length=4096)
+    # Optional: given, it overrides the instruction set's template outright (the "custom
+    # query" path). Omitted, the server resolves the set's template with `variables`.
+    jql_query: Optional[str] = Field(None, min_length=1, max_length=4096)
     instruction_set_id: UUID
+    # {name: value} for the instruction set's JQL variables.
+    variables: Dict[str, str] = Field(default_factory=dict)
     title: Optional[str] = Field(None, max_length=255)
     output_filename: str = Field(..., min_length=1, max_length=255)
     publish_to_heretto: bool = False
@@ -154,6 +167,8 @@ class JobResponse(BaseModel):
     instruction_set_id: Optional[UUID]
     title: Optional[str] = None
     jql_query: str
+    # The variable values this run resolved its query from.
+    variables: Dict[str, str] = Field(default_factory=dict)
     status: JobStatusEnum
     triggered_by: JobTriggerEnum
     output_filename: Optional[str]

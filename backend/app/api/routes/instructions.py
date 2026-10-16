@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import Dict, List, Optional
 from uuid import UUID
 from pydantic import BaseModel
 import logging
@@ -15,12 +15,13 @@ from app.models.schemas import (
     InstructionSetUpdate,
     InstructionSetResponse
 )
+from app.services.jql_variables import defaults_of, normalize_specs, resolve as resolve_jql
 from app.api.dependencies import get_current_active_user_with_org, CurrentUserContext
 
 router = APIRouter(prefix="/instructions")
 
 _INSTRUCTION_UPDATABLE_FIELDS = {
-    "name", "description", "jql_query", "jira_credential_id",
+    "name", "description", "jql_query", "variables", "jira_credential_id",
     "dita_template_id", "heretto_folder_id",
     "publish_to_heretto", "is_default",
     "writer_agent_id", "analysis_agent_id", "product_name",
@@ -35,6 +36,7 @@ def _to_response(instruction_set: InstructionSet) -> InstructionSetResponse:
         name=instruction_set.name,
         description=instruction_set.description,
         jql_query=instruction_set.jql_query,
+        variables=instruction_set.variables or {},
         jira_credential_id=instruction_set.jira_credential_id,
         dita_template_id=instruction_set.dita_template_id,
         heretto_folder_id=instruction_set.heretto_folder_id,
@@ -110,10 +112,13 @@ async def create_instruction_set(
             InstructionSet.is_default == True
         ).update({"is_default": False})
 
+    fields = instruction_data.model_dump()
+    # Keep the specs keyed by the tokens the query actually contains, whatever was sent.
+    fields["variables"] = normalize_specs(fields.get("jql_query") or "", fields.get("variables"))
     new_instruction = InstructionSet(
         user_id=context.user.id,
         organization_id=context.organization_id,
-        **instruction_data.model_dump()
+        **fields
     )
     db.add(new_instruction)
     db.commit()
@@ -167,6 +172,13 @@ async def update_instruction_set(
         if field in _INSTRUCTION_UPDATABLE_FIELDS:
             setattr(instruction_set, field, value)
 
+    # Either side moving can orphan a spec or leave a new token undescribed, so renormalize
+    # against whatever the query now is.
+    if "jql_query" in update_data or "variables" in update_data:
+        instruction_set.variables = normalize_specs(
+            instruction_set.jql_query or "", instruction_set.variables
+        )
+
     db.commit()
     db.refresh(instruction_set)
     return _to_response(instruction_set)
@@ -191,6 +203,9 @@ async def delete_instruction_set(
 
 class TestQueryRequest(BaseModel):
     credential_id: UUID
+    #: Values for the query's {name} variables. Anything omitted falls back to the
+    #: variable's stored default, so a test can be run straight from the card.
+    variables: Dict[str, str] = {}
 
 
 @router.post("/{instruction_id}/test")
@@ -222,6 +237,16 @@ async def test_instruction_query(
             detail="No Jira credentials configured. Please add Jira credentials first."
         )
 
+    # Resolve here rather than letting the browser send a built query: the same escaping
+    # rule that protects a real run has to protect the test, or the test is testing
+    # something else. See app/services/jql_variables.py.
+    values = {**defaults_of(instruction_set.variables or {})}
+    values.update({name: (value or "").strip() for name, value in request.variables.items()})
+    try:
+        resolved_jql = resolve_jql(instruction_set.jql_query or "", values)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+
     decrypted = decrypt_credentials(jira_credential.encrypted_data)
     jira_service = JiraServiceV3(
         server=decrypted["server_url"],
@@ -230,10 +255,10 @@ async def test_instruction_query(
     )
 
     try:
-        issues = await jira_service.execute_query(jql=instruction_set.jql_query, max_results=10)
+        issues = await jira_service.execute_query(jql=resolved_jql, max_results=10)
         return {
             "success": True,
-            "instruction_set": {"name": instruction_set.name, "jql_query": instruction_set.jql_query},
+            "instruction_set": {"name": instruction_set.name, "jql_query": resolved_jql},
             "jira_credential": {"name": jira_credential.name, "server": decrypted["server_url"]},
             "results": {
                 "total_found": len(issues),
@@ -259,6 +284,6 @@ async def test_instruction_query(
         logger.error("JQL query test failed for instruction set %s: %s", instruction_set.id, e, exc_info=True)
         return {
             "success": False,
-            "instruction_set": {"name": instruction_set.name, "jql_query": instruction_set.jql_query},
+            "instruction_set": {"name": instruction_set.name, "jql_query": resolved_jql},
             "message": "Failed to execute JQL query — check your query syntax and Jira credentials"
         }

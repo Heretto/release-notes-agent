@@ -2,13 +2,17 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../../environments/environment';
+import { JqlVariableSpec } from '../jql-variables';
 import { ChunkingStrategy } from './jobs.service';
 
 export interface InstructionSet {
   id?: string;
   name: string;
   description?: string;
+  /** A JQL template: {name} tokens are filled in when a release is started. */
   jql_query: string;
+  /** Keyed by the {name} tokens in jql_query; the server keeps the two in step. */
+  variables?: Record<string, JqlVariableSpec>;
   jira_credential_id?: string | null;
   writer_agent_id?: string | null;
   analysis_agent_id?: string | null;
@@ -57,9 +61,11 @@ export class InstructionsService {
     return this.updateInstructionSet(id, { is_default: true });
   }
 
-  testQuery(instructionId: string, credentialId: string): Observable<any> {
+  /** `variables` fill the query's `{name}` tokens; the server does the substituting. */
+  testQuery(instructionId: string, credentialId: string, variables: Record<string, string> = {}): Observable<any> {
     return this.http.post<any>(`${this.apiUrl}/${instructionId}/test`, {
-      credential_id: credentialId
+      credential_id: credentialId,
+      variables
     });
   }
 }

@@ -1,6 +1,6 @@
 import { Component, Inject, OnInit, ChangeDetectionStrategy } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { FormBuilder, FormGroup, Validators, ReactiveFormsModule } from '@angular/forms';
+import { FormBuilder, FormGroup, Validators, ReactiveFormsModule, FormsModule } from '@angular/forms';
 import { MatDialogModule, MatDialogRef, MAT_DIALOG_DATA } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
@@ -15,6 +15,7 @@ import { HopAgentService, AgentSummary } from '@heretto/hop-ui';
 import { InstructionSet } from '../../core/services/instructions.service';
 import { CredentialsService, JiraCredentialOption } from '../../core/services/credentials.service';
 import { CHUNKING_STRATEGIES } from '../../core/services/jobs.service';
+import { JqlPart, JqlVariableSpec, defaultsOf, jqlParts, variableNames } from '../../core/jql-variables';
 
 @Component({
   selector: 'app-instruction-dialog',
@@ -22,6 +23,7 @@ import { CHUNKING_STRATEGIES } from '../../core/services/jobs.service';
   imports: [
     RouterLink,
     ReactiveFormsModule,
+    FormsModule,
     MatDialogModule,
     MatFormFieldModule,
     MatInputModule,
@@ -107,8 +109,54 @@ import { CHUNKING_STRATEGIES } from '../../core/services/jobs.service';
             @if (form.get('jql_query')?.hasError('required')) {
               <mat-error>JQL query is required</mat-error>
             }
-            <mat-hint>Selects the issues a job evaluates for release notes</mat-hint>
+            <mat-hint>Selects the issues a job evaluates for release notes. Wrap anything that changes per release in braces — <code>&#123;version&#125;</code> — to make it a variable.</mat-hint>
           </mat-form-field>
+
+          <div class="vars-card">
+            <div class="vars-head">
+              <span class="vars-title">Variables</span>
+              <span class="muted">
+                {{ variableNames.length ? variableNames.length + ' found in the query' : 'None found in the query' }}
+              </span>
+            </div>
+
+            @if (variableNames.length) {
+              <div class="vars-grid">
+                <span class="vars-col">Variable</span>
+                <span class="vars-col">Label</span>
+                <span class="vars-col">Default value</span>
+                <span class="vars-col">Hint</span>
+                @for (name of variableNames; track name) {
+                  <code class="var-token">{{ token(name) }}</code>
+                  <input class="var-input" [ngModel]="variableSpecs[name].label" [ngModelOptions]="{standalone: true}"
+                         (ngModelChange)="setVariable(name, 'label', $event)" [placeholder]="name">
+                  <input class="var-input mono" [ngModel]="variableSpecs[name].default" [ngModelOptions]="{standalone: true}"
+                         (ngModelChange)="setVariable(name, 'default', $event)" placeholder="Optional">
+                  <input class="var-input" [ngModel]="variableSpecs[name].hint" [ngModelOptions]="{standalone: true}"
+                         (ngModelChange)="setVariable(name, 'hint', $event)" placeholder="Where to find this value">
+                }
+              </div>
+
+              <div class="vars-preview">
+                <span class="vars-col">Query with defaults</span>
+                <div class="query-preview">
+                  @for (part of previewParts; track $index) {
+                    @if (part.isVar) {
+                      <span class="chip-filled">{{ part.text }}</span>
+                    } @else if (part.isEmpty) {
+                      <span class="chip-missing" matTooltip="No default — whoever starts a release fills this in">{{ part.text }}</span>
+                    } @else {
+                      <span>{{ part.text }}</span>
+                    }
+                  }
+                </div>
+              </div>
+            } @else {
+              <p class="muted vars-empty">
+                No variables yet. Example: <code>fixVersion = &#123;version&#125; ORDER BY created ASC</code>
+              </p>
+            }
+          </div>
 
           <mat-expansion-panel class="jql-help">
             <mat-expansion-panel-header>
@@ -229,6 +277,25 @@ import { CHUNKING_STRATEGIES } from '../../core/services/jobs.service';
   `,
   changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
+    .vars-card { border: 1px solid var(--border-default); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; background: var(--bg-secondary); }
+    .vars-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+    .vars-title { font-size: 13px; font-weight: 600; }
+    .vars-grid { display: grid; grid-template-columns: 130px 1fr 1fr 1.3fr; gap: 6px 8px; align-items: center; }
+    .vars-col { font-size: 11px; font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.03em; }
+    .var-token { font-family: var(--font-mono); font-size: 12px; font-weight: 600; padding: 6px 8px; border-radius: 4px;
+      background: var(--color-accent-bg, var(--bg-primary)); color: var(--color-accent-text, var(--text-primary));
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .var-input { font: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid var(--border-default);
+      border-radius: 4px; background: var(--bg-primary); color: var(--text-primary); min-width: 0; }
+    .var-input.mono { font-family: var(--font-mono); }
+    .var-input:focus { outline: none; border-color: var(--color-primary); }
+    .vars-preview { margin-top: 12px; display: flex; flex-direction: column; gap: 4px; }
+    .query-preview { background: var(--bg-primary); border: 1px solid var(--border-default); border-radius: 6px;
+      padding: 8px 10px; font-family: var(--font-mono); font-size: 12px; line-height: 1.6; word-break: break-word; }
+    .chip-filled { background: var(--color-primary-bg); color: var(--color-primary-text); font-weight: 600; padding: 0 5px; border-radius: 4px; }
+    .chip-missing { background: var(--color-error-bg); color: var(--color-error-text); font-weight: 600; padding: 0 5px; border-radius: 4px; }
+    .vars-empty { font-size: 13px; margin: 0; }
+    .vars-empty code, mat-hint code { font-family: var(--font-mono); font-size: 12px; }
     mat-dialog-content { min-width: 600px; max-width: 800px; max-height: 70vh; overflow-y: auto; }
     .form-section { margin-bottom: 28px; }
     .form-section h3 { color: var(--text-primary); margin-bottom: 8px; font-size: 16px; font-weight: 500; }
@@ -262,6 +329,7 @@ export class InstructionDialogComponent implements OnInit {
     private credentialsService: CredentialsService,
     @Inject(MAT_DIALOG_DATA) public data: InstructionSet | null
   ) {
+    this.variableSpecs = { ...(data?.variables || {}) };
     this.form = this.fb.group({
       name: [data?.name || '', Validators.required],
       description: [data?.description || ''],
@@ -277,6 +345,33 @@ export class InstructionDialogComponent implements OnInit {
       publish_to_heretto: [data?.publish_to_heretto || false],
       is_default: [data?.is_default || false]
     });
+  }
+
+  /** Spec metadata per variable, kept for tokens that come and go while editing. */
+  variableSpecs: Record<string, JqlVariableSpec> = {};
+
+  /** The tokens currently in the query — the editor rows follow this, not the stored keys. */
+  get variableNames(): string[] {
+    const names = variableNames(this.form?.get('jql_query')?.value || '');
+    // A token typed just now has no spec yet; give it a blank one so the row can bind.
+    for (const name of names) {
+      if (!this.variableSpecs[name]) this.variableSpecs[name] = { label: '', default: '', hint: '' };
+    }
+    return names;
+  }
+
+  /** The query as it would run using each variable's default. */
+  get previewParts(): JqlPart[] {
+    return jqlParts(this.form?.get('jql_query')?.value || '', defaultsOf(this.variableSpecs));
+  }
+
+  /** The literal token text. Built here because `&#123;{{ name }}` confuses the template parser. */
+  token(name: string): string {
+    return `{${name}}`;
+  }
+
+  setVariable(name: string, field: keyof JqlVariableSpec, value: string): void {
+    this.variableSpecs[name] = { ...this.variableSpecs[name], [field]: value };
   }
 
   ngOnInit(): void {
@@ -302,6 +397,10 @@ export class InstructionDialogComponent implements OnInit {
     for (const key of ['description', 'product_name', 'relevance_guidance', 'organization_guidance', 'heretto_folder_id']) {
       if (typeof value[key] === 'string' && !value[key].trim()) value[key] = null;
     }
+    // Send specs only for tokens the query still contains. The server normalizes too, but
+    // sending the stale ones would make the request disagree with what the editor showed.
+    const names = this.variableNames;
+    value.variables = Object.fromEntries(names.map(name => [name, this.variableSpecs[name]]));
     this.dialogRef.close(value);
   }
 }
