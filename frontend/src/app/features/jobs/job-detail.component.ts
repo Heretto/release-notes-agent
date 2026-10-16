@@ -122,10 +122,8 @@ type StepState = 'done' | 'current' | 'pending' | 'failed';
 
         <div class="columns">
           <mat-card class="summary-card">
-            <h2>Summary</h2>
+            <h2>This release</h2>
             <dl class="facts">
-              <!-- What the run produced, then what it ran on. Mixing the two is what made
-                   "JQL query" read as a caption for the query block rather than a fact. -->
               <div class="fact">
                 <dt>Issues</dt>
                 <dd>{{ job.counts?.relevant_issues || 0 }} relevant of {{ job.counts?.issues || 0 }}</dd>
@@ -143,52 +141,9 @@ type StepState = 'done' | 'current' | 'pending' | 'failed';
                 <dd>{{ job.counts?.topics || 0 }} ({{ chunkingLabel(job.chunking_strategy) }})</dd>
               </div>
               <div class="fact">
-                <dt>Created</dt>
-                <dd>{{ job.created_at | date:'medium' }}</dd>
+                <dt>Output file</dt>
+                <dd>{{ job.output_filename || '—' }}</dd>
               </div>
-              <div class="fact">
-                <dt>Duration</dt>
-                <dd>{{ duration() }}</dd>
-              </div>
-
-              <div class="fact">
-                <dt>Instructions</dt>
-                <dd>
-                  @if (instructionSet) {
-                    <a routerLink="/instructions" [queryParams]="{ highlight: instructionSet.id }"
-                       class="instruction-link">{{ instructionSet.name }}</a>
-                  } @else if (job.instruction_set_name) {
-                    {{ job.instruction_set_name }} <span class="muted">(no longer available)</span>
-                  } @else {
-                    —
-                  }
-                </dd>
-              </div>
-              <div class="fact">
-                <dt>Source</dt>
-                <dd>
-                  @if (instructionSet?.source_mode === 'releases') {
-                    Jira releases in {{ instructionSet!.jira_project }}
-                  } @else if (job.uses_instruction_query === false) {
-                    Query set on this release
-                  } @else {
-                    JQL query
-                  }
-                </dd>
-              </div>
-              @if (instructionSet) {
-                <div class="fact">
-                  <dt>Agents</dt>
-                  <dd>Writer: {{ instructionSet.writer_agent_name || '—' }} · Analysis: {{ instructionSet.analysis_agent_name || 'same as writer' }}</dd>
-                </div>
-                <div class="fact">
-                  <dt>Guidance</dt>
-                  <dd>
-                    {{ instructionSet.relevance_guidance ? 'Relevance set' : 'Relevance: default' }}
-                    · {{ instructionSet.organization_guidance ? 'Organization set' : 'Organization: default' }}
-                  </dd>
-                </div>
-              }
               @if (variablesUsed(); as vars) {
                 <div class="fact">
                   <dt>Variables</dt>
@@ -196,14 +151,66 @@ type StepState = 'done' | 'current' | 'pending' | 'failed';
                 </div>
               }
               <div class="fact">
-                <dt>Output file</dt>
-                <dd>{{ job.output_filename || '—' }}</dd>
+                <dt>Created</dt>
+                <dd>{{ job.created_at | date:'medium' }}</dd>
+              </div>
+              <div class="fact">
+                <dt>Duration</dt>
+                <dd>{{ duration() }}</dd>
               </div>
             </dl>
-            <div class="hop-query-block">
-              <span class="hop-query-block-label">{{ instructionSet?.source_mode === 'releases' ? 'JIRA RELEASE QUERY' : 'JQL' }}</span>
-              <code>{{ job.jql_query }}</code>
-            </div>
+
+            <!-- The instruction set is a separate thing with its own lifetime: it is shared
+                 between releases and is re-read on every run, so what it says here can
+                 change without this release changing. Hence its own section rather than
+                 more facts in the list above. -->
+            <section class="instructions-block">
+              <div class="instructions-head">
+                <span class="instructions-label">Instructions</span>
+                @if (instructionSet) {
+                  <a routerLink="/instructions" [queryParams]="{ highlight: instructionSet.id }"
+                     class="instructions-name">{{ instructionSet.name }}</a>
+                } @else if (job.instruction_set_name) {
+                  <span class="instructions-name">{{ job.instruction_set_name }}</span>
+                  <span class="muted">no longer available</span>
+                } @else {
+                  <span class="instructions-name muted">None</span>
+                }
+              </div>
+
+              <dl class="facts instructions-facts">
+                <div class="fact">
+                  <dt>Source</dt>
+                  <dd>
+                    @if (instructionSet?.source_mode === 'releases') {
+                      Jira releases in {{ instructionSet!.jira_project }}
+                    } @else if (job.uses_instruction_query === false) {
+                      Query set on this release
+                    } @else {
+                      JQL query
+                    }
+                  </dd>
+                </div>
+                @if (instructionSet) {
+                  <div class="fact">
+                    <dt>Agents</dt>
+                    <dd>Writer: {{ instructionSet.writer_agent_name || '—' }} · Analysis: {{ instructionSet.analysis_agent_name || 'same as writer' }}</dd>
+                  </div>
+                  <div class="fact">
+                    <dt>Guidance</dt>
+                    <dd>
+                      {{ instructionSet.relevance_guidance ? 'Relevance set' : 'Relevance: default' }}
+                      · {{ instructionSet.organization_guidance ? 'Organization set' : 'Organization: default' }}
+                    </dd>
+                  </div>
+                }
+              </dl>
+
+              <div class="hop-query-block">
+                <span class="hop-query-block-label">{{ instructionSet?.source_mode === 'releases' ? 'JIRA RELEASE QUERY' : 'JQL' }}</span>
+                <code>{{ job.jql_query }}</code>
+              </div>
+            </section>
           </mat-card>
 
           <mat-card class="topics-card">
@@ -341,6 +348,13 @@ type StepState = 'done' | 'current' | 'pending' | 'failed';
     .summary-card, .topics-card { padding: 18px 24px; }
     .summary-card h2, .topics-card h2 { margin: 0 0 12px 0; font-size: 16px; }
     .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px 24px; margin: 0 0 16px 0; }
+    .instructions-block { border-top: 1px solid var(--border-default); padding-top: 14px; margin-top: 4px; }
+    .instructions-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+    .instructions-label { font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+      color: var(--text-tertiary); }
+    .instructions-name { font-size: 16px; font-weight: 600; color: var(--text-primary); }
+    a.instructions-name:hover { color: var(--color-primary); }
+    .instructions-facts { margin-bottom: 12px; }
     .fact dt { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-tertiary); margin-bottom: 2px; }
     .fact dd { margin: 0; font-size: 14px; }
     .vars-fact { font-family: var(--font-mono); font-size: 12px; }
