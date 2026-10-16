@@ -25,11 +25,11 @@ from app.models.database import (
 from app.models.schemas import (
     ChatMessageResponse, ChatSendRequest, ChatSendResponse, ItemCommentCreate, ItemCommentResponse, ItemCommentUpdate,
     JiraPreviewRequest, JiraPreviewResponse, JobArtifactResponse, JobCreate, JobIssueResponse, JobResponse,
-    JobStatusEnum, ReassembleRequest, ReleaseNoteItemDetailResponse, ReleaseNoteItemResponse,
+    JobStatusEnum, JobUpdate, ReassembleRequest, ReleaseNoteItemDetailResponse, ReleaseNoteItemResponse,
     ReleaseNoteItemUpdate, ReleaseNoteTopicResponse,
 )
 from app.services.job_orchestrator import JobOrchestrator
-from app.services.jql_variables import release_query, resolve as resolve_jql
+from app.services.jql_variables import RELEASE_VARIABLE, query_for_job, release_query, resolve as resolve_jql
 from app.services.topic_assembler import FragmentError
 from app.services.workspace_chat import ChatUnavailable, WorkspaceChat
 from app.services.workspace_service import (
@@ -97,6 +97,16 @@ def _require_idle(job: Job) -> None:
 
 
 def _queue_run(job: Job, background_tasks: BackgroundTasks, db: Session) -> None:
+    # Pick up an instruction set edited since the last run. Everything else the pipeline
+    # uses — agents, guidance, the Jira credential, publish settings — it already reads
+    # live from the set; the query is the one thing frozen on the job, so it is refreshed
+    # here rather than left to drift. See jql_variables.query_for_job for what it will not
+    # touch.
+    refreshed = query_for_job(job)
+    if refreshed != job.jql_query:
+        logger.info("Job %s query refreshed from its instruction set", job.id)
+        job.jql_query = refreshed
+
     job.status = JobStatus.PENDING
     job.error_message = None
     job.stage = None
@@ -165,12 +175,15 @@ async def create_job(
     # injected as quoted literals by jql_variables.resolve, so one can never rewrite the
     # query — see that module for why this never happens in the browser.
     used_variables: dict[str, str] = {}
+    # False only for a caller-supplied query; see Job.uses_instruction_query.
+    from_instruction_set = True
     if job_data.jql_query:
         resolved_jql = job_data.jql_query
+        from_instruction_set = False
     elif (instruction_set.source_mode or "jql") == "releases":
         # The chosen Jira release is the only variable this mode has; recording it under the
         # name the query uses keeps `jobs.variables` readable for both modes.
-        used_variables = {"fixVersion": (job_data.release or "").strip()}
+        used_variables = {RELEASE_VARIABLE: (job_data.release or "").strip()}
         try:
             resolved_jql = release_query(
                 instruction_set.jira_project or "", job_data.release or "", instruction_set.extra_jql
@@ -191,6 +204,7 @@ async def create_job(
         title=(job_data.title or "").strip() or None,
         jql_query=resolved_jql,
         variables=used_variables,
+        uses_instruction_query=from_instruction_set,
         output_filename=job_data.output_filename,
         heretto_folder_id=job_data.heretto_folder_id,
         auto_publish=job_data.publish_to_heretto,
@@ -214,6 +228,68 @@ async def get_job(
     db: Session = Depends(get_db),
 ):
     return job_to_response(_get_job(job_id, context, db))
+
+
+@router.patch("/{job_id}", response_model=JobResponse)
+async def update_job(
+    job_id: UUID,
+    update: JobUpdate,
+    context: CurrentUserContext = Depends(get_current_active_user_with_org),
+    db: Session = Depends(get_db),
+):
+    """Change a release's configuration.
+
+    Only while the job is idle: these are the inputs a run reads, and changing them
+    underneath a run would make the result unexplainable.
+    """
+    job = _get_job(job_id, context, db)
+    _require_idle(job)
+
+    fields = update.model_fields_set
+    if "title" in fields:
+        job.title = (update.title or "").strip() or None
+    if "output_filename" in fields and update.output_filename:
+        job.output_filename = update.output_filename.strip()
+    if "max_tickets" in fields:
+        job.max_tickets = update.max_tickets
+    if "publish_to_heretto" in fields:
+        job.auto_publish = bool(update.publish_to_heretto)
+    if "heretto_folder_id" in fields:
+        job.heretto_folder_id = (update.heretto_folder_id or "").strip() or None
+
+    # New variable values mean a new query, built here from the instruction set's current
+    # template — the browser never sends a query. A release that used a caller-supplied
+    # query keeps it: there is no template to re-resolve against.
+    instruction_set = job.instruction_set
+    if ("variables" in fields or "release" in fields) and job.uses_instruction_query and instruction_set:
+        values = dict(job.variables or {})
+        if update.variables is not None:
+            values.update({name: (value or "").strip() for name, value in update.variables.items()})
+        if update.release is not None:
+            values[RELEASE_VARIABLE] = (update.release or "").strip()
+        try:
+            if (instruction_set.source_mode or "jql") == "releases":
+                job.jql_query = release_query(
+                    instruction_set.jira_project or "",
+                    values.get(RELEASE_VARIABLE, ""),
+                    instruction_set.extra_jql,
+                )
+            else:
+                job.jql_query = resolve_jql(instruction_set.jql_query or "", values)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+        job.variables = values
+
+    # Chunking is how the existing notes are split into topics, so changing it reassembles
+    # them now rather than waiting for a run that may never come.
+    if "chunking_strategy" in fields and update.chunking_strategy and update.chunking_strategy != job.chunking_strategy:
+        job.chunking_strategy = update.chunking_strategy
+        if job.items:
+            _reassemble(db, job)
+
+    db.commit()
+    db.refresh(job)
+    return job_to_response(job)
 
 
 @router.post("/{job_id}/cancel")

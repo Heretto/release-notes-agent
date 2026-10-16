@@ -11,7 +11,8 @@ import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { HopConfirmDialogComponent } from '@heretto/hop-ui';
-import { JobsService, Job, JobIssue, JobRequestLog, ReleaseNoteTopic, JOB_STAGES, JobStage } from '../../core/services/jobs.service';
+import { JobsService, Job, JobIssue, JobRequestLog, JobUpdate, ReleaseNoteTopic, JOB_STAGES, JobStage } from '../../core/services/jobs.service';
+import { JobEditDialogComponent } from './job-edit-dialog.component';
 import { InstructionsService, InstructionSet } from '../../core/services/instructions.service';
 import { interval, Subscription } from 'rxjs';
 import { switchMap, startWith } from 'rxjs/operators';
@@ -66,9 +67,15 @@ type StepState = 'done' | 'current' | 'pending' | 'failed';
                 Open workspace
               </a>
             }
+            @if (job.status !== 'running' && job.status !== 'pending') {
+              <button mat-stroked-button (click)="editJob()" matTooltip="Change this release's configuration">
+                <mat-icon>tune</mat-icon>
+                Edit
+              </button>
+            }
             @if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
               <button mat-stroked-button (click)="rerunJob()"
-                      matTooltip="Check Jira for changes; unchanged issues keep their notes">
+                      matTooltip="Checks Jira for changes and re-reads the instruction set; unchanged issues keep their notes">
                 <mat-icon>replay</mat-icon>
                 Rerun
               </button>
@@ -115,7 +122,7 @@ type StepState = 'done' | 'current' | 'pending' | 'failed';
 
         <div class="columns">
           <mat-card class="summary-card">
-            <h2>Summary</h2>
+            <h2>This release</h2>
             <dl class="facts">
               <div class="fact">
                 <dt>Issues</dt>
@@ -151,17 +158,62 @@ type StepState = 'done' | 'current' | 'pending' | 'failed';
                 <dt>Duration</dt>
                 <dd>{{ duration() }}</dd>
               </div>
-              @if (instructionSet) {
-                <div class="fact">
-                  <dt>Agents</dt>
-                  <dd>Writer: {{ instructionSet.writer_agent_name || '—' }} · Analysis: {{ instructionSet.analysis_agent_name || 'same as writer' }}</dd>
-                </div>
-              }
             </dl>
-            <div class="hop-query-block">
-              <span class="hop-query-block-label">JQL</span>
-              <code>{{ job.jql_query }}</code>
-            </div>
+
+            <!-- The instruction set is a separate thing with its own lifetime: it is shared
+                 between releases and is re-read on every run, so what it says here can
+                 change without this release changing. Hence its own section rather than
+                 more facts in the list above. -->
+            <section class="instructions-block">
+              <div class="instructions-head">
+                <span class="instructions-label">Instructions</span>
+                @if (instructionSet) {
+                  <a routerLink="/instructions" [queryParams]="{ highlight: instructionSet.id }"
+                     class="instructions-name">{{ instructionSet.name }}</a>
+                } @else if (job.instruction_set_name) {
+                  <span class="instructions-name">{{ job.instruction_set_name }}</span>
+                  <span class="muted">no longer available</span>
+                } @else {
+                  <span class="instructions-name muted">None</span>
+                }
+              </div>
+
+              <dl class="facts instructions-facts">
+                <div class="fact">
+                  <dt>Source</dt>
+                  <dd>
+                    @if (instructionSet?.source_mode === 'releases') {
+                      Jira releases in {{ instructionSet!.jira_project }}
+                    } @else if (job.uses_instruction_query === false) {
+                      Query set on this release
+                    } @else {
+                      JQL query
+                    }
+                  </dd>
+                </div>
+                @if (instructionSet) {
+                  <div class="fact">
+                    <dt>Agents</dt>
+                    <dd>
+                      <div class="agent-line">Writer: {{ instructionSet.writer_agent_name || '—' }}</div>
+                      <div class="agent-line">Analysis: {{ instructionSet.analysis_agent_name || 'same as writer' }}</div>
+                    </dd>
+                  </div>
+                  <div class="fact">
+                    <dt>Guidance</dt>
+                    <dd>
+                      {{ instructionSet.relevance_guidance ? 'Relevance set' : 'Relevance: default' }}
+                      · {{ instructionSet.organization_guidance ? 'Organization set' : 'Organization: default' }}
+                    </dd>
+                  </div>
+                }
+              </dl>
+
+              <div class="hop-query-block">
+                <span class="hop-query-block-label">{{ instructionSet?.source_mode === 'releases' ? 'JIRA RELEASE QUERY' : 'JQL' }}</span>
+                <code>{{ job.jql_query }}</code>
+              </div>
+            </section>
           </mat-card>
 
           <mat-card class="topics-card">
@@ -299,9 +351,20 @@ type StepState = 'done' | 'current' | 'pending' | 'failed';
     .summary-card, .topics-card { padding: 18px 24px; }
     .summary-card h2, .topics-card h2 { margin: 0 0 12px 0; font-size: 16px; }
     .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px 24px; margin: 0 0 16px 0; }
+    .instructions-block { border-top: 1px solid var(--border-default); padding-top: 14px; margin-top: 4px; }
+    .instructions-head { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; margin-bottom: 12px; }
+    /* Label above, name beneath — the same reading order as every dt/dd in the facts. */
+    .instructions-label { font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+      color: var(--text-tertiary); }
+    .instructions-name { font-size: 16px; font-weight: 600; color: var(--text-primary); }
+    a.instructions-name:hover { color: var(--color-primary); }
+    .instructions-facts { margin-bottom: 12px; }
+    .agent-line + .agent-line { margin-top: 2px; }
     .fact dt { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-tertiary); margin-bottom: 2px; }
     .fact dd { margin: 0; font-size: 14px; }
     .vars-fact { font-family: var(--font-mono); font-size: 12px; }
+    .instruction-link { color: var(--text-primary); font-weight: 500; }
+    .fact .muted { font-size: 12px; color: var(--text-tertiary); }
     .attention { color: var(--color-warning-text); }
     .muted { color: var(--text-tertiary); font-size: 13px; }
     .topic-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border-light); }
@@ -443,6 +506,28 @@ export class JobDetailComponent implements OnInit, OnDestroy {
     const seconds = Math.max(0, Math.floor((end - start) / 1000));
     const minutes = Math.floor(seconds / 60);
     return minutes > 0 ? `${minutes}m ${seconds % 60}s` : `${seconds}s`;
+  }
+
+  /** Change this release's configuration; the dialog returns only what it changed. */
+  editJob() {
+    if (!this.job) return;
+    const ref = this.dialog.open(JobEditDialogComponent, {
+      width: '640px',
+      maxHeight: '92vh',
+      data: { job: this.job, instructionSet: this.instructionSet }
+    });
+    ref.afterClosed().subscribe((update: JobUpdate | undefined) => {
+      if (!update || !this.job) return;
+      this.jobsService.updateJob(this.job.id, update).subscribe({
+        next: job => {
+          this.job = job;
+          this.snackBar.open('Release updated', 'Close', { duration: 3000 });
+        },
+        error: error => this.snackBar.open(
+          typeof error.error?.detail === 'string' ? error.error.detail : 'Could not update the release',
+          'Close', { duration: 6000 })
+      });
+    });
   }
 
   rerunJob() {

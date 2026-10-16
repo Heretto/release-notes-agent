@@ -125,3 +125,44 @@ def normalize_specs(jql: str, specs: Mapping[str, Mapping[str, str]] | None) -> 
 def defaults_of(specs: Mapping[str, Mapping[str, str]] | None) -> Dict[str, str]:
     """The default value of each variable, for pre-filling the start-a-release form."""
     return {name: (spec.get("default") or "") for name, spec in (specs or {}).items()}
+
+
+#: The key a releases-mode run records its chosen release under, so `jobs.variables` reads
+#: the same way in both source modes.
+RELEASE_VARIABLE = "fixVersion"
+
+
+def query_for_job(job) -> str:
+    """The query this release should run **now**, from its instruction set as it stands.
+
+    A release stores the query it resolved at the time, so an instruction set edited since
+    — a corrected JQL template, a different project, a new filter — would otherwise never
+    reach a rerun. This rebuilds it from the current template and the values the release
+    already recorded.
+
+    Three cases keep the stored query instead:
+
+    * the query did not come from the instruction set (`uses_instruction_query` false),
+      so it is the caller's own and not ours to rewrite;
+    * the instruction set is gone;
+    * the template now needs a variable the release has no value for. Rebuilding would
+      raise, and refusing to run is a worse answer than running what it ran last time —
+      the Edit release dialog is where the missing value gets filled in.
+    """
+    if not getattr(job, "uses_instruction_query", True):
+        return job.jql_query
+
+    instruction_set = job.instruction_set
+    if instruction_set is None:
+        return job.jql_query
+
+    values = dict(job.variables or {})
+    try:
+        if (instruction_set.source_mode or "jql") == "releases":
+            release = values.get(RELEASE_VARIABLE, "")
+            return release_query(
+                instruction_set.jira_project or "", release, instruction_set.extra_jql
+            )
+        return resolve(instruction_set.jql_query or "", values)
+    except ValueError:
+        return job.jql_query

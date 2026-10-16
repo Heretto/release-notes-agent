@@ -125,17 +125,31 @@ credentials stored by the old routes keep working.
   "signed in and in this organization", enforced by the API on every call; `/releases/:id/review`
   is a plain route with no token, so the Share-for-review link is just that URL.
   `PATCH /jobs/{id}/items/{item}` skips the idle check when the only fields sent are
-  `reviewer_id`/`reviewed`, so reviewing keeps working while the writer reruns — but
-  **approving is a status change and still needs an idle job**, because the pipeline writes
-  `status` too. `approved_by_id`/`approved_at` travel with the status: set on the way into
-  `approved`, cleared on the way out, since "approved by X" about a note that is now a draft
-  is a lie. Notes approved before that existed show a plain "Approved" with no name. Commenting
-  and resolving a comment are exempt for the same reason. **Resolving is not deleting** —
+  `reviewer_id`/`reviewed`, and commenting and resolving a comment skip it too: none of
+  them touch anything a run writes, and refusing them would break the review page every
+  time the writer reruns. **Approving is not in that set** — it is a status change, and the
+  pipeline writes `status` too, so it still needs an idle job.
+  `approved_by_id`/`approved_at` travel with the status: set on the way into `approved`,
+  cleared on the way out, since "approved by X" about a note that is now a draft is a lie.
+  Notes approved before those columns existed show a plain "Approved" with no name.
+  **Resolving is not deleting** —
   the comment stays readable, so what was asked for survives next to the change that
   answered it. "Ask the agent" in the Details pane hands a comment to the writer agent by
   sending it into the workspace chat (`chatPending` → the chat's `pendingMessage`), rather
   than calling the agent behind the scenes, so what was asked and what the agent did sit in
   one transcript the person can read and undo.
+- **A rerun re-reads the instruction set, including its query.** Everything the pipeline
+  needs — agents, guidance, the Jira credential, publish settings — it already loads live
+  from `job.instruction_set`, so an edit to the set reaches the next run on its own. The
+  one exception was `jobs.jql_query`, resolved once when the release was started;
+  `_queue_run` now rebuilds it through `jql_variables.query_for_job`. That deliberately
+  leaves the stored query alone in three cases: `uses_instruction_query` is false (the
+  caller supplied its own query — the column exists exactly to protect it, and the
+  migration backfilled it by comparing each job's query with its set's template rather
+  than guessing a default), the set is gone, or the template now needs a variable the
+  release has no value for. The last is where **Edit release** comes in — it is the only
+  place a started release's variables, release choice, filename, topic split, cap and
+  publish settings can be changed, and it is refused while a run is in progress.
 - **JQL variables resolve on the server, never in the browser.** An instruction set's
   `jql_query` is a template whose `{name}` tokens a release fills in. The browser splits the
   template only to *display* it (`frontend/src/app/core/jql-variables.ts`); the query that

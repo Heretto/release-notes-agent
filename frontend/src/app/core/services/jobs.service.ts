@@ -48,6 +48,19 @@ export interface JobCreate {
   chunking_strategy?: ChunkingStrategy;
 }
 
+export interface JobUpdate {
+  title?: string | null;
+  output_filename?: string;
+  max_tickets?: number | null;
+  chunking_strategy?: ChunkingStrategy;
+  publish_to_heretto?: boolean;
+  heretto_folder_id?: string | null;
+  /** New values for the instruction set's JQL variables — the server re-resolves. */
+  variables?: Record<string, string>;
+  /** The chosen Jira release, for a set whose source is Jira releases. */
+  release?: string;
+}
+
 export interface JobCounts {
   issues: number;
   relevant_issues: number;
@@ -63,8 +76,15 @@ export interface Job {
   variables?: Record<string, string>;
   user_id: string;
   instruction_set_id?: string;
+  /** Named on the response so details can show it without a second request. */
+  instruction_set_name?: string | null;
   title?: string | null;
   jql_query: string;
+  /** False when the query was supplied directly, which stops a rerun rebuilding it. */
+  uses_instruction_query?: boolean;
+  /** This release's own publish settings, which override the instruction set's. */
+  auto_publish?: boolean;
+  heretto_folder_id?: string | null;
   status: JobStatus;
   triggered_by: 'manual' | 'webhook' | 'scheduled';
   output_filename?: string;
@@ -318,6 +338,11 @@ export class JobsService {
   resolveComment(jobId: string, itemId: string, commentId: string, resolved: boolean): Observable<ItemComment> {
     return this.http.patch<ItemComment>(
       `${this.apiUrl}/${jobId}/items/${itemId}/comments/${commentId}`, { resolved });
+  }
+
+  /** Change a release's configuration. Only accepted while the job is idle. */
+  updateJob(jobId: string, update: JobUpdate): Observable<Job> {
+    return this.http.patch<Job>(`${this.apiUrl}/${jobId}`, update);
   }
 
   moveItem(jobId: string, itemId: string, move: { group_name?: string; position?: number }): Observable<ReleaseNoteItem[]> {
