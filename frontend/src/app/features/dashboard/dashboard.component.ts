@@ -92,7 +92,7 @@ import { JobCreateDialogComponent } from '../jobs/job-create-dialog.component';
             </thead>
             <tbody>
               @for (job of recentJobs; track job.id) {
-                <tr [class.hop-shimmer]="job.status === 'running'">
+                <tr class="job-row" [class.hop-shimmer]="job.status === 'running'" (click)="openJob($event, job)">
                   <td><span [class]="'hop-status-chip hop-status-chip-' + chipClass(job)">{{ statusLabel(job) }}</span></td>
                   <td>
                     <a [routerLink]="['/releases', job.id]" class="release-link">{{ job.title || job.output_filename || 'Untitled' }}</a>
@@ -154,6 +154,8 @@ import { JobCreateDialogComponent } from '../jobs/job-create-dialog.component';
     .jobs-table th, .jobs-table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border-default); vertical-align: middle; }
     .jobs-table th { color: var(--text-tertiary); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
     .jobs-table tbody tr:last-child td { border-bottom: none; }
+    .job-row { cursor: pointer; }
+    .job-row:hover { background: var(--bg-secondary); }
     .release-link { color: var(--text-primary); text-decoration: none; font-weight: 500; }
     .release-link:hover { text-decoration: underline; }
     .muted { color: var(--text-secondary); font-size: 13px; }
@@ -198,6 +200,12 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.refresh?.unsubscribe();
+  }
+
+  /** The whole row opens the release; anything already clickable inside it still wins. */
+  openJob(event: MouseEvent, job: Job): void {
+    if ((event.target as HTMLElement | null)?.closest('a, button')) return;
+    this.router.navigate(['/releases', job.id]);
   }
 
   chipClass(job: Job): string {

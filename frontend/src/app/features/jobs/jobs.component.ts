@@ -71,6 +71,9 @@ import { switchMap, startWith } from 'rxjs/operators';
 
       @if (!loading && jobs.length > 0) {
         <mat-card class="table-card">
+          <!-- The table is hop-ui's and has no row-click output, so the click is delegated
+               here and the row identified by the data attribute in its title cell. -->
+          <div class="clickable-rows" (click)="onRowClick($event)">
           <hop-data-table [columns]="columns" [data]="jobs" [filterable]="true"
                           filterPlaceholder="Filter releases" sortActive="created" sortDirection="desc">
             <ng-template hopCell="status" let-job>
@@ -78,7 +81,7 @@ import { switchMap, startWith } from 'rxjs/operators';
                     [class.hop-shimmer]="job.status === 'running'">{{ statusLabel(job) }}</span>
             </ng-template>
             <ng-template hopCell="title" let-job>
-              <a [routerLink]="['/releases', job.id]" class="release-link">{{ titleOf(job) }}</a>
+              <a [routerLink]="['/releases', job.id]" class="release-link" [attr.data-job-id]="job.id">{{ titleOf(job) }}</a>
               <div class="query-preview" [matTooltip]="job.jql_query">{{ job.jql_query }}</div>
             </ng-template>
             <ng-template hopCell="progress" let-job>
@@ -136,6 +139,7 @@ import { switchMap, startWith } from 'rxjs/operators';
               </div>
             </ng-template>
           </hop-data-table>
+          </div>
         </mat-card>
       }
     </div>
@@ -153,6 +157,8 @@ import { switchMap, startWith } from 'rxjs/operators';
     .empty-state h3 { color: var(--text-primary); margin-bottom: 10px; }
     .empty-state p { color: var(--text-secondary); margin-bottom: 20px; }
     .table-card { overflow: hidden; }
+    .clickable-rows ::ng-deep tr.mat-mdc-row { cursor: pointer; }
+    .clickable-rows ::ng-deep tr.mat-mdc-row:hover { background: var(--bg-secondary); }
     .release-link { color: var(--text-primary); font-weight: 500; text-decoration: none; }
     .release-link:hover { text-decoration: underline; }
     .query-preview { font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary); max-width: 360px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -224,6 +230,23 @@ export class JobsComponent implements OnInit, OnDestroy {
     }
     if (job.status === 'failed') return job.error_message || 'Failed';
     return job.stage_message || '';
+  }
+
+  /**
+   * Open the release a clicked row belongs to.
+   *
+   * hop-ui's table exposes no row-click output, so this is delegated from the wrapper. The
+   * row is identified by the data attribute on its title link rather than by its position,
+   * which would be wrong the moment the table is sorted or filtered.
+   */
+  onRowClick(event: MouseEvent): void {
+    const target = event.target as HTMLElement | null;
+    // Anything already clickable handles itself — the title link, the Workspace button,
+    // the row menu. Letting the row act too would fire a second, different navigation.
+    if (target?.closest('a, button')) return;
+
+    const jobId = target?.closest('tr')?.querySelector('[data-job-id]')?.getAttribute('data-job-id');
+    if (jobId) this.router.navigate(['/releases', jobId]);
   }
 
   createJob() {

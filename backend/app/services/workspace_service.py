@@ -315,6 +315,8 @@ def _item_fields(item: ReleaseNoteItem) -> dict:
         reviewer_id=item.reviewer_id,
         reviewer_email=item.reviewer.email if item.reviewer else None,
         reviewed=bool(item.reviewed), comment_count=len(item.comments),
+        approved_by_email=item.approved_by.email if item.approved_by else None,
+        approved_at=item.approved_at,
         created_at=item.created_at, updated_at=item.updated_at,
     )
 

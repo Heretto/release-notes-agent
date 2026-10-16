@@ -266,6 +266,9 @@ class ReleaseNoteItemResponse(BaseModel):
     reviewer_email: Optional[str] = None
     reviewed: bool = False
     comment_count: int = 0
+    # Who approved the note, and when. Set with `status`, cleared when it leaves approved.
+    approved_by_email: Optional[str] = None
+    approved_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

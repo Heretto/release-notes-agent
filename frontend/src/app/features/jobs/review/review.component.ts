@@ -8,7 +8,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { HopAccountService } from '@heretto/hop-ui';
-import { ItemComment, Job, JobsService, ReleaseNoteItem, ReleaseNoteItemDetail } from '../../../core/services/jobs.service';
+import { ItemComment, Job, JobIssue, JobsService, ReleaseNoteItem, ReleaseNoteItemDetail } from '../../../core/services/jobs.service';
 
 /** The notes of one group, as the sidebar lists them. */
 interface ReviewGroup {
@@ -46,7 +46,7 @@ interface ReviewGroup {
           </a>
         </header>
 
-        <div class="rv-body">
+        <div class="rv-body" [class.with-issue]="!!openIssue">
           <aside class="rv-list">
             <div class="rv-list-head">
               <div class="rv-count">{{ items.length }} notes</div>
@@ -66,7 +66,12 @@ interface ReviewGroup {
                       <span class="rv-dot" [class.needs]="needsMe(note)" [class.done]="note.reviewed"
                             [matTooltip]="indicatorTitle(note)"></span>
                       <span class="rv-note-text">
-                        <span class="rv-note-title">{{ note.title }}</span>
+                        <span class="rv-note-title">
+                          {{ note.title }}
+                          @if (note.status === 'approved') {
+                            <mat-icon class="rv-approved-mark" [matTooltip]="approvalText(note)">verified</mat-icon>
+                          }
+                        </span>
                         <span class="muted">{{ noteMeta(note) }}</span>
                       </span>
                     </button>
@@ -88,21 +93,52 @@ interface ReviewGroup {
                   <span class="rv-assign" [class.mine]="isMine(selected)" [class.done]="selected.reviewed">
                     {{ assignLabel(selected) }}
                   </span>
+                  @if (selected.status === 'approved') {
+                    <span class="rv-assign done">Approved</span>
+                  }
                 </div>
                 <h2>{{ selected.title }}</h2>
                 <p class="rv-summary">{{ selected.summary }}</p>
 
+                @if (selected.issues.length) {
+                  <div class="rv-issues">
+                    <span class="rv-issues-label">From</span>
+                    @for (issue of selected.issues; track issue.id) {
+                      <button type="button" class="rv-issue-chip" [class.on]="issue.id === openIssue?.id"
+                              (click)="toggleIssue(issue)"
+                              [matTooltip]="issue.summary">
+                        {{ issue.issue_key }}
+                      </button>
+                    }
+                  </div>
+                }
+
                 <div class="rv-review-actions">
-                  @if (isMine(selected) && !selected.reviewed) {
-                    <button mat-flat-button color="primary" (click)="setReviewed(true)" [disabled]="saving">
-                      Mark as reviewed
+                  @if (selected.status === 'approved') {
+                    <span class="rv-approved">
+                      <mat-icon class="inline-icon">verified</mat-icon>
+                      {{ approvalText(selected) }}
+                    </span>
+                    <button mat-button (click)="setApproved(false)" [disabled]="saving">Undo approval</button>
+                  } @else {
+                    <button mat-flat-button color="primary" (click)="setApproved(true)" [disabled]="saving">
+                      <mat-icon>verified</mat-icon> Approve
                     </button>
-                    <span class="muted">Tells the writer you are done with this note.</span>
-                  } @else if (selected.reviewed) {
+                    <span class="muted">Says this note is ready to publish.</span>
+                  }
+                </div>
+
+                <div class="rv-review-actions rv-reviewed-row">
+                  @if (selected.reviewed) {
                     <span class="rv-reviewed"><mat-icon class="inline-icon">check</mat-icon> Reviewed</span>
                     @if (isMine(selected)) {
                       <button mat-button (click)="setReviewed(false)" [disabled]="saving">Undo</button>
                     }
+                  } @else if (isMine(selected)) {
+                    <button mat-stroked-button (click)="setReviewed(true)" [disabled]="saving">
+                      Mark as reviewed
+                    </button>
+                    <span class="muted">Tells the writer you are done reading this note.</span>
                   }
                 </div>
 
@@ -144,6 +180,75 @@ interface ReviewGroup {
               <div class="rv-placeholder muted">Pick a note to read it and leave comments.</div>
             }
           </main>
+
+          @if (openIssue) {
+            <aside class="rv-issue-pane">
+              <div class="rv-issue-head">
+                <span class="rv-issue-key">{{ openIssue.issue_key }}</span>
+                <span class="spacer"></span>
+                <button mat-icon-button (click)="openIssue = null" matTooltip="Close">
+                  <mat-icon>close</mat-icon>
+                </button>
+              </div>
+
+              <div class="rv-issue-action">
+                @if (openIssue.url) {
+                  <a mat-flat-button color="primary" [href]="openIssue.url" target="_blank" rel="noopener">
+                    <mat-icon>open_in_new</mat-icon> Open in Jira
+                  </a>
+                } @else {
+                  <button mat-stroked-button disabled
+                          matTooltip="No Jira link was recorded for this issue when the release was run">
+                    <mat-icon>link_off</mat-icon> No Jira link
+                  </button>
+                }
+              </div>
+
+              <div class="rv-issue-body">
+                <p class="rv-issue-summary">{{ openIssue.summary }}</p>
+
+                <div class="rv-issue-tags">
+                  @if (openIssue.issue_type) { <span class="tag">{{ openIssue.issue_type }}</span> }
+                  @if (openIssue.status) { <span class="tag">{{ openIssue.status }}</span> }
+                  @if (openIssue.priority) { <span class="tag">{{ openIssue.priority }}</span> }
+                </div>
+
+                <dl class="rv-issue-facts">
+                  @if (openIssue.assignee) {
+                    <dt>Assignee</dt><dd>{{ openIssue.assignee }}</dd>
+                  }
+                  @if (openIssue.components.length) {
+                    <dt>Components</dt><dd>{{ openIssue.components.join(', ') }}</dd>
+                  }
+                  @if (openIssue.fix_versions.length) {
+                    <dt>Fix version</dt><dd>{{ openIssue.fix_versions.join(', ') }}</dd>
+                  }
+                  @if (openIssue.jira_updated) {
+                    <dt>Updated</dt><dd>{{ openIssue.jira_updated | date:'medium' }}</dd>
+                  }
+                </dl>
+
+                @if (openIssue.description) {
+                  <h4>Description</h4>
+                  <p class="rv-issue-text">{{ openIssue.description }}</p>
+                }
+
+                @if (openIssue.comments.length) {
+                  <h4>Jira comments ({{ openIssue.comments.length }})</h4>
+                  @for (comment of openIssue.comments; track $index) {
+                    <p class="rv-issue-text quoted">{{ comment }}</p>
+                  }
+                }
+
+                @if (!openIssue.in_query) {
+                  <p class="rv-issue-warning">
+                    This issue is no longer returned by the release's Jira query.
+                  </p>
+                }
+              </div>
+
+            </aside>
+          }
         </div>
       }
     </div>
@@ -164,6 +269,7 @@ interface ReviewGroup {
     .inline-icon { font-size: 14px; width: 14px; height: 14px; vertical-align: middle; }
 
     .rv-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 320px 1fr; }
+    .rv-body.with-issue { grid-template-columns: 320px 1fr 360px; }
     .rv-list { border-right: 1px solid var(--border-default); display: flex; flex-direction: column; min-height: 0; }
     .rv-list-head { padding: 14px 16px; border-bottom: 1px solid var(--border-light); flex-shrink: 0; }
     .rv-count { font-size: 15px; font-weight: 600; }
@@ -203,6 +309,11 @@ interface ReviewGroup {
       border-bottom: 1px solid var(--border-light); }
     .rv-reviewed { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 600;
       color: var(--color-success-text); }
+    .rv-reviewed-row { border-bottom: none; padding-bottom: 0; padding-top: 10px; }
+    .rv-approved { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 600;
+      color: var(--color-success-text); }
+    .rv-approved-mark { font-size: 14px; width: 14px; height: 14px; vertical-align: middle;
+      color: var(--color-success-text); margin-left: 4px; }
     .rv-note-view h3 { margin: 20px 0 10px; font-size: 13px; font-weight: 600; }
     .rv-comment { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border-light); }
     .rv-comment.resolved .rv-comment-text, .rv-comment.resolved .rv-comment-name { color: var(--text-tertiary); }
@@ -222,7 +333,49 @@ interface ReviewGroup {
       font: inherit; font-size: 14px; background: transparent; color: var(--text-primary); }
     .rv-compose-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 6px; }
     .rv-placeholder { display: flex; align-items: center; justify-content: center; height: 100%; font-size: 14px; }
-    @media (max-width: 1024px) { :host { height: auto; } .review { height: auto; } .rv-body { grid-template-columns: 1fr; } }
+
+    .rv-issues { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 18px; }
+    .rv-issues-label { font-size: 12px; color: var(--text-tertiary); margin-right: 2px; }
+    .rv-issue-chip { font: inherit; font-family: var(--font-mono); font-size: 12px; font-weight: 600;
+      padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border-default);
+      background: var(--bg-primary); color: var(--text-primary); cursor: pointer; }
+    .rv-issue-chip:hover { background: var(--bg-secondary); }
+    .rv-issue-chip.on { border-color: var(--color-primary); background: var(--color-primary-bg);
+      color: var(--color-primary-text); }
+
+    .rv-issue-pane { border-left: 1px solid var(--border-default); display: flex; flex-direction: column;
+      min-height: 0; background: var(--bg-secondary); }
+    .rv-issue-head { display: flex; align-items: center; gap: 8px; padding: 10px 8px 10px 16px;
+      border-bottom: 1px solid var(--border-light); flex-shrink: 0; }
+    .rv-issue-key { font-family: var(--font-mono); font-size: 14px; font-weight: 600; }
+    .rv-issue-body { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 16px; }
+    .rv-issue-summary { margin: 0 0 10px; font-size: 14px; font-weight: 500; line-height: 1.45; }
+    .rv-issue-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+    .tag { font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 999px;
+      background: var(--bg-primary); border: 1px solid var(--border-light); color: var(--text-secondary); }
+    .rv-issue-facts { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin: 0 0 14px; font-size: 12px; }
+    .rv-issue-facts dt { color: var(--text-tertiary); }
+    .rv-issue-facts dd { margin: 0; color: var(--text-secondary); }
+    .rv-issue-pane h4 { margin: 14px 0 6px; font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+    .rv-issue-text { margin: 0 0 8px; font-size: 13px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+    .rv-issue-text.quoted { border-left: 2px solid var(--border-default); padding-left: 10px; color: var(--text-secondary); }
+    .rv-issue-warning { margin: 12px 0 0; padding: 8px 10px; border-radius: 6px; font-size: 12px;
+      background: var(--color-warning-bg); color: var(--color-warning-text); }
+    /* Above the scrolling body, not below it: the panel's whole point is getting to the
+       issue, and at the foot it sat under however much description there was. */
+    .rv-issue-action { padding: 12px 16px; border-bottom: 1px solid var(--border-light); flex-shrink: 0; }
+    .rv-issue-action a, .rv-issue-action button { width: 100%; }
+
+    /* Narrower: the card gets tighter rather than disappearing — hiding it would make
+       clicking a key do nothing. Below the stacking breakpoint it falls under the note. */
+    @media (max-width: 1280px) { .rv-body.with-issue { grid-template-columns: 260px 1fr 300px; } }
+    @media (max-width: 1024px) {
+      :host { height: auto; }
+      .review { height: auto; }
+      /* .with-issue is two classes, so it has to be named here or it wins over this. */
+      .rv-body, .rv-body.with-issue { grid-template-columns: 1fr; }
+      .rv-issue-pane { border-left: none; border-top: 1px solid var(--border-default); }
+    }
   `]
 })
 export class ReviewComponent implements OnInit {
@@ -240,6 +393,8 @@ export class ReviewComponent implements OnInit {
   saving = false;
   filter: 'mine' | 'all' = 'mine';
   commentDraft = '';
+  /** The Jira issue whose card is showing beside the note, if any. */
+  openIssue: JobIssue | null = null;
   viewerId = '';
   viewerEmail = '';
 
@@ -370,9 +525,46 @@ export class ReviewComponent implements OnInit {
   select(itemId: string): void {
     this.selectedId = itemId;
     this.commentDraft = '';
+    // The card belongs to the note it was opened from.
+    this.openIssue = null;
     this.jobsService.getItem(this.job!.id, itemId).subscribe({
       next: item => this.selected = item,
       error: () => this.snackBar.open('Could not load that note', 'Close', { duration: 3000 })
+    });
+  }
+
+  /** "Approved by someone@example.com on 14 Oct" — or just "Approved" for older notes. */
+  approvalText(item: ReleaseNoteItem): string {
+    if (item.status !== 'approved') return '';
+    if (!item.approved_by_email) return 'Approved';
+    const when = item.approved_at ? new Date(item.approved_at).toLocaleString() : '';
+    return when
+      ? `Approved by ${item.approved_by_email} on ${when}`
+      : `Approved by ${item.approved_by_email}`;
+  }
+
+  /** Clicking the same key again closes the card, so the chip is a toggle. */
+  toggleIssue(issue: JobIssue): void {
+    this.openIssue = this.openIssue?.id === issue.id ? null : issue;
+  }
+
+  setApproved(approved: boolean): void {
+    if (!this.selected || this.saving) return;
+    this.saving = true;
+    // Back to review, not draft: the note has been written and read, it is the sign-off
+    // that was withdrawn.
+    const status = approved ? 'approved' : 'review';
+    this.jobsService.updateItem(this.job!.id, this.selected.id, { status }).subscribe({
+      next: item => {
+        this.saving = false;
+        this.applyUpdate(item);
+      },
+      error: error => {
+        this.saving = false;
+        this.snackBar.open(
+          typeof error.error?.detail === 'string' ? error.error.detail : 'Could not save that',
+          'Close', { duration: 5000 });
+      }
     });
   }
 

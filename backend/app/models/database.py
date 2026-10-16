@@ -292,12 +292,19 @@ class ReleaseNoteItem(Base):
     reviewer_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     reviewed = Column(Boolean, nullable=False, default=False, server_default="false")
     reviewed_at = Column(DateTime(timezone=True), nullable=True)
+    # Who put this note into `approved` and when. Kept beside `status` rather than derived
+    # from the history, so the note itself can say who signed it off without reading a
+    # timeline; cleared whenever the status moves back off approved, because the old
+    # signature says nothing about the note as it now stands.
+    approved_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    approved_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     job = relationship("Job", back_populates="items")
     topic = relationship("ReleaseNoteTopic", back_populates="items")
     reviewer = relationship("User", foreign_keys=[reviewer_id])
+    approved_by = relationship("User", foreign_keys=[approved_by_id])
     issue_links = relationship("ReleaseNoteItemIssue", back_populates="item", cascade="all, delete-orphan")
     history = relationship("ReleaseNoteItemHistory", back_populates="item", cascade="all, delete-orphan", order_by="ReleaseNoteItemHistory.created_at.desc()")
     comments = relationship("ReleaseNoteItemComment", back_populates="item", cascade="all, delete-orphan", order_by="ReleaseNoteItemComment.created_at")
