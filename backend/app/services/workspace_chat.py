@@ -26,7 +26,7 @@ from app.models.database import (
 )
 from app.models.schemas import ChatSendResponse
 from app.services.agents import AgentUnavailable, resolve_agent
-from app.services.pipeline_prompts import FRAGMENT_FORMAT, issue_record
+from app.services.pipeline_prompts import FRAGMENT_FORMAT, house_style, issue_record
 from app.services.topic_assembler import FragmentError, coerce_fragment
 from app.services.workspace_service import (
     assemble_job_topics, chat_message_to_response, group_order, move_item, product_name,
@@ -58,7 +58,7 @@ TOOLS: List[ToolSpec] = [
           {"issue_key": {"type": "string", "description": "The Jira key, e.g. PROJ-123."}}, ["issue_key"]),
     _tool("update_note",
           "Change a note's headline, summary and/or DITA content. Send the COMPLETE fragment when "
-          "changing content — one <div outputclass=\"release-note\"> element. Invalid DITA is "
+          "changing content — the note's body elements, with no wrapper around them. Invalid DITA is "
           "rejected with the errors; fix them and call again.",
           {"note_id": NOTE_ID,
            "title": {"type": "string", "description": "New headline (optional)."},
@@ -221,6 +221,7 @@ Groups in order: {', '.join(groups) if groups else '(none yet)'}.
   facts true to its Jira issues, and send the COMPLETE fragment to update_note.
 - Statuses: draft, review, approved, rejected (rejected notes are left out of the output).
 - When asked to split or reorganize the release notes into topics, use reorganize_topics.
+{house_style(job.instruction_set.organization_guidance if job.instruction_set else None)}
 
 {FRAGMENT_FORMAT}"""
 

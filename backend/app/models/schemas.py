@@ -81,6 +81,101 @@ class JqlVariableSpec(BaseModel):
     default: str = Field("", max_length=500)
     hint: str = Field("", max_length=300)
 
+class StructuredLayout(BaseModel):
+    """How a topic is laid out, as a set of choices rather than a template.
+
+    The combination that produced this feature: heading="paragraph", wrapper="ul",
+    note="li" gives a bold paragraph per group followed by one list holding that group's
+    notes — a house style this app previously could not express.
+    """
+    #: section = <section><title>Group</title>…; paragraph = <p><b>Group</b></p>; none = no heading.
+    group_heading: str = Field("section", pattern=r'^(section|paragraph|none)$')
+    #: What a group's notes are collected in, if anything.
+    notes_wrapper: str = Field("none", pattern=r'^(none|ul|ol)$')
+    #: The element each note's content is placed in.
+    note_element: str = Field("div", pattern=r'^(div|li)$')
+    #: omit = no <shortdesc>; empty = <shortdesc/>; text = <shortdesc>shortdesc_text</shortdesc>.
+    shortdesc: str = Field("omit", pattern=r'^(omit|empty|text)$')
+    shortdesc_text: str = Field("", max_length=2000)
+
+    @model_validator(mode="after")
+    def _list_items_need_a_list(self):
+        # The two settings are not independent: a <ul>/<ol> may only contain <li>, and an
+        # <li> may only live in one. Either mismatch makes every topic fail DTD validation,
+        # so both are refused rather than silently corrected here — note_element_for() is
+        # what assembly uses, and it derives the element instead of trusting this pair.
+        if self.note_element == "li" and self.notes_wrapper == "none":
+            raise ValueError(
+                "Notes can only be <li> when they are collected in a <ul> or <ol>."
+            )
+        if self.note_element != "li" and self.notes_wrapper in ("ul", "ol"):
+            raise ValueError(
+                f"A <{self.notes_wrapper}> can only contain <li>, so notes collected in one "
+                "must be list items."
+            )
+        if self.shortdesc == "text" and not self.shortdesc_text.strip():
+            raise ValueError("Choose what the shortdesc should say, or set it to empty or omit.")
+        return self
+
+
+class TemplateLayout(BaseModel):
+    """A DITA topic the writer authors, with two markers saying where things go.
+
+    The template is real DITA, so it can carry anything a house template does — fixed
+    paragraphs, conkeyrefs, a populated shortdesc. Two outputclass markers drive it:
+
+    * ``rn-group`` — the element repeated once per group. ``{group}`` in its text becomes
+      the group name. Leave it out and every note goes in once, ungrouped.
+    * ``rn-notes`` — where that group's notes are placed. Its tag decides what a note is:
+      a ``<ul>``/``<ol>`` host makes each note an ``<li>``, anything else a ``<div>``.
+
+    ``{title}`` anywhere in the text becomes the topic title.
+    """
+    dita: str = Field("", max_length=20000)
+
+    @model_validator(mode="after")
+    def _must_be_a_usable_template(self):
+        from app.services.topic_assembler import template_errors
+
+        errors = template_errors(self.dita)
+        if errors:
+            raise ValueError("; ".join(errors))
+        return self
+
+
+class AgentLayout(BaseModel):
+    """Structure described in words; an agent turns it into a template.
+
+    The agent runs **once per release**, at the start of a run, and the template it
+    produces is kept on the job. Every assembly of that release then uses it — changing
+    the topic split, editing a note — so a release's shape is settled by its run rather
+    than re-decided each time something is saved, and nothing calls a model from inside a
+    request.
+    """
+    guidance: str = Field("", max_length=8000)
+
+
+class TopicLayout(BaseModel):
+    """How an instruction set's topics are built.
+
+    `mode` picks who owns the structure: these options, a DITA template the writer
+    authors, or an agent given free-form guidance. Each mode keeps its own settings, so
+    switching back and forth does not lose what was configured in the other.
+    """
+    mode: str = Field("structured", pattern=r'^(structured|template|agent)$')
+    structured: StructuredLayout = Field(default_factory=StructuredLayout)
+    template: TemplateLayout = Field(default_factory=TemplateLayout)
+    agent: AgentLayout = Field(default_factory=AgentLayout)
+
+    @model_validator(mode="after")
+    def _the_chosen_mode_must_be_usable(self):
+        if self.mode == "template" and not self.template.dita.strip():
+            raise ValueError("Write the DITA template, or choose another layout mode.")
+        if self.mode == "agent" and not self.agent.guidance.strip():
+            raise ValueError("Describe the structure you want, or choose another layout mode.")
+        return self
+
+
 class InstructionSetBase(BaseModel):
     name: str
     description: Optional[str] = None
@@ -139,6 +234,7 @@ class InstructionSetUpdate(BaseModel):
     relevance_guidance: Optional[str] = Field(None, max_length=8000)
     organization_guidance: Optional[str] = Field(None, max_length=8000)
     chunking_strategy: Optional[str] = Field(None, pattern=r'^(single|by_group|by_component)$')
+    layout: Optional[TopicLayout] = None
 
 class InstructionSetResponse(InstructionSetBase):
     id: UUID

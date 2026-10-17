@@ -36,6 +36,16 @@ export const routes: Routes = [
         path: 'instructions',
         loadComponent: () => import('./features/instructions/instructions.component').then(m => m.InstructionsComponent),
       },
+      // The editor is a page, not a dialog: it carries the query, its variables, the
+      // agents, the guidance and the topic layout, which is more than a modal can hold.
+      {
+        path: 'instructions/new',
+        loadComponent: () => import('./features/instructions/instruction-editor.component').then(m => m.InstructionEditorComponent),
+      },
+      {
+        path: 'instructions/:id',
+        loadComponent: () => import('./features/instructions/instruction-editor.component').then(m => m.InstructionEditorComponent),
+      },
       {
         path: 'agents',
         children: HOP_AGENT_ROUTES,

@@ -1,8 +1,9 @@
-import { Component, Inject, OnInit, ChangeDetectionStrategy } from '@angular/core';
+import { Component, OnInit, ChangeDetectionStrategy, inject } from '@angular/core';
 import { Subscription, debounceTime, distinctUntilChanged } from 'rxjs';
-import { RouterLink } from '@angular/router';
 import { FormBuilder, FormGroup, Validators, ReactiveFormsModule, FormsModule } from '@angular/forms';
-import { MatDialogModule, MatDialogRef, MAT_DIALOG_DATA } from '@angular/material/dialog';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatSnackBar } from '@angular/material/snack-bar';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatButtonModule } from '@angular/material/button';
@@ -14,7 +15,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatSelectModule } from '@angular/material/select';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { HopAgentService, AgentSummary } from '@heretto/hop-ui';
-import { InstructionSet, InstructionsService, JiraRelease } from '../../core/services/instructions.service';
+import { DEFAULT_LAYOUT, STARTER_TEMPLATE, InstructionSet, InstructionsService, JiraRelease } from '../../core/services/instructions.service';
 import { CredentialsService, JiraCredentialOption } from '../../core/services/credentials.service';
 import { CHUNKING_STRATEGIES } from '../../core/services/jobs.service';
 import { JqlPart, JqlVariableSpec, defaultsOf, jqlParts, variableNames } from '../../core/jql-variables';
@@ -24,13 +25,13 @@ const FIRST_RELEASES = 5;
 const MORE_RELEASES = 10;
 
 @Component({
-  selector: 'app-instruction-dialog',
+  selector: 'app-instruction-editor',
   standalone: true,
   imports: [
     RouterLink,
     ReactiveFormsModule,
     FormsModule,
-    MatDialogModule,
+    MatProgressSpinnerModule,
     MatFormFieldModule,
     MatInputModule,
     MatButtonModule,
@@ -43,11 +44,26 @@ const MORE_RELEASES = 10;
     MatButtonToggleModule
   ],
   template: `
-    <h2 mat-dialog-title>
-      {{ data?.id ? 'Edit' : 'Create' }} Instruction Set
-    </h2>
+    <div class="editor-container hop-page">
+      <div class="editor-header">
+        <div class="heading">
+          <button mat-icon-button type="button" matTooltip="Back to instructions" (click)="onCancel()">
+            <mat-icon>arrow_back</mat-icon>
+          </button>
+          <div>
+            <h1>{{ data?.id ? (data?.name || 'Edit Instruction Set') : 'New Instruction Set' }}</h1>
+            <p class="subtitle">
+              Which Jira issues a release reads, which agents turn them into notes, and the
+              shape of the DITA that comes out.
+            </p>
+          </div>
+        </div>
+      </div>
 
-    <mat-dialog-content>
+      @if (loading) {
+        <div class="loading"><mat-spinner></mat-spinner></div>
+      } @else {
+      <div class="editor-body">
       <form [formGroup]="form">
         <div class="form-section">
           <h3>Basic information</h3>
@@ -305,15 +321,134 @@ const MORE_RELEASES = 10;
           </mat-form-field>
 
           <mat-form-field appearance="outline" class="full-width">
-            <mat-label>How the release notes are organized</mat-label>
-            <textarea matInput formControlName="organization_guidance" rows="3"
-                      placeholder="e.g. Group as New features, Improvements, Fixes, then Known issues. Put API changes first in each group."></textarea>
-            <mat-hint>Shown to the analysis agent when it groups and orders the notes</mat-hint>
+            <mat-label>How the release notes are organized and written</mat-label>
+            <textarea matInput formControlName="organization_guidance" rows="4"
+                      placeholder="e.g. Group as New features, Improvements, Fixes, then Known issues. Open every note with Added. / Changed. / Fixed. and write in past simple."></textarea>
+            <mat-hint>
+              Given to the agent that groups the notes and to the one that writes them. Rules about
+              the topic around a note — its title, shortdesc or sections — are set by Topics below,
+              not here.
+            </mat-hint>
           </mat-form-field>
         </div>
 
         <div class="form-section">
           <h3>Output</h3>
+
+          <div class="layout-card">
+            <div class="vars-head">
+              <span class="vars-title">Topic layout</span>
+              <span class="muted">The shape of the DITA this instruction set produces</span>
+            </div>
+
+            <mat-button-toggle-group formControlName="layout_mode" class="layout-modes"
+                                     aria-label="How the topic structure is decided">
+              <mat-button-toggle value="structured">Choose a pattern</mat-button-toggle>
+              <mat-button-toggle value="template">Write a DITA template</mat-button-toggle>
+              <mat-button-toggle value="agent">Describe it</mat-button-toggle>
+            </mat-button-toggle-group>
+            <p class="muted mode-help">
+              @switch (form.get('layout_mode')?.value) {
+                @case ('template') {
+                  Your own DITA topic, emitted as written. Mark where the notes go and what
+                  repeats per group; everything else — fixed paragraphs, conkeyrefs, a
+                  populated shortdesc — comes through untouched.
+                }
+                @case ('agent') {
+                  Describe the structure in your own words. At the start of each release an
+                  agent turns it into a template, which that release then keeps — so the
+                  shape stays put while you edit notes.
+                }
+                @default {
+                  Pick from the shapes this app can build. Always valid, nothing to author.
+                }
+              }
+            </p>
+
+            @if (form.get('layout_mode')?.value === 'structured') {
+            <div class="layout-grid">
+              <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                <mat-label>Each group starts with</mat-label>
+                <mat-select formControlName="group_heading">
+                  <mat-option value="section">A section with a title</mat-option>
+                  <mat-option value="paragraph">A bold paragraph</mat-option>
+                  <mat-option value="none">Nothing</mat-option>
+                </mat-select>
+              </mat-form-field>
+
+              <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                <mat-label>Its notes are collected in</mat-label>
+                <mat-select formControlName="notes_wrapper">
+                  <mat-option value="none">Nothing</mat-option>
+                  <mat-option value="ul">A bulleted list</mat-option>
+                  <mat-option value="ol">A numbered list</mat-option>
+                </mat-select>
+              </mat-form-field>
+
+              <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                <mat-label>Each note is</mat-label>
+                <mat-select formControlName="note_element">
+                  @for (option of noteElementOptions; track option.value) {
+                    <mat-option [value]="option.value">{{ option.label }}</mat-option>
+                  }
+                </mat-select>
+                <mat-hint>{{ noteElementHint }}</mat-hint>
+              </mat-form-field>
+
+              <mat-form-field appearance="outline" subscriptSizing="dynamic">
+                <mat-label>Short description</mat-label>
+                <mat-select formControlName="shortdesc">
+                  <mat-option value="omit">Leave it out</mat-option>
+                  <mat-option value="empty">Empty, for the writer to fill in</mat-option>
+                  <mat-option value="text">Always the same text</mat-option>
+                </mat-select>
+              </mat-form-field>
+            </div>
+
+            @if (form.get('shortdesc')?.value === 'text') {
+              <mat-form-field appearance="outline" class="full-width" subscriptSizing="dynamic">
+                <mat-label>Short description text</mat-label>
+                <input matInput formControlName="shortdesc_text">
+              </mat-form-field>
+            }
+
+            <div class="vars-preview">
+              <span class="vars-col">A topic will look like</span>
+              <pre class="query-preview layout-preview">{{ layoutPreview }}</pre>
+            </div>
+            }
+
+            @if (form.get('layout_mode')?.value === 'template') {
+              <mat-form-field appearance="outline" class="full-width" subscriptSizing="dynamic">
+                <mat-label>DITA topic template</mat-label>
+                <textarea matInput class="mono" formControlName="template_dita" rows="12"
+                          spellcheck="false"></textarea>
+                @if (templateProblems.length) {
+                  <mat-error>{{ templateProblems[0] }}</mat-error>
+                }
+              </mat-form-field>
+              <ul class="marker-help muted">
+                <li><code>outputclass="rn-notes"</code> — the element the notes go inside. A
+                  <code>&lt;ul&gt;</code> or <code>&lt;ol&gt;</code> makes each note an
+                  <code>&lt;li&gt;</code>; anything else makes it a <code>&lt;div&gt;</code>.</li>
+                <li><code>outputclass="rn-group"</code> — the element repeated once per group,
+                  with the notes marker inside it. Leave it out if you do not group notes.</li>
+                <li><code>&#123;title&#125;</code> and <code>&#123;group&#125;</code> are replaced as the topic is built.</li>
+              </ul>
+            }
+
+            @if (form.get('layout_mode')?.value === 'agent') {
+              <mat-form-field appearance="outline" class="full-width" subscriptSizing="dynamic">
+                <mat-label>Describe the structure</mat-label>
+                <textarea matInput formControlName="agent_guidance" rows="8"
+                          placeholder="e.g. One bold paragraph per product release with the product name and version, then that product's notes as a single bulleted list. Leave the short description empty."></textarea>
+                <mat-hint>
+                  Turned into a template when a release starts, and kept for that release.
+                  Until the first run, releases from this set use the default shape.
+                </mat-hint>
+              </mat-form-field>
+            }
+          </div>
 
           <mat-form-field appearance="outline" class="full-width">
             <mat-label>Topics</mat-label>
@@ -341,16 +476,18 @@ const MORE_RELEASES = 10;
           }
         </div>
       </form>
-    </mat-dialog-content>
+      </div>
+      }
 
-    <mat-dialog-actions align="end">
-      <button mat-button (click)="onCancel()">Cancel</button>
-      <button mat-raised-button color="primary"
-              [disabled]="!form.valid"
-              (click)="onSave()">
-        {{ data?.id ? 'Update' : 'Create' }}
-      </button>
-    </mat-dialog-actions>
+      <div class="editor-actions">
+        <button mat-button type="button" (click)="onCancel()" [disabled]="saving">Cancel</button>
+        <button mat-raised-button color="primary" type="button"
+                [disabled]="!form.valid || saving" (click)="onSave()">
+          @if (saving) { <mat-spinner diameter="20"></mat-spinner> }
+          @else { <span>{{ data?.id ? 'Save Changes' : 'Create' }}</span> }
+        </button>
+      </div>
+    </div>
   `,
   changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
@@ -373,6 +510,16 @@ const MORE_RELEASES = 10;
       font: inherit; font-size: 13px; font-weight: 500; color: var(--color-primary); }
     .load-more:disabled { color: var(--text-tertiary); cursor: default; }
     .jql-field { margin-bottom: 12px; }
+    .layout-card { border: 1px solid var(--border-default); border-radius: 8px; padding: 12px 14px;
+      margin-bottom: 16px; background: var(--bg-secondary); }
+    .layout-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 10px; align-items: start; margin-bottom: 10px; }
+    .layout-grid mat-form-field { width: 100%; }
+    .layout-preview { margin: 0; white-space: pre; overflow-x: auto; }
+    .layout-modes { margin-bottom: 8px; }
+    .mode-help { margin: 0 0 12px; font-size: 12px; line-height: 1.5; max-width: 66ch; }
+    .marker-help { margin: 2px 0 0; padding-left: 18px; font-size: 12px; line-height: 1.6; }
+    .marker-help code { font-family: var(--font-mono); font-size: 11px; }
     .vars-card { border: 1px solid var(--border-default); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; background: var(--bg-secondary); }
     .vars-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
     .vars-title { font-size: 13px; font-weight: 600; }
@@ -392,7 +539,13 @@ const MORE_RELEASES = 10;
     .chip-missing { background: var(--color-error-bg); color: var(--color-error-text); font-weight: 600; padding: 0 5px; border-radius: 4px; }
     .vars-empty { font-size: 13px; margin: 0; }
     .vars-empty code, mat-hint code { font-family: var(--font-mono); font-size: 12px; }
-    mat-dialog-content { min-width: 600px; max-width: 800px; max-height: 70vh; overflow-y: auto; }
+    /* .editor-header, .heading and .subtitle come from hop-ui, so this page's header is
+       the same object as the agent editor's. Only the width and the footer are ours. */
+    .editor-container { max-width: 920px; }
+    .loading { display: flex; justify-content: center; padding: 60px; }
+    .editor-body { padding-bottom: 8px; }
+    .editor-actions { display: flex; justify-content: flex-end; gap: 8px;
+      border-top: 1px solid var(--border-default); padding-top: 16px; margin-top: 8px; }
     .form-section { margin-bottom: 28px; }
     .form-section h3 { color: var(--text-primary); margin-bottom: 8px; font-size: 16px; font-weight: 500; }
     .full-width { width: 100%; }
@@ -412,22 +565,37 @@ const MORE_RELEASES = 10;
     mat-panel-title mat-icon { font-size: 20px; }
   `]
 })
-export class InstructionDialogComponent implements OnInit {
+export class InstructionEditorComponent implements OnInit {
   form: FormGroup;
   agents: AgentSummary[] = [];
   jiraCredentials: JiraCredentialOption[] = [];
   chunkingStrategies = CHUNKING_STRATEGIES;
 
+  private route = inject(ActivatedRoute);
+  private router = inject(Router);
+  private snackBar = inject(MatSnackBar);
+
+  /** The set being edited, or null while creating. Set once it has loaded. */
+  data: InstructionSet | null = null;
+  loading = false;
+  saving = false;
+
   constructor(
     private fb: FormBuilder,
-    private dialogRef: MatDialogRef<InstructionDialogComponent>,
     private agentService: HopAgentService,
     private credentialsService: CredentialsService,
     private instructionsService: InstructionsService,
-    @Inject(MAT_DIALOG_DATA) public data: InstructionSet | null
   ) {
+    // Built empty and patched once the set arrives: on a page the data is fetched, not
+    // handed in, so the form has to exist before it does.
+    this.form = this.buildForm(null);
+  }
+
+  private buildForm(data: InstructionSet | null): FormGroup {
     this.variableSpecs = { ...(data?.variables || {}) };
-    this.form = this.fb.group({
+    const layout = { ...DEFAULT_LAYOUT, ...(data?.layout?.structured || {}) };
+    return this.fb.group({
+
       name: [data?.name || '', Validators.required],
       description: [data?.description || ''],
       product_name: [data?.product_name || ''],
@@ -441,6 +609,14 @@ export class InstructionDialogComponent implements OnInit {
       relevance_guidance: [data?.relevance_guidance || ''],
       organization_guidance: [data?.organization_guidance || ''],
       chunking_strategy: [data?.chunking_strategy || 'single'],
+      group_heading: [layout.group_heading],
+      notes_wrapper: [layout.notes_wrapper],
+      note_element: [layout.note_element],
+      shortdesc: [layout.shortdesc],
+      shortdesc_text: [layout.shortdesc_text],
+      layout_mode: [data?.layout?.mode || 'structured'],
+      template_dita: [data?.layout?.template?.dita || ''],
+      agent_guidance: [data?.layout?.agent?.guidance || ''],
       heretto_folder_id: [data?.heretto_folder_id || ''],
       publish_to_heretto: [data?.publish_to_heretto || false],
       is_default: [data?.is_default || false]
@@ -528,7 +704,95 @@ export class InstructionDialogComponent implements OnInit {
           this.releasesHasMore = false;
           this.releasesStatus = error.error?.detail || 'Could not read releases from Jira';
         }
-      });
+          });
+  }
+
+  /** Put a loaded set into the form, replacing whatever was there. */
+  private apply(data: InstructionSet | null): void {
+    this.data = data;
+    this.form = this.buildForm(data);
+    this.wireFormRules();
+  }
+
+  /**
+   * What a note can be, given what collects it. A <ul>/<ol> may only contain <li>, and an
+   * <li> may only live in a list — so this is not a free choice, it follows the wrapper.
+   * Written as a list rather than a fixed pair so another host (<sl> and <sli>, say) only
+   * has to be added here.
+   */
+  get noteElementOptions(): { value: string; label: string }[] {
+    return this.isListWrapper
+      ? [{ value: 'li', label: 'A list item (<li>)' }]
+      : [{ value: 'div', label: 'A block (<div>)' }];
+  }
+
+  get noteElementHint(): string {
+    return this.isListWrapper
+      ? 'A list can only contain list items'
+      : 'List items need a list to sit in';
+  }
+
+  private get isListWrapper(): boolean {
+    return ['ul', 'ol'].includes(this.form?.get('notes_wrapper')?.value);
+  }
+
+  /**
+   * What is wrong with the template, in the words the API would use. Checked here so the
+   * problem shows while it is being written rather than on save.
+   */
+  get templateProblems(): string[] {
+    if (this.form?.get('layout_mode')?.value !== 'template') return [];
+    const dita = (this.form.get('template_dita')?.value || '').trim();
+    if (!dita) return ['Write the DITA template, or choose another layout mode.'];
+
+    const problems: string[] = [];
+    const parsed = new DOMParser().parseFromString(dita, 'application/xml');
+    if (parsed.querySelector('parsererror')) return ['That is not well-formed XML.'];
+    const root = parsed.documentElement;
+    if (root.nodeName !== 'topic') problems.push(`The template must be a <topic>; this one is a <${root.nodeName}>.`);
+    if (!this.hasMarker(root, 'rn-notes')) {
+      problems.push('Nothing says where the notes go. Put outputclass="rn-notes" on the element that should hold them.');
+    }
+    if (!root.querySelector('title')) problems.push('The template needs a <title>.');
+    return problems;
+  }
+
+  private hasMarker(root: Element, marker: string): boolean {
+    for (const el of Array.from(root.getElementsByTagName('*'))) {
+      if ((el.getAttribute('outputclass') || '').split(/\s+/).includes(marker)) return true;
+    }
+    return (root.getAttribute('outputclass') || '').split(/\s+/).includes(marker);
+  }
+
+  /**
+   * The DITA skeleton the current choices produce — the same shape build_topic_xml emits,
+   * written out so a choice can be judged without starting a release to see it.
+   */
+  get layoutPreview(): string {
+    const heading = this.form?.get('group_heading')?.value;
+    const wrapper = this.form?.get('notes_wrapper')?.value;
+    const note = this.form?.get('note_element')?.value;
+    const shortdesc = this.form?.get('shortdesc')?.value;
+
+    const lines = ['<topic>', '  <title>Release notes</title>'];
+    if (shortdesc === 'empty') lines.push('  <shortdesc/>');
+    if (shortdesc === 'text') lines.push(`  <shortdesc>${this.form?.get('shortdesc_text')?.value || '…'}</shortdesc>`);
+    lines.push('  <body>');
+
+    const indent = heading === 'section' ? '      ' : '    ';
+    if (heading === 'section') {
+      lines.push('    <section>', '      <title>New features</title>');
+    } else if (heading === 'paragraph') {
+      lines.push('    <p><b>New features</b></p>');
+    }
+    if (wrapper !== 'none') lines.push(`${indent}<${wrapper}>`);
+    const noteIndent = wrapper === 'none' ? indent : indent + '  ';
+    lines.push(`${noteIndent}<${note} outputclass="release-note">…the note…</${note}>`);
+    if (wrapper !== 'none') lines.push(`${indent}</${wrapper}>`);
+    if (heading === 'section') lines.push('    </section>');
+
+    lines.push('  </body>', '</topic>');
+    return lines.join('\n');
   }
 
   /** Spec metadata per variable, kept for tokens that come and go while editing. */
@@ -570,6 +834,51 @@ export class InstructionDialogComponent implements OnInit {
       this.jiraCredentials = credentials;
     });
 
+
+    const id = this.route.snapshot.paramMap.get('id');
+    if (id) {
+      this.loading = true;
+      this.instructionsService.getInstructionSet(id).subscribe({
+        next: set => {
+          this.apply(set);
+          this.loading = false;
+        },
+        error: () => {
+          this.loading = false;
+          this.snackBar.open('Could not open that instruction set', 'Close', { duration: 5000 });
+          this.router.navigate(['/instructions']);
+        }
+      });
+      return;
+    }
+
+    // Duplicating: the set to copy is handed over in navigation state rather than fetched,
+    // because it is already loaded and has had its id and timestamps stripped.
+    const duplicate = (history.state || {}).duplicateOf as InstructionSet | undefined;
+    if (duplicate) {
+      this.form = this.buildForm(duplicate);
+      this.wireFormRules();
+      this.data = null;  // a copy is a new set, however it was seeded
+    } else {
+      this.apply(null);
+    }
+  }
+
+  /** Rules that keep controls in step. Re-applied whenever the form is rebuilt. */
+  private wireFormRules(): void {
+    // Switching to template mode with nothing written starts from a working template
+    // rather than a blank box someone has to guess the markers for.
+    this.form.get('layout_mode')?.valueChanges.subscribe(mode => {
+      if (mode === 'template' && !(this.form.get('template_dita')?.value || '').trim()) {
+        this.form.patchValue({ template_dita: STARTER_TEMPLATE });
+      }
+    });
+
+    // What a note is follows from what collects it — see noteElementOptions. Kept in step
+    // here so the stored value always matches the only option the control offers.
+    this.form.get('notes_wrapper')?.valueChanges.subscribe(() => this.syncNoteElement());
+    this.syncNoteElement();
+
     // Only the active mode's field is required, so the validators move with the switch.
     this.applyModeValidators();
     this.form.get('source_mode')?.valueChanges.subscribe(() => {
@@ -580,6 +889,13 @@ export class InstructionDialogComponent implements OnInit {
       .pipe(debounceTime(400), distinctUntilChanged())
       .subscribe(() => this.loadReleases());
     this.loadReleases();
+  }
+
+  private syncNoteElement(): void {
+    const only = this.noteElementOptions[0].value;
+    if (this.form.get('note_element')?.value !== only) {
+      this.form.patchValue({ note_element: only }, { emitEvent: false });
+    }
   }
 
   private applyModeValidators(): void {
@@ -597,7 +913,7 @@ export class InstructionDialogComponent implements OnInit {
   }
 
   onCancel(): void {
-    this.dialogRef.close();
+    this.router.navigate(['/instructions']);
   }
 
   onSave(): void {
@@ -606,6 +922,40 @@ export class InstructionDialogComponent implements OnInit {
     for (const key of ['description', 'product_name', 'relevance_guidance', 'organization_guidance', 'heretto_folder_id']) {
       if (typeof value[key] === 'string' && !value[key].trim()) value[key] = null;
     }
+    value.layout = {
+      mode: value.layout_mode,
+      template: { dita: value.layout_mode === 'template' ? (value.template_dita || '').trim() : (value.template_dita || '') },
+      agent: { guidance: (value.agent_guidance || '').trim() },
+      structured: {
+        group_heading: value.group_heading,
+        notes_wrapper: value.notes_wrapper,
+        note_element: value.note_element,
+        shortdesc: value.shortdesc,
+        shortdesc_text: value.shortdesc === 'text' ? (value.shortdesc_text || '').trim() : ''
+      }
+    };
+    for (const key of ['group_heading', 'notes_wrapper', 'note_element', 'shortdesc',
+                       'shortdesc_text', 'layout_mode', 'template_dita', 'agent_guidance']) {
+      delete value[key];
+    }
+
+    value.layout = {
+      mode: value.layout_mode,
+      template: { dita: value.layout_mode === 'template' ? (value.template_dita || '').trim() : (value.template_dita || '') },
+      agent: { guidance: (value.agent_guidance || '').trim() },
+      structured: {
+        group_heading: value.group_heading,
+        notes_wrapper: value.notes_wrapper,
+        note_element: value.note_element,
+        shortdesc: value.shortdesc,
+        shortdesc_text: value.shortdesc === 'text' ? (value.shortdesc_text || '').trim() : ''
+      }
+    };
+    for (const key of ['group_heading', 'notes_wrapper', 'note_element', 'shortdesc',
+                       'shortdesc_text', 'layout_mode', 'template_dita', 'agent_guidance']) {
+      delete value[key];
+    }
+
     if (this.isReleasesMode) {
       // The query is built per release from these two; a template would have nothing to fill.
       value.jira_project = (value.jira_project || '').trim().toUpperCase();
@@ -620,6 +970,32 @@ export class InstructionDialogComponent implements OnInit {
       const names = this.variableNames;
       value.variables = Object.fromEntries(names.map(name => [name, this.variableSpecs[name]]));
     }
-    this.dialogRef.close(value);
+    this.save(value);
+  }
+
+  /**
+   * The page owns persistence now. The list used to do it after the dialog closed, which
+   * cannot work when the form is a route someone may arrive at directly.
+   */
+  private save(value: any): void {
+    this.saving = true;
+    const request = this.data?.id
+      ? this.instructionsService.updateInstructionSet(this.data.id, value)
+      : this.instructionsService.createInstructionSet(value);
+
+    request.subscribe({
+      next: () => {
+        this.saving = false;
+        this.snackBar.open(
+          this.data?.id ? 'Instruction set saved' : 'Instruction set created',
+          'Close', { duration: 3000 });
+        this.router.navigate(['/instructions']);
+      },
+      error: error => {
+        this.saving = false;
+        this.snackBar.open(
+          error.error?.detail || 'Could not save the instruction set', 'Close', { duration: 6000 });
+      }
+    });
   }
 }

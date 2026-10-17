@@ -27,16 +27,57 @@ evaluates them, consolidates and organizes release note items, writes one DITA f
 item, and assembles topics; a person then finishes the notes in the workspace
 (`/jobs/:id/workspace`) with the writer agent in chat. `docs/COLLABORATIVE_WORKFLOW.md` is the
 map: pipeline stages, rerun semantics (unchanged issues keep their notes; changes go to each
-note's history), the fragment shape (`<div outputclass="release-note">` inside group
-`<section>`s), and the chat tools. Backend entry points: `app/services/release_notes_pipeline.py`
+note's history), the fragment shape (a note stores **content**, and assembly wraps it), and the chat tools. Backend entry points: `app/services/release_notes_pipeline.py`
 (stages), `workspace_service.py` (assembly, history, publishing, response shapes),
 `workspace_chat.py` (agent tools), `topic_assembler.py` (fragment validation and chunking).
 `tests/integration/test_pipeline_with_fakes.py` runs the whole pipeline against the local
 Postgres with fake Jira and fake agents; keep it green when touching the stages.
 
+**Guidance reaches two stages, and only governs one note at a time.**
+`organization_guidance` goes to the organize stage (group names and order) *and*, since the
+writer is what actually writes the words, to the writer and the workspace chat agent via
+`pipeline_prompts.house_style()`. It used to reach only the organize stage, so anyone who
+wrote their house style in that box — note prefixes, tense, which elements to use — saw no
+change in the output and reasonably reported the guidance as ignored. The block scopes
+itself on the way in: the writer is told to follow every rule about **this note** and to
+ignore rules about the topic around it. That is not politeness — a writer told to emit
+`<title>`, `<shortdesc>` or `<ul>` wrappers returns a fragment that fails DTD validation and
+the note silently falls back to its plain summary. Topic-level structure is `topic_assembler.build_topic_xml`, and it is
+configured per instruction set by `instruction_sets.layout` (`schemas.TopicLayout`): a note
+stores **content**, and the layout decides the element around it — a `<section>` with a
+title or a bold paragraph per group, its notes loose or collected in a `<ul>`/`<ol>`, each
+note a `<div>` or an `<li>`, and what the `<shortdesc>` does. `layout.mode` picks who owns the structure — **structured** (the
+options above), **template** (a DITA topic the writer authors, with `outputclass="rn-group"`
+marking what repeats per group and `rn-notes` marking where notes go; the notes host's tag
+decides whether a note is an `<li>` or a `<div>`, and both markers are stripped from the
+output), or **agent** (the structure described in words). Each mode keeps its own settings,
+so switching back does not lose the other. Agent mode resolves to a template **once per
+run** — `_settle_topic_structure` writes it to `jobs.topic_template` and every later
+assembly of that release reuses it. That is deliberate: assembly also runs inside request
+handlers (a topic-split change, a note edit), and nothing there may call a model. A release
+assembled before its first run, or whose agent failed, falls back to the structured options
+rather than producing no topic.
+What a note *is* follows from what collects it and is not a free choice: a `<ul>`/`<ol>`
+may only contain `<li>`, and an `<li>` may only live in a list. The editor offers only the
+valid element, the schema refuses a mismatched pair, and `note_element_for()` derives the
+element at assembly time rather than trusting the stored one — so a hand-edited row cannot
+put a `<div>` inside a `<ul>` and fail every topic's DTD check. Whatever that element is, assembly
+stamps it with the note's `fragment_id` and `outputclass="release-note"` — the workspace
+preview maps rendered DITA back to a note through exactly that pair, so every layout mode
+must keep doing it.
+
 **Instruction sets name agents by role** (`writer_agent_id`, `analysis_agent_id`), not an
 ordered chain; the `instruction_set_agents` table is gone (migration
 `add_collaborative_workflow` moved the first chain agent into the writer slot).
+
+**The instruction-set editor is a page, not a dialog** (`/instructions/new`,
+`/instructions/:id`). It outgrew a modal once it carried the query and its variables, the
+agents, two kinds of guidance and the topic layout. The page owns persistence — the list
+used to save after the dialog closed, which cannot work for a route someone may open
+directly — and a duplicate travels in navigation state rather than by id, because a copy
+does not have one yet. The form is built empty and rebuilt when the set arrives, so any
+rule that keeps controls in step belongs in `wireFormRules()`: a subscription made in
+`ngOnInit` would attach to the form the load then replaces.
 
 **A job is a "Release" in the UI, a `job` in the API.** The nav item, headings and copy all
 say Releases, and the routes are `/releases`, `/releases/:id`, `/releases/:id/workspace` (the

@@ -1,6 +1,11 @@
 """Turning release note items into DITA topics.
 
-Every note is a body-level fragment — one ``<div outputclass="release-note">`` — so notes can
+Every note stores **content**, not a wrapper: the children that go inside whatever element
+assembly decides to put them in. The wrapper is assembly's business, so a note can be a
+``<div>`` in one instruction set and an ``<li>`` inside a shared ``<ul>`` in another without
+the stored note changing. Whatever the element, assembly stamps it with the note's
+``fragment_id`` and ``outputclass="release-note"`` — that pair is what lets the workspace map
+rendered DITA back to the note it came from, and nothing downstream should assume more. Notes can
 be grouped under ``<section>`` headings, split across topics, and re-split later without the
 writer agent rewriting anything. This module owns that fragment shape (normalizing what a
 model returns into it, validating it against the DITA 1.3 DTD), the chunking strategies that
@@ -11,6 +16,7 @@ from __future__ import annotations
 
 import copy
 import re
+import dataclasses
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 from xml.sax.saxutils import escape
@@ -63,10 +69,15 @@ def _strip_wrappers(text: str) -> str:
 
 
 def normalize_fragment(raw: str, fragment_id: str, title: str) -> str:
-    """Coerce a model's output into one ``<div id=... outputclass="release-note">``.
+    """Coerce a model's output into a note's **content** — body-level elements, no wrapper.
 
     Accepts a bare ``<div>``, several sibling elements, or a fragment wrapped in a
-    ``<section>``/``<topic>``; rejects anything that is not well-formed XML.
+    ``<section>``/``<topic>``; rejects anything that is not well-formed XML. A wrapping
+    ``<div>`` is unwrapped rather than kept: which element holds this content is decided
+    when the topic is assembled, so storing one here would fix it for every mode.
+
+    `fragment_id` is still taken so callers do not have to change and so the signature says
+    which note this is; it is no longer written into the content.
     """
     text = _strip_wrappers(raw)
     if not text:
@@ -127,33 +138,41 @@ def normalize_fragment(raw: str, fragment_id: str, title: str) -> str:
         bold.text = "".join(title_el.itertext()).strip()
         title_el.getparent().replace(title_el, lead)
 
-    for attr in list(div.attrib):
-        if attr not in ("outputclass",):
-            del div.attrib[attr]
-    div.set("id", fragment_id)
-    div.set("outputclass", "release-note")
-
     if not len(div) and not (div.text or "").strip():
         raise FragmentError("The fragment has no content")
 
-    return etree.tostring(div, encoding="unicode", pretty_print=True).strip()
+    # Serialize the children, not the holder. Loose text directly inside the holder would
+    # not be valid in a <div> or an <li> either, so it is wrapped first.
+    if (div.text or "").strip():
+        lead = etree.Element("p")
+        lead.text = div.text.strip()
+        div.text = None
+        div.insert(0, lead)
+
+    return "\n".join(
+        etree.tostring(child, encoding="unicode", pretty_print=True).strip()
+        for child in div
+        if isinstance(child.tag, str)
+    ).strip()
 
 
 def plain_text_fragment(fragment_id: str, title: str, summary: str) -> str:
-    """The fallback when a model cannot produce valid DITA: the plain summary, escaped."""
+    """The fallback when a model cannot produce valid DITA: the plain summary, escaped.
+
+    Content only, like everything else stored on a note. `fragment_id` is unused and kept
+    so the many call sites do not all have to change at once.
+    """
     body = escape((summary or "").strip() or title)
-    return (
-        f'<div id="{fragment_id}" outputclass="release-note">\n'
-        f"  <p><b>{escape(title)}</b></p>\n"
-        f"  <p>{body}</p>\n"
-        f"</div>"
-    )
+    return f"<p><b>{escape(title)}</b></p>\n<p>{body}</p>"
 
 
 def fragment_title(fragment: str) -> Optional[str]:
-    """The bold lead of a fragment, if it has one."""
+    """The bold lead of a note's content, if it has one.
+
+    Wrapped before parsing because a note is content now, not one element.
+    """
     try:
-        div = etree.fromstring(fragment, _parser())
+        div = etree.fromstring(f"<div>{fragment}</div>", _parser())
     except etree.XMLSyntaxError:
         return None
     first = next((c for c in div if isinstance(c.tag, str)), None)
@@ -162,10 +181,19 @@ def fragment_title(fragment: str) -> Optional[str]:
     return None
 
 
+#: What a note's content is wrapped in while it is validated. Assembly can place the same
+#: content in a different element (stage 2 makes that configurable); <div> is the most
+#: permissive body-level holder, so content that validates here validates anywhere it is
+#: later put.
+VALIDATION_WRAPPER = "div"
+
+
 def _wrap_for_validation(fragment: str) -> str:
     return (
         f'<?xml version="1.0" encoding="UTF-8"?>\n{DOCTYPE}\n'
-        f'<topic id="validation"><title>Validation</title><body>{fragment}</body></topic>'
+        f'<topic id="validation"><title>Validation</title><body>'
+        f'<{VALIDATION_WRAPPER}>{fragment}</{VALIDATION_WRAPPER}>'
+        f'</body></topic>'
     )
 
 
@@ -307,26 +335,127 @@ def plan_topics(
 
 # ── Topic XML ────────────────────────────────────────────────────────────────────────
 
-def _fragment_element(item: ReleaseNoteItem) -> etree._Element:
-    """The item's fragment as an element, falling back to plain text if it will not parse."""
-    source = item.dita_content or plain_text_fragment(item.fragment_id, item.title, item.summary)
+def note_element(item: ReleaseNoteItem, tag: str = "div") -> etree._Element:
+    """A note's stored content inside `tag`, identified so the workspace can find it again.
+
+    The id and `outputclass="release-note"` go on whatever element holds the content. The
+    workspace maps rendered DITA back to a note through exactly that pair, so every mode
+    must keep stamping it — see build_topic_xml and the preview in workspace.component.ts.
+    """
+    content = item.dita_content or plain_text_fragment(item.fragment_id, item.title, item.summary)
     try:
-        el = etree.fromstring(source, _parser())
+        el = etree.fromstring(f"<{tag}>{content}</{tag}>", _parser())
     except etree.XMLSyntaxError:
-        el = etree.fromstring(plain_text_fragment(item.fragment_id, item.title, item.summary), _parser())
+        fallback = plain_text_fragment(item.fragment_id, item.title, item.summary)
+        el = etree.fromstring(f"<{tag}>{fallback}</{tag}>", _parser())
     el.set("id", item.fragment_id)
     el.set("outputclass", "release-note")
     return el
 
 
-def build_topic_xml(plan: TopicPlan, shortdesc: Optional[str] = None) -> str:
-    """A complete, DTD-valid DITA topic for one plan."""
+@dataclass(frozen=True)
+class Layout:
+    """The resolved layout. See schemas.TopicLayout for what each field means."""
+
+    mode: str = "structured"
+    template: str = ""
+    guidance: str = ""
+    group_heading: str = "section"
+    notes_wrapper: str = "none"
+    note_element: str = "div"
+    shortdesc: str = "omit"
+    shortdesc_text: str = ""
+
+    @classmethod
+    def of(cls, instruction_set) -> "Layout":
+        """The layout an instruction set asks for, falling back to today's shape.
+
+        Anything unreadable gives the default rather than raising: a release that cannot be
+        assembled is worse than one assembled the old way, and the editor validates on save.
+        """
+        stored = getattr(instruction_set, "layout", None) or {}
+        if not isinstance(stored, dict):
+            return cls()
+        options = stored.get("structured") or {}
+        if not isinstance(options, dict):
+            options = {}
+        template = (stored.get("template") or {}) if isinstance(stored.get("template"), dict) else {}
+        agent = (stored.get("agent") or {}) if isinstance(stored.get("agent"), dict) else {}
+        mode = stored.get("mode") if stored.get("mode") in ("structured", "template", "agent") else "structured"
+
+        fields = {f.name for f in dataclasses.fields(cls)} - {"mode", "template", "guidance"}
+        resolved = cls(
+            mode=mode,
+            template=str(template.get("dita") or ""),
+            guidance=str(agent.get("guidance") or ""),
+            **{k: v for k, v in options.items() if k in fields and isinstance(v, str)},
+        )
+        # A template mode with no template cannot build anything; the schema refuses to
+        # store that, but a hand-edited row should degrade rather than fail every run.
+        if resolved.mode == "template" and not resolved.template.strip():
+            return dataclasses.replace(resolved, mode="structured")
+        return resolved
+
+
+def _add_shortdesc(topic: etree._Element, layout: Layout, shortdesc: Optional[str]) -> None:
+    """A caller-supplied shortdesc wins; otherwise the layout decides."""
+    if shortdesc:
+        etree.SubElement(topic, "shortdesc").text = shortdesc
+    elif layout.shortdesc == "empty":
+        etree.SubElement(topic, "shortdesc")
+    elif layout.shortdesc == "text" and layout.shortdesc_text.strip():
+        etree.SubElement(topic, "shortdesc").text = layout.shortdesc_text.strip()
+
+
+def note_element_for(notes_wrapper: str) -> str:
+    """What a note has to be, given what collects it.
+
+    Derived, not configured: a <ul>/<ol> may only contain <li>, and an <li> may only live
+    in a list. The schema refuses a mismatched pair on the way in; this makes sure one that
+    got stored anyway — a hand-edited row, an older record — still assembles to valid DITA.
+    """
+    return "li" if notes_wrapper in ("ul", "ol") else "div"
+
+
+def _group_container(body: etree._Element, slug: str, index: int, name: str, layout: Layout):
+    """Where a group's notes go, and the heading that introduces them.
+
+    Returns the element the notes are appended to. With a section heading the notes live
+    inside the section; with a paragraph or no heading they sit directly in the body —
+    which is what lets a <ul> follow a <p><b>Group</b></p> as a sibling, the shape a
+    section cannot produce.
+    """
+    if layout.group_heading == "section":
+        section = etree.SubElement(body, "section", id=f"{slug}-g{index}")
+        etree.SubElement(section, "title").text = name or "Other changes"
+        host = section
+    else:
+        if layout.group_heading == "paragraph":
+            para = etree.SubElement(body, "p")
+            etree.SubElement(para, "b").text = name or "Other changes"
+        host = body
+
+    if layout.notes_wrapper in ("ul", "ol"):
+        return etree.SubElement(host, layout.notes_wrapper)
+    return host
+
+
+def build_topic_xml(
+    plan: TopicPlan,
+    shortdesc: Optional[str] = None,
+    layout: Optional[Layout] = None,
+) -> str:
+    """A complete, DTD-valid DITA topic for one plan, laid out as the layout asks."""
+    layout = layout or Layout()
+    # The agent mode resolves to a template before it gets here — assemble_job_topics
+    # passes the one the run settled on. Without it (a release assembled before its first
+    # run) the structured options apply, which is the sane shape rather than no topic.
+    if layout.mode in ("template", "agent") and layout.template.strip():
+        return build_topic_from_template(plan, layout.template)
     topic = etree.Element("topic", id=plan.slug)
     title = etree.SubElement(topic, "title")
     title.text = plan.title
-    if shortdesc:
-        sd = etree.SubElement(topic, "shortdesc")
-        sd.text = shortdesc
+    _add_shortdesc(topic, layout, shortdesc)
     body = etree.SubElement(topic, "body")
 
     has_groups = any(name for name, _ in plan.groups)
@@ -335,17 +464,146 @@ def build_topic_xml(plan: TopicPlan, shortdesc: Optional[str] = None) -> str:
         para.text = "No release notes."
     elif has_groups:
         for index, (name, group_items) in enumerate(plan.groups, start=1):
-            section = etree.SubElement(body, "section", id=f"{plan.slug}-g{index}")
-            section_title = etree.SubElement(section, "title")
-            section_title.text = name or "Other changes"
+            host = _group_container(body, plan.slug, index, name, layout)
+            tag = note_element_for(layout.notes_wrapper)
             for item in group_items:
-                section.append(_fragment_element(item))
+                host.append(note_element(item, tag))
     else:
+        # No groups: the wrapper still applies, so <li> notes remain inside a list.
+        host = body
+        if layout.notes_wrapper in ("ul", "ol"):
+            host = etree.SubElement(body, layout.notes_wrapper)
+        tag = note_element_for(layout.notes_wrapper)
         for _, group_items in plan.groups:
             for item in group_items:
-                body.append(_fragment_element(item))
+                host.append(note_element(item, tag))
 
     xml = etree.tostring(topic, encoding="unicode", pretty_print=True)
+    return f'<?xml version="1.0" encoding="UTF-8"?>\n{DOCTYPE}\n{xml}'
+
+
+
+# ── Template layout ──────────────────────────────────────────────────────────────────
+
+#: The element repeated once per group, and the element its notes are placed in. Markers
+#: rather than a bespoke syntax so the template stays a real DITA topic — it can be opened
+#: in an editor, validated, and carry whatever else a house template carries.
+GROUP_MARKER = "rn-group"
+NOTES_MARKER = "rn-notes"
+
+#: A <ul>/<ol> host means the notes are list items; anything else holds blocks.
+_LIST_HOSTS = {"ul", "ol", "sl"}
+
+
+def _marked(root: etree._Element, marker: str) -> Optional[etree._Element]:
+    for el in root.iter():
+        if isinstance(el.tag, str) and marker in (el.get("outputclass") or "").split():
+            return el
+    return None
+
+
+def _strip_marker(el: etree._Element, marker: str) -> None:
+    """Take the marker out of the output; keep any other classes the author set."""
+    classes = [c for c in (el.get("outputclass") or "").split() if c != marker]
+    if classes:
+        el.set("outputclass", " ".join(classes))
+    else:
+        el.attrib.pop("outputclass", None)
+
+
+def _fill_tokens(el: etree._Element, **values: str) -> None:
+    """Replace {token} in text and tails, in place."""
+    for node in el.iter():
+        if not isinstance(node.tag, str):
+            continue
+        for attr in ("text", "tail"):
+            text = getattr(node, attr)
+            if not text:
+                continue
+            for name, value in values.items():
+                text = text.replace("{" + name + "}", value)
+            setattr(node, attr, text)
+
+
+def template_errors(dita: str) -> List[str]:
+    """What is wrong with a template, for the editor to show before it is saved.
+
+    Checked here rather than at assembly time: a template that cannot build a topic should
+    be refused when it is written, not discovered the next time a release runs.
+    """
+    text = (dita or "").strip()
+    if not text:
+        return []  # empty is only an error once the mode is chosen; TopicLayout says so
+
+    try:
+        root = etree.fromstring(_strip_wrappers(text), _parser())
+    except etree.XMLSyntaxError as exc:
+        return [f"Not well-formed XML: {exc}"]
+
+    errors = []
+    if root.tag != "topic":
+        errors.append(f"The template must be a <topic>; this one is a <{root.tag}>.")
+    if _marked(root, NOTES_MARKER) is None:
+        errors.append(
+            f'Nothing in the template says where the notes go. Put outputclass="{NOTES_MARKER}" '
+            "on the element that should hold them."
+        )
+    if root.find("title") is None:
+        errors.append("The template needs a <title>.")
+    return errors
+
+
+def build_topic_from_template(plan: TopicPlan, template: str) -> str:
+    """A topic built by filling the writer's own template.
+
+    The group block is repeated per group and the notes placed inside it. With no group
+    block, every note goes into the notes host once — which is what a template that does
+    not care about groups looks like.
+    """
+    root = etree.fromstring(_strip_wrappers(template), _parser())
+    root.set("id", plan.slug)
+    _fill_tokens(root, title=plan.title)
+
+    group_block = _marked(root, GROUP_MARKER)
+    notes_host = _marked(root, NOTES_MARKER)
+    if notes_host is None:
+        raise FragmentError("The topic template does not say where the notes go", template_errors(template))
+
+    def place(host: etree._Element, items) -> None:
+        tag = "li" if host.tag in _LIST_HOSTS else "div"
+        for child in list(host):          # the author's sample content
+            host.remove(child)
+        host.text = None
+        for item in items:
+            host.append(note_element(item, tag))
+        _strip_marker(host, NOTES_MARKER)
+
+    if group_block is None:
+        place(notes_host, plan.items)
+        return _serialize_topic(root)
+
+    parent = group_block.getparent()
+    index = parent.index(group_block)
+    parent.remove(group_block)
+
+    for offset, (name, group_items) in enumerate(plan.groups):
+        block = copy.deepcopy(group_block)
+        _fill_tokens(block, group=name or "Other changes")
+        host = _marked(block, NOTES_MARKER)
+        if host is None:
+            raise FragmentError(
+                "The notes marker must be inside the repeated group block",
+                [f'outputclass="{NOTES_MARKER}" was not found inside the group block'],
+            )
+        place(host, group_items)
+        _strip_marker(block, GROUP_MARKER)
+        parent.insert(index + offset, block)
+
+    return _serialize_topic(root)
+
+
+def _serialize_topic(root: etree._Element) -> str:
+    xml = etree.tostring(root, encoding="unicode", pretty_print=True)
     return f'<?xml version="1.0" encoding="UTF-8"?>\n{DOCTYPE}\n{xml}'
 
 
