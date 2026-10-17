@@ -215,13 +215,14 @@ credentials stored by the old routes keep working.
   covers the older adapter's fallback for the same reason.
 - **The Heretto folder is chosen with hop-core's browser** (`openHerettoFolderBrowser`,
   v0.1.17). v0.1.16 could only pick a file, so this app carried its own folder picker for
-  one release; it is gone. The browser returns a `HerettoFolder` object but an instruction
-  set stores only `heretto_folder_id`, so the path is shown after picking and is **not**
-  stored — it would go stale the moment someone moves the folder in Heretto. If the display
-  ever needs to survive a reload, the better answer is hop-core's
-  `HopHerettoFileFieldComponent` with `selection="folder"`, which is a form control holding
-  the whole object, and a column to put it in. Needs `include_heretto_router` (on by
-  default).
+  one release; it is gone. The browser returns a `HerettoFolder` but an instruction set
+  stores only `heretto_folder_id`, and the folder's name is **looked up, never stored** — a
+  path kept in our database is wrong the moment someone moves or renames the folder in
+  Heretto, and wrong silently. Opening an instruction set resolves the id through
+  `HopHerettoService.openFolder`, trying each Heretto connection in turn because the id does
+  not say which one it belongs to (publishing resolves the organization's credential the
+  same way). A folder Heretto no longer recognises shows its id and says so, rather than a
+  name that is no longer true. Needs `include_heretto_router` (on by default).
   A folder chosen when publishing from the workspace applies to **that publish only** and is
   never stored: a one-off destination that quietly became the default is how notes end up
   somewhere nobody expects on the next run.

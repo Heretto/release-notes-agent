@@ -1,5 +1,5 @@
 import { Component, OnInit, ChangeDetectionStrategy, inject } from '@angular/core';
-import { Subscription, debounceTime, distinctUntilChanged } from 'rxjs';
+import { Subscription, catchError, concatMap, debounceTime, distinctUntilChanged, first, from, map, of, switchMap } from 'rxjs';
 import { FormBuilder, FormGroup, Validators, ReactiveFormsModule, FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
@@ -15,7 +15,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatSelectModule } from '@angular/material/select';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
-import { HopAgentService, AgentSummary, openHerettoFolderBrowser } from '@heretto/hop-ui';
+import { HopAgentService, AgentSummary, HopHerettoService, openHerettoFolderBrowser } from '@heretto/hop-ui';
 import { DEFAULT_LAYOUT, STARTER_TEMPLATE, InstructionSet, InstructionsService, JiraRelease } from '../../core/services/instructions.service';
 import { CredentialsService, JiraCredentialOption } from '../../core/services/credentials.service';
 import { CHUNKING_STRATEGIES } from '../../core/services/jobs.service';
@@ -473,8 +473,18 @@ const MORE_RELEASES = 10;
               @if (form.get('heretto_folder_id')?.value) {
                 <div class="folder-chosen">
                   <mat-icon>folder</mat-icon>
-                  <span class="folder-path" [title]="herettoFolderPath || form.get('heretto_folder_id')?.value">
-                    {{ herettoFolderPath || form.get('heretto_folder_id')?.value }}
+                  <span class="folder-text">
+                    @if (herettoFolderPath) {
+                      <span class="folder-name">{{ herettoFolderName }}</span>
+                      <span class="folder-where" [title]="herettoFolderPath">{{ herettoFolderPath }}</span>
+                    } @else if (resolvingFolder) {
+                      <span class="folder-name muted">Looking up the folder…</span>
+                    } @else {
+                      <span class="folder-name">{{ form.get('heretto_folder_id')?.value }}</span>
+                      <span class="folder-where muted">
+                        Heretto did not recognise this folder — it may have been moved or deleted.
+                      </span>
+                    }
                   </span>
                   <button mat-stroked-button type="button" (click)="chooseHerettoFolder()">Change</button>
                   <button mat-icon-button type="button" aria-label="Clear the folder"
@@ -535,8 +545,11 @@ const MORE_RELEASES = 10;
     .folder-label { font-size: 12px; font-weight: 500; color: var(--text-secondary); }
     .folder-chosen { display: flex; align-items: center; gap: 8px; width: 100%;
       border: 1px solid var(--border-default); border-radius: 6px; padding: 8px 10px; }
-    .folder-path { flex: 1; min-width: 0; font-family: var(--font-mono); font-size: 13px;
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .folder-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+    .folder-name { font-size: 14px; font-weight: 500; overflow: hidden;
+      text-overflow: ellipsis; white-space: nowrap; }
+    .folder-where { font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
     .folder-hint { margin: 0; font-size: 12px; }
     .mode-help { margin: 0 0 12px; font-size: 12px; line-height: 1.5; max-width: 66ch; }
     .marker-help { margin: 2px 0 0; padding-left: 18px; font-size: 12px; line-height: 1.6; }
@@ -596,6 +609,7 @@ export class InstructionEditorComponent implements OnInit {
   private router = inject(Router);
   private snackBar = inject(MatSnackBar);
   private dialog = inject(MatDialog);
+  private heretto = inject(HopHerettoService);
 
   /** The set being edited, or null while creating. Set once it has loaded. */
   data: InstructionSet | null = null;
@@ -737,6 +751,7 @@ export class InstructionEditorComponent implements OnInit {
     this.data = data;
     this.form = this.buildForm(data);
     this.wireFormRules();
+    if (data?.heretto_folder_id) this.resolveHerettoFolder(data.heretto_folder_id);
   }
 
   /**
@@ -937,9 +952,45 @@ export class InstructionEditorComponent implements OnInit {
     project?.updateValueAndValidity({ emitEvent: false });
   }
 
-  /** What to show for the chosen folder: its path when we have just picked it. */
+  resolvingFolder = false;
+
+  /** The folder's full path in Heretto, once known. */
   get herettoFolderPath(): string {
     return this.form?.get('heretto_folder_path')?.value || '';
+  }
+
+  /** Just the folder itself — the last segment of the path. */
+  get herettoFolderName(): string {
+    const path = this.herettoFolderPath;
+    return path.split('/').filter(Boolean).pop() || path;
+  }
+
+  /**
+   * Turn a stored folder id into a name to show.
+   *
+   * Looked up rather than stored: a path kept in our database is wrong the moment someone
+   * moves or renames the folder in Heretto, and it would be wrong silently. The id does not
+   * say which connection it belongs to — publishing resolves the organization's Heretto
+   * credential the same way — so each connection is tried until one recognises it.
+   */
+  private resolveHerettoFolder(folderId: string): void {
+    if (!folderId) return;
+    this.resolvingFolder = true;
+    this.heretto.connections().pipe(
+      switchMap(connections => from(connections).pipe(
+        concatMap(connection => this.heretto.openFolder(connection.id, folderId, true).pipe(
+          map(listing => listing.path || listing.name),
+          catchError(() => of('')),   // not this connection's folder; try the next
+        )),
+        first(label => !!label, ''),
+      )),
+    ).subscribe({
+      next: label => {
+        this.resolvingFolder = false;
+        if (label) this.form.patchValue({ heretto_folder_path: label });
+      },
+      error: () => this.resolvingFolder = false,
+    });
   }
 
   chooseHerettoFolder(): void {
