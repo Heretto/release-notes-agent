@@ -279,3 +279,49 @@ def regenerate_input(item: ReleaseNoteItem, change_summary: str) -> str:
         + "\n\n## Current fragment (rewrite it to reflect the Jira changes; keep what is still true)\n\n"
         + (item.dita_content or "")
     )
+
+
+def topic_structure_instructions(guidance: str) -> str:
+    """Ask an agent for a topic template that matches a description of the structure.
+
+    It returns a template, not a finished topic: the template is kept on the release and
+    reused by every later assembly, so the shape stays put while notes are edited, and no
+    model call sits inside a request.
+    """
+    return f"""You are turning a description of a release-notes topic structure into a DITA
+topic template. Return the template and nothing else — no commentary, no code fences.
+
+## The structure wanted
+
+{guidance.strip()}
+
+## What a template is
+
+A valid DITA 1.3 <topic>. It is filled in when the release notes are assembled, using two
+markers and two tokens:
+
+- Put outputclass="rn-notes" on the element the notes go inside. Its tag decides what each
+  note becomes: a <ul> or <ol> makes every note an <li>; anything else makes it a <div>.
+- Put outputclass="rn-group" on the element that should repeat once per group of notes. The
+  rn-notes element must be inside it. Leave rn-group out only if the structure does not
+  group notes at all.
+- {{title}} anywhere in the text is replaced by the release's title.
+- {{group}} inside the repeating block is replaced by that group's name.
+
+Everything else in the template is emitted as written, so fixed paragraphs, <ph
+conkeyref="..."/> references and a populated <shortdesc> all belong in it.
+
+## Example
+
+<topic id="placeholder">
+  <title>{{title}}</title>
+  <shortdesc/>
+  <body>
+    <section outputclass="rn-group">
+      <p><b>{{group}}</b></p>
+      <ul outputclass="rn-notes"/>
+    </section>
+  </body>
+</topic>
+
+Return one <topic> that implements the structure described above."""

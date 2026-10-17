@@ -14,7 +14,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatSelectModule } from '@angular/material/select';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { HopAgentService, AgentSummary } from '@heretto/hop-ui';
-import { DEFAULT_LAYOUT, InstructionSet, InstructionsService, JiraRelease } from '../../core/services/instructions.service';
+import { DEFAULT_LAYOUT, STARTER_TEMPLATE, InstructionSet, InstructionsService, JiraRelease } from '../../core/services/instructions.service';
 import { CredentialsService, JiraCredentialOption } from '../../core/services/credentials.service';
 import { CHUNKING_STRATEGIES } from '../../core/services/jobs.service';
 import { JqlPart, JqlVariableSpec, defaultsOf, jqlParts, variableNames } from '../../core/jql-variables';
@@ -325,6 +325,31 @@ const MORE_RELEASES = 10;
               <span class="muted">The shape of the DITA this instruction set produces</span>
             </div>
 
+            <mat-button-toggle-group formControlName="layout_mode" class="layout-modes"
+                                     aria-label="How the topic structure is decided">
+              <mat-button-toggle value="structured">Choose a pattern</mat-button-toggle>
+              <mat-button-toggle value="template">Write a DITA template</mat-button-toggle>
+              <mat-button-toggle value="agent">Describe it</mat-button-toggle>
+            </mat-button-toggle-group>
+            <p class="muted mode-help">
+              @switch (form.get('layout_mode')?.value) {
+                @case ('template') {
+                  Your own DITA topic, emitted as written. Mark where the notes go and what
+                  repeats per group; everything else — fixed paragraphs, conkeyrefs, a
+                  populated shortdesc — comes through untouched.
+                }
+                @case ('agent') {
+                  Describe the structure in your own words. At the start of each release an
+                  agent turns it into a template, which that release then keeps — so the
+                  shape stays put while you edit notes.
+                }
+                @default {
+                  Pick from the shapes this app can build. Always valid, nothing to author.
+                }
+              }
+            </p>
+
+            @if (form.get('layout_mode')?.value === 'structured') {
             <div class="layout-grid">
               <mat-form-field appearance="outline" subscriptSizing="dynamic">
                 <mat-label>Each group starts with</mat-label>
@@ -376,6 +401,38 @@ const MORE_RELEASES = 10;
               <span class="vars-col">A topic will look like</span>
               <pre class="query-preview layout-preview">{{ layoutPreview }}</pre>
             </div>
+            }
+
+            @if (form.get('layout_mode')?.value === 'template') {
+              <mat-form-field appearance="outline" class="full-width" subscriptSizing="dynamic">
+                <mat-label>DITA topic template</mat-label>
+                <textarea matInput class="mono" formControlName="template_dita" rows="12"
+                          spellcheck="false"></textarea>
+                @if (templateProblems.length) {
+                  <mat-error>{{ templateProblems[0] }}</mat-error>
+                }
+              </mat-form-field>
+              <ul class="marker-help muted">
+                <li><code>outputclass="rn-notes"</code> — the element the notes go inside. A
+                  <code>&lt;ul&gt;</code> or <code>&lt;ol&gt;</code> makes each note an
+                  <code>&lt;li&gt;</code>; anything else makes it a <code>&lt;div&gt;</code>.</li>
+                <li><code>outputclass="rn-group"</code> — the element repeated once per group,
+                  with the notes marker inside it. Leave it out if you do not group notes.</li>
+                <li><code>&#123;title&#125;</code> and <code>&#123;group&#125;</code> are replaced as the topic is built.</li>
+              </ul>
+            }
+
+            @if (form.get('layout_mode')?.value === 'agent') {
+              <mat-form-field appearance="outline" class="full-width" subscriptSizing="dynamic">
+                <mat-label>Describe the structure</mat-label>
+                <textarea matInput formControlName="agent_guidance" rows="8"
+                          placeholder="e.g. One bold paragraph per product release with the product name and version, then that product's notes as a single bulleted list. Leave the short description empty."></textarea>
+                <mat-hint>
+                  Turned into a template when a release starts, and kept for that release.
+                  Until the first run, releases from this set use the default shape.
+                </mat-hint>
+              </mat-form-field>
+            }
           </div>
 
           <mat-form-field appearance="outline" class="full-width">
@@ -442,6 +499,10 @@ const MORE_RELEASES = 10;
       gap: 10px; align-items: start; margin-bottom: 10px; }
     .layout-grid mat-form-field { width: 100%; }
     .layout-preview { margin: 0; white-space: pre; overflow-x: auto; }
+    .layout-modes { margin-bottom: 8px; }
+    .mode-help { margin: 0 0 12px; font-size: 12px; line-height: 1.5; max-width: 66ch; }
+    .marker-help { margin: 2px 0 0; padding-left: 18px; font-size: 12px; line-height: 1.6; }
+    .marker-help code { font-family: var(--font-mono); font-size: 11px; }
     .vars-card { border: 1px solid var(--border-default); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; background: var(--bg-secondary); }
     .vars-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
     .vars-title { font-size: 13px; font-weight: 600; }
@@ -516,6 +577,9 @@ export class InstructionDialogComponent implements OnInit {
       note_element: [layout.note_element],
       shortdesc: [layout.shortdesc],
       shortdesc_text: [layout.shortdesc_text],
+      layout_mode: [data?.layout?.mode || 'structured'],
+      template_dita: [data?.layout?.template?.dita || ''],
+      agent_guidance: [data?.layout?.agent?.guidance || ''],
       heretto_folder_id: [data?.heretto_folder_id || ''],
       publish_to_heretto: [data?.publish_to_heretto || false],
       is_default: [data?.is_default || false]
@@ -607,6 +671,34 @@ export class InstructionDialogComponent implements OnInit {
   }
 
   /**
+   * What is wrong with the template, in the words the API would use. Checked here so the
+   * problem shows while it is being written rather than on save.
+   */
+  get templateProblems(): string[] {
+    if (this.form?.get('layout_mode')?.value !== 'template') return [];
+    const dita = (this.form.get('template_dita')?.value || '').trim();
+    if (!dita) return ['Write the DITA template, or choose another layout mode.'];
+
+    const problems: string[] = [];
+    const parsed = new DOMParser().parseFromString(dita, 'application/xml');
+    if (parsed.querySelector('parsererror')) return ['That is not well-formed XML.'];
+    const root = parsed.documentElement;
+    if (root.nodeName !== 'topic') problems.push(`The template must be a <topic>; this one is a <${root.nodeName}>.`);
+    if (!this.hasMarker(root, 'rn-notes')) {
+      problems.push('Nothing says where the notes go. Put outputclass="rn-notes" on the element that should hold them.');
+    }
+    if (!root.querySelector('title')) problems.push('The template needs a <title>.');
+    return problems;
+  }
+
+  private hasMarker(root: Element, marker: string): boolean {
+    for (const el of Array.from(root.getElementsByTagName('*'))) {
+      if ((el.getAttribute('outputclass') || '').split(/\s+/).includes(marker)) return true;
+    }
+    return (root.getAttribute('outputclass') || '').split(/\s+/).includes(marker);
+  }
+
+  /**
    * The DITA skeleton the current choices produce — the same shape build_topic_xml emits,
    * written out so a choice can be judged without starting a release to see it.
    */
@@ -676,6 +768,14 @@ export class InstructionDialogComponent implements OnInit {
       this.jiraCredentials = credentials;
     });
 
+    // Switching to template mode with nothing written starts from a working template
+    // rather than a blank box someone has to guess the markers for.
+    this.form.get('layout_mode')?.valueChanges.subscribe(mode => {
+      if (mode === 'template' && !(this.form.get('template_dita')?.value || '').trim()) {
+        this.form.patchValue({ template_dita: STARTER_TEMPLATE });
+      }
+    });
+
     // An <li> outside a list is not DITA and the API refuses it, so choosing one turns a
     // list on rather than letting the person save something that cannot assemble.
     this.form.get('note_element')?.valueChanges.subscribe(value => {
@@ -726,7 +826,9 @@ export class InstructionDialogComponent implements OnInit {
       if (typeof value[key] === 'string' && !value[key].trim()) value[key] = null;
     }
     value.layout = {
-      mode: 'structured',
+      mode: value.layout_mode,
+      template: { dita: value.layout_mode === 'template' ? (value.template_dita || '').trim() : (value.template_dita || '') },
+      agent: { guidance: (value.agent_guidance || '').trim() },
       structured: {
         group_heading: value.group_heading,
         notes_wrapper: value.notes_wrapper,
@@ -735,12 +837,15 @@ export class InstructionDialogComponent implements OnInit {
         shortdesc_text: value.shortdesc === 'text' ? (value.shortdesc_text || '').trim() : ''
       }
     };
-    for (const key of ['group_heading', 'notes_wrapper', 'note_element', 'shortdesc', 'shortdesc_text']) {
+    for (const key of ['group_heading', 'notes_wrapper', 'note_element', 'shortdesc',
+                       'shortdesc_text', 'layout_mode', 'template_dita', 'agent_guidance']) {
       delete value[key];
     }
 
     value.layout = {
-      mode: 'structured',
+      mode: value.layout_mode,
+      template: { dita: value.layout_mode === 'template' ? (value.template_dita || '').trim() : (value.template_dita || '') },
+      agent: { guidance: (value.agent_guidance || '').trim() },
       structured: {
         group_heading: value.group_heading,
         notes_wrapper: value.notes_wrapper,
@@ -749,7 +854,8 @@ export class InstructionDialogComponent implements OnInit {
         shortdesc_text: value.shortdesc === 'text' ? (value.shortdesc_text || '').trim() : ''
       }
     };
-    for (const key of ['group_heading', 'notes_wrapper', 'note_element', 'shortdesc', 'shortdesc_text']) {
+    for (const key of ['group_heading', 'notes_wrapper', 'note_element', 'shortdesc',
+                       'shortdesc_text', 'layout_mode', 'template_dita', 'agent_guidance']) {
       delete value[key];
     }
 

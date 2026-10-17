@@ -355,8 +355,11 @@ def note_element(item: ReleaseNoteItem, tag: str = "div") -> etree._Element:
 
 @dataclass(frozen=True)
 class Layout:
-    """The resolved structured layout. See schemas.StructuredLayout for what each means."""
+    """The resolved layout. See schemas.TopicLayout for what each field means."""
 
+    mode: str = "structured"
+    template: str = ""
+    guidance: str = ""
     group_heading: str = "section"
     notes_wrapper: str = "none"
     note_element: str = "div"
@@ -371,11 +374,27 @@ class Layout:
         assembled is worse than one assembled the old way, and the editor validates on save.
         """
         stored = getattr(instruction_set, "layout", None) or {}
-        options = (stored.get("structured") or {}) if isinstance(stored, dict) else {}
-        if not isinstance(options, dict):
+        if not isinstance(stored, dict):
             return cls()
-        fields = {f.name for f in dataclasses.fields(cls)}
-        return cls(**{k: v for k, v in options.items() if k in fields and isinstance(v, str)})
+        options = stored.get("structured") or {}
+        if not isinstance(options, dict):
+            options = {}
+        template = (stored.get("template") or {}) if isinstance(stored.get("template"), dict) else {}
+        agent = (stored.get("agent") or {}) if isinstance(stored.get("agent"), dict) else {}
+        mode = stored.get("mode") if stored.get("mode") in ("structured", "template", "agent") else "structured"
+
+        fields = {f.name for f in dataclasses.fields(cls)} - {"mode", "template", "guidance"}
+        resolved = cls(
+            mode=mode,
+            template=str(template.get("dita") or ""),
+            guidance=str(agent.get("guidance") or ""),
+            **{k: v for k, v in options.items() if k in fields and isinstance(v, str)},
+        )
+        # A template mode with no template cannot build anything; the schema refuses to
+        # store that, but a hand-edited row should degrade rather than fail every run.
+        if resolved.mode == "template" and not resolved.template.strip():
+            return dataclasses.replace(resolved, mode="structured")
+        return resolved
 
 
 def _add_shortdesc(topic: etree._Element, layout: Layout, shortdesc: Optional[str]) -> None:
@@ -418,6 +437,11 @@ def build_topic_xml(
 ) -> str:
     """A complete, DTD-valid DITA topic for one plan, laid out as the layout asks."""
     layout = layout or Layout()
+    # The agent mode resolves to a template before it gets here — assemble_job_topics
+    # passes the one the run settled on. Without it (a release assembled before its first
+    # run) the structured options apply, which is the sane shape rather than no topic.
+    if layout.mode in ("template", "agent") and layout.template.strip():
+        return build_topic_from_template(plan, layout.template)
     topic = etree.Element("topic", id=plan.slug)
     title = etree.SubElement(topic, "title")
     title.text = plan.title
@@ -443,6 +467,131 @@ def build_topic_xml(
                 host.append(note_element(item, layout.note_element))
 
     xml = etree.tostring(topic, encoding="unicode", pretty_print=True)
+    return f'<?xml version="1.0" encoding="UTF-8"?>\n{DOCTYPE}\n{xml}'
+
+
+
+# ── Template layout ──────────────────────────────────────────────────────────────────
+
+#: The element repeated once per group, and the element its notes are placed in. Markers
+#: rather than a bespoke syntax so the template stays a real DITA topic — it can be opened
+#: in an editor, validated, and carry whatever else a house template carries.
+GROUP_MARKER = "rn-group"
+NOTES_MARKER = "rn-notes"
+
+#: A <ul>/<ol> host means the notes are list items; anything else holds blocks.
+_LIST_HOSTS = {"ul", "ol", "sl"}
+
+
+def _marked(root: etree._Element, marker: str) -> Optional[etree._Element]:
+    for el in root.iter():
+        if isinstance(el.tag, str) and marker in (el.get("outputclass") or "").split():
+            return el
+    return None
+
+
+def _strip_marker(el: etree._Element, marker: str) -> None:
+    """Take the marker out of the output; keep any other classes the author set."""
+    classes = [c for c in (el.get("outputclass") or "").split() if c != marker]
+    if classes:
+        el.set("outputclass", " ".join(classes))
+    else:
+        el.attrib.pop("outputclass", None)
+
+
+def _fill_tokens(el: etree._Element, **values: str) -> None:
+    """Replace {token} in text and tails, in place."""
+    for node in el.iter():
+        if not isinstance(node.tag, str):
+            continue
+        for attr in ("text", "tail"):
+            text = getattr(node, attr)
+            if not text:
+                continue
+            for name, value in values.items():
+                text = text.replace("{" + name + "}", value)
+            setattr(node, attr, text)
+
+
+def template_errors(dita: str) -> List[str]:
+    """What is wrong with a template, for the editor to show before it is saved.
+
+    Checked here rather than at assembly time: a template that cannot build a topic should
+    be refused when it is written, not discovered the next time a release runs.
+    """
+    text = (dita or "").strip()
+    if not text:
+        return []  # empty is only an error once the mode is chosen; TopicLayout says so
+
+    try:
+        root = etree.fromstring(_strip_wrappers(text), _parser())
+    except etree.XMLSyntaxError as exc:
+        return [f"Not well-formed XML: {exc}"]
+
+    errors = []
+    if root.tag != "topic":
+        errors.append(f"The template must be a <topic>; this one is a <{root.tag}>.")
+    if _marked(root, NOTES_MARKER) is None:
+        errors.append(
+            f'Nothing in the template says where the notes go. Put outputclass="{NOTES_MARKER}" '
+            "on the element that should hold them."
+        )
+    if root.find("title") is None:
+        errors.append("The template needs a <title>.")
+    return errors
+
+
+def build_topic_from_template(plan: TopicPlan, template: str) -> str:
+    """A topic built by filling the writer's own template.
+
+    The group block is repeated per group and the notes placed inside it. With no group
+    block, every note goes into the notes host once — which is what a template that does
+    not care about groups looks like.
+    """
+    root = etree.fromstring(_strip_wrappers(template), _parser())
+    root.set("id", plan.slug)
+    _fill_tokens(root, title=plan.title)
+
+    group_block = _marked(root, GROUP_MARKER)
+    notes_host = _marked(root, NOTES_MARKER)
+    if notes_host is None:
+        raise FragmentError("The topic template does not say where the notes go", template_errors(template))
+
+    def place(host: etree._Element, items) -> None:
+        tag = "li" if host.tag in _LIST_HOSTS else "div"
+        for child in list(host):          # the author's sample content
+            host.remove(child)
+        host.text = None
+        for item in items:
+            host.append(note_element(item, tag))
+        _strip_marker(host, NOTES_MARKER)
+
+    if group_block is None:
+        place(notes_host, plan.items)
+        return _serialize_topic(root)
+
+    parent = group_block.getparent()
+    index = parent.index(group_block)
+    parent.remove(group_block)
+
+    for offset, (name, group_items) in enumerate(plan.groups):
+        block = copy.deepcopy(group_block)
+        _fill_tokens(block, group=name or "Other changes")
+        host = _marked(block, NOTES_MARKER)
+        if host is None:
+            raise FragmentError(
+                "The notes marker must be inside the repeated group block",
+                [f'outputclass="{NOTES_MARKER}" was not found inside the group block'],
+            )
+        place(host, group_items)
+        _strip_marker(block, GROUP_MARKER)
+        parent.insert(index + offset, block)
+
+    return _serialize_topic(root)
+
+
+def _serialize_topic(root: etree._Element) -> str:
+    xml = etree.tostring(root, encoding="unicode", pretty_print=True)
     return f'<?xml version="1.0" encoding="UTF-8"?>\n{DOCTYPE}\n{xml}'
 
 

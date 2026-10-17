@@ -193,6 +193,11 @@ class Job(Base):
     # {name: value} — the variable values it was resolved from, so a run can be explained
     # and rerun without re-deriving them.
     variables = Column(JSON, nullable=False, default=dict, server_default="{}")
+    # In the agent layout mode, the topic template the agent produced for this release.
+    # Written once per run and reused by every later assembly, so changing the topic split
+    # or editing a note does not re-decide the shape — and nothing calls a model from a
+    # request handler. Empty in the other modes.
+    topic_template = Column(Text, nullable=True)
     # True when jql_query was built from the instruction set — its template, or a Jira
     # release — so a rerun can rebuild it from the set as it stands now. False when the
     # caller supplied a query of its own, which must survive a rerun untouched.

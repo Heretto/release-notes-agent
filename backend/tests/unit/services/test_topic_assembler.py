@@ -10,7 +10,8 @@ from app.models.database import ChunkingStrategy
 from app.services.llm_json import extract_json
 from app.services.topic_assembler import (
     FragmentError, Layout, build_topic_xml, coerce_fragment, fragment_title, normalize_fragment,
-    note_element, plan_topics, plain_text_fragment, validate_fragment, validate_topic,
+    note_element, plan_topics, plain_text_fragment, template_errors, validate_fragment,
+    validate_topic,
 )
 
 
@@ -205,3 +206,58 @@ class TestLayout:
             layout = {"structured": "not a dict"}
         assert Layout.of(Set()) == Layout()
         assert Layout.of(None) == Layout()
+
+
+class TestTemplateLayout:
+    """Mode 2: the writer's own DITA, emitted as written."""
+
+    TEMPLATE = (
+        '<topic id="x"><title>{title}</title><shortdesc/><body>'
+        '<p>Boilerplate with <ph conkeyref="vars/productName"/>.</p>'
+        '<section outputclass="rn-group"><p><b>{group}</b></p>'
+        '<ul outputclass="rn-notes"><li><p>sample</p></li></ul></section>'
+        "</body></topic>"
+    )
+
+    def _plan(self):
+        items = [_item("A", "New features", 0, dita="<p>One</p>"),
+                 _item("B", "Fixes", 1, dita="<p>Two</p>")]
+        return plan_topics(items, ChunkingStrategy.SINGLE, "Release 7", "n")[0]
+
+    def test_a_good_template_has_no_errors(self):
+        assert template_errors(self.TEMPLATE) == []
+
+    @pytest.mark.parametrize("bad,expected", [
+        ("<section><title>x</title></section>", "must be a <topic>"),
+        ("<topic><title>t</title><body><p/></body></topic>", "where the notes go"),
+        ("<topic><p>unclosed", "well-formed"),
+        ('<topic><body><ul outputclass="rn-notes"/></body></topic>', "needs a <title>"),
+    ])
+    def test_unusable_templates_say_why(self, bad, expected):
+        assert any(expected in e for e in template_errors(bad))
+
+    def test_the_template_drives_the_output(self):
+        xml = build_topic_xml(self._plan(), layout=Layout(mode="template", template=self.TEMPLATE))
+        assert "{title}" not in xml and "Release 7" in xml
+        assert 'conkeyref="vars/productName"' in xml          # author's content survives
+        assert xml.count("<section") == 2                      # repeated per group
+        assert "<b>New features</b>" in xml and "<b>Fixes</b>" in xml
+        assert "sample" not in xml                             # the author's example is replaced
+        assert xml.count('outputclass="release-note"') == 2
+        assert "rn-group" not in xml and "rn-notes" not in xml  # markers do not ship
+
+    def test_a_list_host_makes_notes_list_items(self):
+        xml = build_topic_xml(self._plan(), layout=Layout(mode="template", template=self.TEMPLATE))
+        assert '<li id="rn-' in xml
+
+    def test_a_block_host_makes_notes_divs(self):
+        template = self.TEMPLATE.replace('<ul outputclass="rn-notes"><li><p>sample</p></li></ul>',
+                                         '<div outputclass="rn-notes"/>')
+        xml = build_topic_xml(self._plan(), layout=Layout(mode="template", template=template))
+        assert '<div id="rn-' in xml
+
+    def test_agent_mode_without_a_settled_template_uses_the_options(self):
+        """Before a release's first run there is no template; a topic is still produced."""
+        layout = Layout(mode="agent", guidance="something", template="")
+        xml = build_topic_xml(self._plan(), layout=layout)
+        assert "<section" in xml and validate_topic(xml) == []

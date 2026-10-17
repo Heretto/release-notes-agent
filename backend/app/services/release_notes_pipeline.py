@@ -31,7 +31,9 @@ from app.services.agents import AgentUnavailable, ResolvedAgent, resolve_agent
 from app.services.jira_service import JiraService
 from app.services.jira_snapshot import SnapshotResult, describe_diff, sync_snapshot
 from app.services.llm_json import extract_json
-from app.services.topic_assembler import FragmentError, coerce_fragment, plain_text_fragment
+from app.services.topic_assembler import (
+    FragmentError, Layout, coerce_fragment, plain_text_fragment, template_errors,
+)
 from app.services.workspace_service import (
     PublishError, assemble_job_topics, find_decryptable_credential, group_order, product_name,
     publish_topics, record_history, renumber_positions,
@@ -116,6 +118,7 @@ class ReleaseNotesPipeline:
             await self._write(job, new_items, to_regenerate)
             self._check_cancelled(job)
 
+            await self._settle_topic_structure(job)
             self._assemble(job)
 
             if job.auto_publish or (self.instruction_set and self.instruction_set.publish_to_heretto):
@@ -578,6 +581,45 @@ class ReleaseNotesPipeline:
             raise failures[0]
 
     # ── Stage 6/7: assemble and publish ──────────────────────────────────────────────
+
+    async def _settle_topic_structure(self, job: Job) -> None:
+        """In the agent layout mode, decide this release's topic template — once.
+
+        Kept on the job so every later assembly of this release uses the same shape, and so
+        nothing has to call a model from inside a request. A failure is not fatal: the
+        release assembles with the structured options instead, and says so in the log.
+        """
+        layout = Layout.of(self.instruction_set)
+        if layout.mode != "agent" or not layout.guidance.strip():
+            return
+        if job.topic_template and job.run_count and job.run_count > 1:
+            return  # a rerun keeps the shape the release already has
+
+        agent = self.analyst or self.writer
+        if agent is None:
+            return
+
+        request, started = self._log_request(job, "topic_structure", {"agent": agent.name})
+        try:
+            result = await agent.run(
+                prompts.topic_structure_instructions(layout.guidance),
+                "Return the template.",
+                max_tokens=2048,
+            )
+        except Exception as exc:  # noqa: BLE001 — a shape is not worth failing a release for
+            self._finish_request(request, started, error=str(exc))
+            logger.warning("Topic structure agent failed for job %s: %s", job.id, exc)
+            return
+
+        errors = template_errors(result.output)
+        if errors:
+            self._finish_request(request, started, error="Unusable template: " + "; ".join(errors[:3]))
+            logger.warning("Topic structure agent returned an unusable template: %s", errors[:3])
+            return
+
+        job.topic_template = result.output.strip()
+        self._finish_request(request, started, {"template_length": len(job.topic_template)})
+        self.db.commit()
 
     def _assemble(self, job: Job) -> None:
         self._set_stage(job, JobStage.ASSEMBLE, "Assembling DITA topics")

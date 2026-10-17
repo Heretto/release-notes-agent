@@ -97,10 +97,28 @@ export interface StructuredLayout {
   shortdesc_text: string;
 }
 
+export type LayoutMode = 'structured' | 'template' | 'agent';
+
 export interface TopicLayout {
-  mode: 'structured';
+  mode: LayoutMode;
   structured: StructuredLayout;
+  /** A DITA topic with rn-group / rn-notes markers. */
+  template: { dita: string };
+  /** The structure described in words; an agent turns it into a template per release. */
+  agent: { guidance: string };
 }
+
+/** Offered when someone switches to template mode with nothing written yet. */
+export const STARTER_TEMPLATE = `<topic id="release-notes">
+  <title>{title}</title>
+  <shortdesc/>
+  <body>
+    <section outputclass="rn-group">
+      <p><b>{group}</b></p>
+      <ul outputclass="rn-notes"/>
+    </section>
+  </body>
+</topic>`;
 
 export const DEFAULT_LAYOUT: StructuredLayout = {
   group_heading: 'section',

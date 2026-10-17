@@ -46,8 +46,17 @@ the note silently falls back to its plain summary. Topic-level structure is `top
 configured per instruction set by `instruction_sets.layout` (`schemas.TopicLayout`): a note
 stores **content**, and the layout decides the element around it — a `<section>` with a
 title or a bold paragraph per group, its notes loose or collected in a `<ul>`/`<ol>`, each
-note a `<div>` or an `<li>`, and what the `<shortdesc>` does. `layout.mode` exists for the
-template and agent modes that follow; only `structured` is accepted today.
+note a `<div>` or an `<li>`, and what the `<shortdesc>` does. `layout.mode` picks who owns the structure — **structured** (the
+options above), **template** (a DITA topic the writer authors, with `outputclass="rn-group"`
+marking what repeats per group and `rn-notes` marking where notes go; the notes host's tag
+decides whether a note is an `<li>` or a `<div>`, and both markers are stripped from the
+output), or **agent** (the structure described in words). Each mode keeps its own settings,
+so switching back does not lose the other. Agent mode resolves to a template **once per
+run** — `_settle_topic_structure` writes it to `jobs.topic_template` and every later
+assembly of that release reuses it. That is deliberate: assembly also runs inside request
+handlers (a topic-split change, a note edit), and nothing there may call a model. A release
+assembled before its first run, or whose agent failed, falls back to the structured options
+rather than producing no topic.
 An `<li>` outside a list is not DITA, so the schema refuses that pair and the editor moves
 the other control rather than letting it be saved. Whatever that element is, assembly
 stamps it with the note's `fragment_id` and `outputclass="release-note"` — the workspace

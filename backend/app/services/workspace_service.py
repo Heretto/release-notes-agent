@@ -8,6 +8,7 @@ chat and the same change made by a person in the UI go through identical code.
 from __future__ import annotations
 
 import json
+import dataclasses
 import logging
 import re
 import time
@@ -143,6 +144,9 @@ def assemble_job_topics(
     kept: List[ReleaseNoteTopic] = []
 
     layout = Layout.of(job.instruction_set)
+    if layout.mode == "agent":
+        # Settled by the run; see Job.topic_template.
+        layout = dataclasses.replace(layout, template=job.topic_template or "")
     for position, plan in enumerate(plans):
         xml = build_topic_xml(plan, layout=layout)
         errors = validate_topic(xml, validator)

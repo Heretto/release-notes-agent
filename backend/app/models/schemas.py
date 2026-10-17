@@ -110,15 +110,62 @@ class StructuredLayout(BaseModel):
         return self
 
 
+class TemplateLayout(BaseModel):
+    """A DITA topic the writer authors, with two markers saying where things go.
+
+    The template is real DITA, so it can carry anything a house template does — fixed
+    paragraphs, conkeyrefs, a populated shortdesc. Two outputclass markers drive it:
+
+    * ``rn-group`` — the element repeated once per group. ``{group}`` in its text becomes
+      the group name. Leave it out and every note goes in once, ungrouped.
+    * ``rn-notes`` — where that group's notes are placed. Its tag decides what a note is:
+      a ``<ul>``/``<ol>`` host makes each note an ``<li>``, anything else a ``<div>``.
+
+    ``{title}`` anywhere in the text becomes the topic title.
+    """
+    dita: str = Field("", max_length=20000)
+
+    @model_validator(mode="after")
+    def _must_be_a_usable_template(self):
+        from app.services.topic_assembler import template_errors
+
+        errors = template_errors(self.dita)
+        if errors:
+            raise ValueError("; ".join(errors))
+        return self
+
+
+class AgentLayout(BaseModel):
+    """Structure described in words; an agent turns it into a template.
+
+    The agent runs **once per release**, at the start of a run, and the template it
+    produces is kept on the job. Every assembly of that release then uses it — changing
+    the topic split, editing a note — so a release's shape is settled by its run rather
+    than re-decided each time something is saved, and nothing calls a model from inside a
+    request.
+    """
+    guidance: str = Field("", max_length=8000)
+
+
 class TopicLayout(BaseModel):
     """How an instruction set's topics are built.
 
-    `mode` selects between laying topics out from the options below, from a DITA template
-    the writer authors, or by asking an agent. Only "structured" is implemented so far;
-    the field exists now so the other two do not each need their own migration.
+    `mode` picks who owns the structure: these options, a DITA template the writer
+    authors, or an agent given free-form guidance. Each mode keeps its own settings, so
+    switching back and forth does not lose what was configured in the other.
     """
-    mode: str = Field("structured", pattern=r'^(structured)$')
+    mode: str = Field("structured", pattern=r'^(structured|template|agent)$')
     structured: StructuredLayout = Field(default_factory=StructuredLayout)
+    template: TemplateLayout = Field(default_factory=TemplateLayout)
+    agent: AgentLayout = Field(default_factory=AgentLayout)
+
+    @model_validator(mode="after")
+    def _the_chosen_mode_must_be_usable(self):
+        if self.mode == "template" and not self.template.dita.strip():
+            raise ValueError("Write the DITA template, or choose another layout mode.")
+        if self.mode == "agent" and not self.agent.guidance.strip():
+            raise ValueError("Describe the structure you want, or choose another layout mode.")
+        return self
 
 
 class InstructionSetBase(BaseModel):
