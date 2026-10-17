@@ -1,6 +1,6 @@
 # release-notes-agent — agent notes
 
-Built on [hop-core](https://github.com/Heretto/hop-core), pinned at **v0.1.14**.
+Built on [hop-core](https://github.com/Heretto/hop-core), pinned at **v0.1.16**.
 
 Automated DITA release-notes generation from Jira tickets: FastAPI backend, Angular 22
 frontend, Celery workers, Postgres, Redis.
@@ -213,11 +213,14 @@ credentials stored by the old routes keep working.
   ("temperature is deprecated for this model"); the pipeline and the workspace chat leave it
   unset and take the provider default. `tests/unit/services/test_anthropic_temperature.py`
   covers the older adapter's fallback for the same reason.
-- **The bundled DITA 1.3 DTD (hop-core `topic.dtd`) does not declare `<codeph>`, `<codeblock>`,
-  `<uicontrol>` or `<filepath>`.** The writer's format rules (`pipeline_prompts.FRAGMENT_FORMAT`)
-  list only elements that validate (`<tt>`, `<pre>`, `<note>`, `<dl>`, `<simpletable>`, …); a
-  fragment that fails the DTD is retried once with the errors and then falls back to the plain
-  summary, flagged for attention.
+- **DITA validates against the full technicalContent shells as of hop-core v0.1.16** —
+  `hop_core/dita/grammar.py` maps `topic` to `dtd/technicalContent/dtd/topic.dtd` and gives
+  xmllint a catalog and an entity-amplification profile. Until v0.1.14 a `<topic>` was
+  validated against the *base* DTD, which declares none of the technical-content domains, so
+  `<codeph>`, `<codeblock>`, `<uicontrol>` and `<filepath>` were rejected as invalid and
+  `pipeline_prompts.FRAGMENT_FORMAT` told the writer to avoid them. They validate now.
+  A fragment that still fails the DTD is retried once with the errors and then falls back to
+  the plain summary, flagged for attention.
 - **Jobs run in the API process via `BackgroundTasks` with their own session** (`JobOrchestrator()`
   without a `db`): a request-scoped session is closed before a background task runs on this
   FastAPI version's successor, so never hand one in from a route.
@@ -254,6 +257,10 @@ credentials stored by the old routes keep working.
   `ng update @angular/cli --name migrate-karma-to-vitest`.
 
 ## Upgrading hop-core
+
+Pinned at **v0.1.16**. v0.1.16 removed `DitaValidator._XMLLINT_DTD_FILES` (the grammar moved
+to `hop_core/dita/grammar.py`), so anything that subclassed it to redirect a DTD breaks at
+import — check for that before upgrading again.
 
 Resolve the current release (hop-core `AGENTS.md`, Step 0 — do not copy a version out of any
 document, including this one), bump the Python requirement in `backend/requirements.txt` and

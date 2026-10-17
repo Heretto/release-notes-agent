@@ -2,7 +2,7 @@
 
 # hop-doctor's compose check needs PyYAML, which the [doctor] extra supplies. pip unions
 # this with the [dita] extra pinned in requirements.txt — keep the tag on both lines in sync.
-hop-core[doctor] @ git+https://github.com/Heretto/hop-core.git@v0.1.14
+hop-core[doctor] @ git+https://github.com/Heretto/hop-core.git@v0.1.16
 
 # Testing
 pytest==7.4.3

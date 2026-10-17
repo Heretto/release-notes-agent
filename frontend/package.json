@@ -24,7 +24,7 @@
     "@angular/platform-browser": "^22.2.0",
     "@angular/platform-browser-dynamic": "^22.2.0",
     "@angular/router": "^22.2.0",
-    "@heretto/hop-ui": "https://github.com/Heretto/hop-core/releases/download/v0.1.14/heretto-hop-ui-0.1.14.tgz",
+    "@heretto/hop-ui": "https://github.com/Heretto/hop-core/releases/download/v0.1.16/heretto-hop-ui-0.1.16.tgz",
     "@ngrx/effects": "^22.0.1",
     "@ngrx/store": "^22.0.1",
     "@ngrx/store-devtools": "^22.0.1",
