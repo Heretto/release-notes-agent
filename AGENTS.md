@@ -213,6 +213,16 @@ credentials stored by the old routes keep working.
   ("temperature is deprecated for this model"); the pipeline and the workspace chat leave it
   unset and take the provider default. `tests/unit/services/test_anthropic_temperature.py`
   covers the older adapter's fallback for the same reason.
+- **An organization can bring its own DITA grammar, and this app validates against it.**
+  `create_hop_app(include_dtd_sets_router=True)` mounts `/dtd-sets`; hop-ui's admin page
+  already contains the DTD sets section and **probes that endpoint to decide whether to show
+  itself**, so leaving the router off (its default) silently hides the feature rather than
+  erroring. Uploads live in the database, so there is nothing to configure. Validation then
+  has to *use* the set: every validator comes from `hop_core.dtd_sets.validator_for(db,
+  organization_id, agent_id)`, which resolves the agent's choice, then the organization
+  default, then the bundled OASIS grammar — a bare `DitaValidator()` ignores an uploaded set
+  and silently validates against the wrong grammar. Request handlers resolve it per request
+  (`jobs._validator_for`), because an admin can change the set between two saves.
 - **DITA validates against the full technicalContent shells as of hop-core v0.1.16** —
   `hop_core/dita/grammar.py` maps `topic` to `dtd/technicalContent/dtd/topic.dtd` and gives
   xmllint a catalog and an entity-amplification profile. Until v0.1.14 a `<topic>` was

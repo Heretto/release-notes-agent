@@ -42,6 +42,10 @@ app = create_hop_app(
     description="Automated DITA release notes generation from Jira tickets",
     version="1.0.0",
     include_dita_router=True,
+    # Off by default in hop-core. Without it the /dtd-sets API is absent, and the DTD sets
+    # section of hop-ui's admin page hides itself — it probes the endpoint to decide whether
+    # to appear. Uploads are stored in the database, so this needs no storage configuration.
+    include_dtd_sets_router=True,
 )
 
 # Health checks are mounted outside api_prefix. create_hop_app puts every extra_router under

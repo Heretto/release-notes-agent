@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from hop_core.agents.fetcher import fetch_url
 from hop_core.agents.providers import READ_URL_TOOL
 from hop_core.ai import ChatMessage, GenerationRequest, ToolSpec
+from hop_core import dtd_sets
 from hop_core.dita import DitaValidator
 
 from app.models.database import (
@@ -101,7 +102,12 @@ class WorkspaceChat:
         self.db = db
         self.job = job
         self.user_id = user_id
-        self.validator = validator or DitaValidator()
+        # Same grammar the run used: the agent's DTD set, else the organization's, else
+        # the bundled one. A note edited in chat must validate the same way it was written.
+        self.validator = validator or dtd_sets.validator_for(
+            db, job.organization_id,
+            job.instruction_set.writer_agent_id if job.instruction_set else None,
+        )
         self.changed_items: Set[UUID] = set()
         self.topics_changed = False
         self.actions: List[Dict[str, Any]] = []

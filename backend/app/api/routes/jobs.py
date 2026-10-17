@@ -28,6 +28,9 @@ from app.models.schemas import (
     JobStatusEnum, JobUpdate, ReassembleRequest, ReleaseNoteItemDetailResponse, ReleaseNoteItemResponse,
     ReleaseNoteItemUpdate, ReleaseNoteTopicResponse,
 )
+from hop_core import dtd_sets
+from hop_core.dita import DitaValidator
+
 from app.services.job_orchestrator import JobOrchestrator
 from app.services.jql_variables import RELEASE_VARIABLE, query_for_job, release_query, resolve as resolve_jql
 from app.services.topic_assembler import FragmentError
@@ -115,9 +118,20 @@ def _queue_run(job: Job, background_tasks: BackgroundTasks, db: Session) -> None
     background_tasks.add_task(JobOrchestrator().process_job, job_id=job.id)
 
 
+def _validator_for(db: Session, job: Job) -> DitaValidator:
+    """The grammar this release validates against — see hop_core.dtd_sets.validator_for.
+
+    Resolved per request rather than cached: an admin can change the organization's DTD
+    set between one save and the next, and a stale validator would accept markup the set
+    no longer allows.
+    """
+    agent_id = job.instruction_set.writer_agent_id if job.instruction_set else None
+    return dtd_sets.validator_for(db, job.organization_id, agent_id)
+
+
 def _reassemble(db: Session, job: Job) -> None:
     try:
-        assemble_job_topics(db, job)
+        assemble_job_topics(db, job, validator=_validator_for(db, job))
     except FragmentError as exc:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -516,7 +530,8 @@ async def update_job_item(
         changed = True
     if update.dita_content is not None:
         try:
-            if set_item_content(db, item, update.dita_content, actor="user", user_id=user_id):
+            if set_item_content(db, item, update.dita_content, actor="user", user_id=user_id,
+                                validator=_validator_for(db, job)):
                 changed = True
         except FragmentError as exc:
             db.rollback()
@@ -711,7 +726,7 @@ async def reassemble_job_topics(
     job = _get_job(job_id, context, db)
     _require_idle(job)
     try:
-        assemble_job_topics(db, job, data.chunking_strategy)
+        assemble_job_topics(db, job, data.chunking_strategy, _validator_for(db, job))
     except FragmentError as exc:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
