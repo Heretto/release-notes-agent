@@ -44,23 +44,21 @@ const MORE_RELEASES = 10;
     MatButtonToggleModule
   ],
   template: `
-    <div class="hop-page editor">
-      <header class="editor-head">
-        <div class="head-text">
-          <a routerLink="/instructions" class="back">
-            <mat-icon>arrow_back</mat-icon> Instructions
-          </a>
-          <h1>{{ data?.id ? 'Edit instruction set' : 'New instruction set' }}</h1>
-          @if (data?.id) { <p class="muted">{{ data?.name }}</p> }
-        </div>
-        <div class="head-actions">
-          @if (saving) { <mat-spinner diameter="22"></mat-spinner> }
-          <button mat-button (click)="onCancel()" [disabled]="saving">Cancel</button>
-          <button mat-raised-button color="primary" [disabled]="!form.valid || saving" (click)="onSave()">
-            {{ data?.id ? 'Save changes' : 'Create' }}
+    <div class="editor-container hop-page">
+      <div class="editor-header">
+        <div class="heading">
+          <button mat-icon-button type="button" matTooltip="Back to instructions" (click)="onCancel()">
+            <mat-icon>arrow_back</mat-icon>
           </button>
+          <div>
+            <h1>{{ data?.id ? (data?.name || 'Edit Instruction Set') : 'New Instruction Set' }}</h1>
+            <p class="subtitle">
+              Which Jira issues a release reads, which agents turn them into notes, and the
+              shape of the DITA that comes out.
+            </p>
+          </div>
         </div>
-      </header>
+      </div>
 
       @if (loading) {
         <div class="loading"><mat-spinner></mat-spinner></div>
@@ -481,12 +479,14 @@ const MORE_RELEASES = 10;
       </div>
       }
 
-      <footer class="editor-foot">
-        <button mat-button (click)="onCancel()" [disabled]="saving">Cancel</button>
-        <button mat-raised-button color="primary" [disabled]="!form.valid || saving" (click)="onSave()">
-          {{ data?.id ? 'Save changes' : 'Create' }}
+      <div class="editor-actions">
+        <button mat-button type="button" (click)="onCancel()" [disabled]="saving">Cancel</button>
+        <button mat-raised-button color="primary" type="button"
+                [disabled]="!form.valid || saving" (click)="onSave()">
+          @if (saving) { <mat-spinner diameter="20"></mat-spinner> }
+          @else { <span>{{ data?.id ? 'Save Changes' : 'Create' }}</span> }
         </button>
-      </footer>
+      </div>
     </div>
   `,
   changeDetection: ChangeDetectionStrategy.Eager,
@@ -539,19 +539,12 @@ const MORE_RELEASES = 10;
     .chip-missing { background: var(--color-error-bg); color: var(--color-error-text); font-weight: 600; padding: 0 5px; border-radius: 4px; }
     .vars-empty { font-size: 13px; margin: 0; }
     .vars-empty code, mat-hint code { font-family: var(--font-mono); font-size: 12px; }
-    .editor { max-width: 920px; }
-    .editor-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px;
-      padding-bottom: 16px; margin-bottom: 20px; border-bottom: 1px solid var(--border-default);
-      position: sticky; top: 0; background: var(--bg-page, var(--bg-primary)); z-index: 2; padding-top: 4px; }
-    .head-text h1 { margin: 6px 0 2px; font-size: 22px; }
-    .head-text .muted { margin: 0; font-size: 13px; }
-    .back { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--text-secondary); }
-    .back mat-icon { font-size: 16px; width: 16px; height: 16px; }
-    .head-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; padding-top: 10px; }
+    /* .editor-header, .heading and .subtitle come from hop-ui, so this page's header is
+       the same object as the agent editor's. Only the width and the footer are ours. */
+    .editor-container { max-width: 920px; }
     .loading { display: flex; justify-content: center; padding: 60px; }
     .editor-body { padding-bottom: 8px; }
-    /* Repeated at the foot: the form is long, and scrolling back up to save is a tax. */
-    .editor-foot { display: flex; justify-content: flex-end; gap: 8px;
+    .editor-actions { display: flex; justify-content: flex-end; gap: 8px;
       border-top: 1px solid var(--border-default); padding-top: 16px; margin-top: 8px; }
     .form-section { margin-bottom: 28px; }
     .form-section h3 { color: var(--text-primary); margin-bottom: 8px; font-size: 16px; font-weight: 500; }
