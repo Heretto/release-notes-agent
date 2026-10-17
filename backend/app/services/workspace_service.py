@@ -237,8 +237,42 @@ def find_decryptable_credential(db: Session, user_id: UUID, organization_id: Opt
 
 # ── Publishing ───────────────────────────────────────────────────────────────────────
 
+def _heretto_credential(db: Session, job: Job, credential_id: Optional[UUID]):
+    """The Heretto this release publishes to, and its decrypted settings.
+
+    A folder id is only meaningful in one Heretto, so the connection the folder was chosen
+    from is used when it is known. Falling back to "the organization's first Heretto
+    credential that decrypts" is for instruction sets saved before the connection was
+    recorded; with several connections that fallback is a guess, which is the reason the
+    connection is now stored.
+    """
+    chosen = credential_id or (
+        job.instruction_set.heretto_credential_id if job.instruction_set else None)
+    if chosen:
+        credential = db.query(Credential).filter(
+            Credential.id == chosen,
+            Credential.organization_id == job.organization_id,
+            Credential.type == CredentialType.HERETTO,
+        ).first()
+        if credential is None:
+            raise PublishError(
+                "The Heretto connection this folder belongs to is no longer available. "
+                "Choose the folder again."
+            )
+        try:
+            return credential, decrypt_credentials(credential.encrypted_data)
+        except Exception as exc:  # noqa: BLE001 — a stale key is the operator's to fix
+            raise PublishError(
+                f"The Heretto connection '{credential.name}' could not be read."
+            ) from exc
+
+    return find_decryptable_credential(
+        db, job.user_id, job.organization_id, CredentialType.HERETTO)
+
+
 async def publish_topics(
-    db: Session, job: Job, folder_id: Optional[str] = None
+    db: Session, job: Job, folder_id: Optional[str] = None,
+    credential_id: Optional[UUID] = None,
 ) -> List[HerettoUploadResult]:
     """Create or update every topic in Heretto. Raises PublishError when it cannot start.
 
@@ -253,7 +287,7 @@ async def publish_topics(
         instruction_set.heretto_folder_id if instruction_set else None)
     if not folder_id:
         raise PublishError("No Heretto folder is configured for this job or its instruction set.")
-    heretto_cred, heretto_config = find_decryptable_credential(db, job.user_id, job.organization_id, CredentialType.HERETTO)
+    heretto_cred, heretto_config = _heretto_credential(db, job, credential_id)
     if not heretto_cred:
         raise PublishError("No Heretto credentials found. Add one in the Credentials page.")
 

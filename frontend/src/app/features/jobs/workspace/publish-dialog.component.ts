@@ -15,6 +15,8 @@ export interface PublishDialogData {
 export interface PublishDialogResult {
   /** Set only when the person chose somewhere other than the usual folder. */
   folderId: string | null;
+  /** The Heretto that folder is in; always sent with it. */
+  credentialId: string | null;
 }
 
 /**
@@ -91,6 +93,7 @@ export class PublishDialogComponent {
 
   /** Set when a different folder was picked for this publish. */
   chosenId: string | null = null;
+  chosenCredentialId: string | null = null;
   chosenPath = '';
 
   constructor(
@@ -110,17 +113,20 @@ export class PublishDialogComponent {
     }).subscribe(folder => {
       if (!folder) return;
       this.chosenId = folder.id;
+      // A folder id is only meaningful in the Heretto it was chosen from.
+      this.chosenCredentialId = folder.credential_id;
       this.chosenPath = folder.path || folder.name;
     });
   }
 
   revert(): void {
     this.chosenId = null;
+    this.chosenCredentialId = null;
     this.chosenPath = '';
   }
 
   publish(): void {
-    this.dialogRef.close({ folderId: this.chosenId });
+    this.dialogRef.close({ folderId: this.chosenId, credentialId: this.chosenCredentialId });
   }
 
   cancel(): void {

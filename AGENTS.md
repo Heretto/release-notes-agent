@@ -219,10 +219,17 @@ credentials stored by the old routes keep working.
   stores only `heretto_folder_id`, and the folder's name is **looked up, never stored** — a
   path kept in our database is wrong the moment someone moves or renames the folder in
   Heretto, and wrong silently. Opening an instruction set resolves the id through
-  `HopHerettoService.openFolder`, trying each Heretto connection in turn because the id does
-  not say which one it belongs to (publishing resolves the organization's credential the
-  same way). A folder Heretto no longer recognises shows its id and says so, rather than a
-  name that is no longer true. Needs `include_heretto_router` (on by default).
+  `HopHerettoService.openFolder` — one request, because
+  `instruction_sets.heretto_credential_id` records **which Heretto the folder is in**. A
+  folder id is meaningless without it: an organization can have several connections, and the
+  same id in another one is missing or a different folder. Publishing uses that connection
+  too; it used to take "the organization's first Heretto credential that decrypts", which
+  beyond one connection is a guess that can aim a folder id at the wrong system. Sets saved
+  before the column existed have no connection and fall back to trying each in turn (display)
+  and to the old guess (publishing) — re-picking the folder records it. The publish override
+  carries its connection the same way. A folder Heretto no longer recognises shows its id and
+  says so, rather than a name that is no longer true. Needs `include_heretto_router` (on by
+  default).
   A folder chosen when publishing from the workspace applies to **that publish only** and is
   never stored: a one-off destination that quietly became the default is how notes end up
   somewhere nobody expects on the next run.

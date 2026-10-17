@@ -362,10 +362,14 @@ export class JobsService {
     return this.http.get(`${this.apiUrl}/${jobId}/topics/${topicId}/download`, { responseType: 'blob' });
   }
 
-  /** `folderId` publishes this once into a folder other than the release's usual one. */
-  publish(jobId: string, folderId?: string): Observable<PublishResult[]> {
+  /**
+   * Publish. `folderId` sends this one publish somewhere else, and `credentialId` is the
+   * Heretto that folder is in — a folder id chosen in one connection means nothing in
+   * another, so the two always travel together.
+   */
+  publish(jobId: string, folderId?: string, credentialId?: string): Observable<PublishResult[]> {
     return this.http.post<PublishResult[]>(`${this.apiUrl}/${jobId}/publish`,
-      folderId ? { folder_id: folderId } : {});
+      folderId ? { folder_id: folderId, credential_id: credentialId ?? null } : {});
   }
 
   getChat(jobId: string): Observable<ChatMessage[]> {

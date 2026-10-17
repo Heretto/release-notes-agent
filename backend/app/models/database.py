@@ -146,6 +146,11 @@ class InstructionSet(Base):
     jira_credential_id = Column(UUID(as_uuid=True), ForeignKey("credentials.id", ondelete="SET NULL"), nullable=True)
     dita_template_id = Column(UUID(as_uuid=True), ForeignKey("dita_templates.id"))
     heretto_folder_id = Column(String(255))
+    # Which Heretto the folder is in. A folder id means nothing without it: an
+    # organization can have several connections, and the same id in another one is either
+    # missing or, worse, a different folder. SET NULL so removing a credential leaves the
+    # instruction set visibly unconfigured rather than silently publishing elsewhere.
+    heretto_credential_id = Column(UUID(as_uuid=True), ForeignKey("credentials.id", ondelete="SET NULL"), nullable=True)
     publish_to_heretto = Column(Boolean, default=False)
     is_default = Column(Boolean, default=False)
 

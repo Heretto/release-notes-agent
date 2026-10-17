@@ -654,6 +654,7 @@ export class InstructionEditorComponent implements OnInit {
       template_dita: [data?.layout?.template?.dita || ''],
       agent_guidance: [data?.layout?.agent?.guidance || ''],
       heretto_folder_id: [data?.heretto_folder_id || ''],
+      heretto_credential_id: [data?.heretto_credential_id || null],
       // Shown instead of the id. Not stored — the id is what publishing needs, and a
       // remembered path would go stale the moment someone moves the folder in Heretto.
       heretto_folder_path: [''],
@@ -751,7 +752,9 @@ export class InstructionEditorComponent implements OnInit {
     this.data = data;
     this.form = this.buildForm(data);
     this.wireFormRules();
-    if (data?.heretto_folder_id) this.resolveHerettoFolder(data.heretto_folder_id);
+    if (data?.heretto_folder_id) {
+      this.resolveHerettoFolder(data.heretto_folder_id, data.heretto_credential_id || null);
+    }
   }
 
   /**
@@ -973,18 +976,29 @@ export class InstructionEditorComponent implements OnInit {
    * say which connection it belongs to — publishing resolves the organization's Heretto
    * credential the same way — so each connection is tried until one recognises it.
    */
-  private resolveHerettoFolder(folderId: string): void {
+  private resolveHerettoFolder(folderId: string, credentialId: string | null): void {
     if (!folderId) return;
     this.resolvingFolder = true;
-    this.heretto.connections().pipe(
-      switchMap(connections => from(connections).pipe(
-        concatMap(connection => this.heretto.openFolder(connection.id, folderId, true).pipe(
+
+    // One request, to the connection the folder was chosen from. Instruction sets saved
+    // before that was recorded have none, so those try each connection in turn — right
+    // for a single connection and a guess beyond it, which is why it is stored now.
+    const named = credentialId
+      ? this.heretto.openFolder(credentialId, folderId, true).pipe(
           map(listing => listing.path || listing.name),
-          catchError(() => of('')),   // not this connection's folder; try the next
-        )),
-        first(label => !!label, ''),
-      )),
-    ).subscribe({
+          catchError(() => of('')),
+        )
+      : this.heretto.connections().pipe(
+          switchMap(connections => from(connections).pipe(
+            concatMap(connection => this.heretto.openFolder(connection.id, folderId, true).pipe(
+              map(listing => listing.path || listing.name),
+              catchError(() => of('')),   // not this connection's folder; try the next
+            )),
+            first(label => !!label, ''),
+          )),
+        );
+
+    named.subscribe({
       next: label => {
         this.resolvingFolder = false;
         if (label) this.form.patchValue({ heretto_folder_path: label });
@@ -998,10 +1012,14 @@ export class InstructionEditorComponent implements OnInit {
       title: 'Where should release notes be published?',
       purpose: 'The topics this instruction set produces are created in this folder.',
       folderId: this.form.get('heretto_folder_id')?.value || null,
+      credentialId: this.form.get('heretto_credential_id')?.value || null,
     }).subscribe(folder => {
       if (!folder) return;
       this.form.patchValue({
         heretto_folder_id: folder.id,
+        // The connection travels with the folder: an id chosen here means nothing in
+        // another Heretto, and publishing has to know which one to talk to.
+        heretto_credential_id: folder.credential_id,
         heretto_folder_path: folder.path || folder.name,
       });
       this.form.markAsDirty();
@@ -1009,7 +1027,7 @@ export class InstructionEditorComponent implements OnInit {
   }
 
   clearHerettoFolder(): void {
-    this.form.patchValue({ heretto_folder_id: '', heretto_folder_path: '' });
+    this.form.patchValue({ heretto_folder_id: '', heretto_credential_id: null, heretto_folder_path: '' });
     this.form.markAsDirty();
   }
 

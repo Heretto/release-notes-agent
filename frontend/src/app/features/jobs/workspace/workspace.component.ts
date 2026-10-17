@@ -674,7 +674,9 @@ export class WorkspaceComponent implements OnInit, OnDestroy {
     ref.afterClosed().subscribe((result: PublishDialogResult | undefined) => {
       if (!result) return;
       this.busy = true;
-      this.jobsService.publish(this.job!.id, result.folderId || undefined).subscribe({
+      this.jobsService.publish(
+        this.job!.id, result.folderId || undefined, result.credentialId || undefined,
+      ).subscribe({
         next: (results) => {
           this.busy = false;
           const failed = results.filter(r => !r.success);

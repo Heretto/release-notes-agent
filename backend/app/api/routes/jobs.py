@@ -760,8 +760,13 @@ class PublishResult(BaseModel):
 
 
 class PublishRequest(BaseModel):
-    """`folder_id` publishes this one time somewhere other than the usual folder."""
+    """`folder_id` publishes this one time somewhere other than the usual folder.
+
+    `credential_id` is the Heretto that folder is in. Sent with it, because a folder id
+    chosen in one connection means nothing in another.
+    """
     folder_id: Optional[str] = Field(None, max_length=255)
+    credential_id: Optional[UUID] = None
 
 
 @router.post("/{job_id}/publish", response_model=List[PublishResult])
@@ -777,7 +782,11 @@ async def publish_job(
     if not job.topics:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="There are no topics to publish yet.")
     try:
-        results = await publish_topics(db, job, (request.folder_id if request else None) or None)
+        results = await publish_topics(
+            db, job,
+            (request.folder_id if request else None) or None,
+            (request.credential_id if request else None),
+        )
     except PublishError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     return [PublishResult(success=r.success, document_id=r.document_id, message=r.message) for r in results]
