@@ -70,6 +70,15 @@ must keep doing it.
 ordered chain; the `instruction_set_agents` table is gone (migration
 `add_collaborative_workflow` moved the first chain agent into the writer slot).
 
+**The instruction-set editor is a page, not a dialog** (`/instructions/new`,
+`/instructions/:id`). It outgrew a modal once it carried the query and its variables, the
+agents, two kinds of guidance and the topic layout. The page owns persistence — the list
+used to save after the dialog closed, which cannot work for a route someone may open
+directly — and a duplicate travels in navigation state rather than by id, because a copy
+does not have one yet. The form is built empty and rebuilt when the set arrives, so any
+rule that keeps controls in step belongs in `wireFormRules()`: a subscription made in
+`ngOnInit` would attach to the form the load then replaces.
+
 **A job is a "Release" in the UI, a `job` in the API.** The nav item, headings and copy all
 say Releases, and the routes are `/releases`, `/releases/:id`, `/releases/:id/workspace` (the
 old `/jobs/...` paths redirect). The REST API, the `Job` model and the service/table names are

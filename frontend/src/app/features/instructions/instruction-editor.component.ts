@@ -1,8 +1,9 @@
-import { Component, Inject, OnInit, ChangeDetectionStrategy } from '@angular/core';
+import { Component, OnInit, ChangeDetectionStrategy, inject } from '@angular/core';
 import { Subscription, debounceTime, distinctUntilChanged } from 'rxjs';
-import { RouterLink } from '@angular/router';
 import { FormBuilder, FormGroup, Validators, ReactiveFormsModule, FormsModule } from '@angular/forms';
-import { MatDialogModule, MatDialogRef, MAT_DIALOG_DATA } from '@angular/material/dialog';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatSnackBar } from '@angular/material/snack-bar';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatButtonModule } from '@angular/material/button';
@@ -24,13 +25,13 @@ const FIRST_RELEASES = 5;
 const MORE_RELEASES = 10;
 
 @Component({
-  selector: 'app-instruction-dialog',
+  selector: 'app-instruction-editor',
   standalone: true,
   imports: [
     RouterLink,
     ReactiveFormsModule,
     FormsModule,
-    MatDialogModule,
+    MatProgressSpinnerModule,
     MatFormFieldModule,
     MatInputModule,
     MatButtonModule,
@@ -43,11 +44,28 @@ const MORE_RELEASES = 10;
     MatButtonToggleModule
   ],
   template: `
-    <h2 mat-dialog-title>
-      {{ data?.id ? 'Edit' : 'Create' }} Instruction Set
-    </h2>
+    <div class="hop-page editor">
+      <header class="editor-head">
+        <div class="head-text">
+          <a routerLink="/instructions" class="back">
+            <mat-icon>arrow_back</mat-icon> Instructions
+          </a>
+          <h1>{{ data?.id ? 'Edit instruction set' : 'New instruction set' }}</h1>
+          @if (data?.id) { <p class="muted">{{ data?.name }}</p> }
+        </div>
+        <div class="head-actions">
+          @if (saving) { <mat-spinner diameter="22"></mat-spinner> }
+          <button mat-button (click)="onCancel()" [disabled]="saving">Cancel</button>
+          <button mat-raised-button color="primary" [disabled]="!form.valid || saving" (click)="onSave()">
+            {{ data?.id ? 'Save changes' : 'Create' }}
+          </button>
+        </div>
+      </header>
 
-    <mat-dialog-content>
+      @if (loading) {
+        <div class="loading"><mat-spinner></mat-spinner></div>
+      } @else {
+      <div class="editor-body">
       <form [formGroup]="form">
         <div class="form-section">
           <h3>Basic information</h3>
@@ -460,16 +478,16 @@ const MORE_RELEASES = 10;
           }
         </div>
       </form>
-    </mat-dialog-content>
+      </div>
+      }
 
-    <mat-dialog-actions align="end">
-      <button mat-button (click)="onCancel()">Cancel</button>
-      <button mat-raised-button color="primary"
-              [disabled]="!form.valid"
-              (click)="onSave()">
-        {{ data?.id ? 'Update' : 'Create' }}
-      </button>
-    </mat-dialog-actions>
+      <footer class="editor-foot">
+        <button mat-button (click)="onCancel()" [disabled]="saving">Cancel</button>
+        <button mat-raised-button color="primary" [disabled]="!form.valid || saving" (click)="onSave()">
+          {{ data?.id ? 'Save changes' : 'Create' }}
+        </button>
+      </footer>
+    </div>
   `,
   changeDetection: ChangeDetectionStrategy.Eager,
   styles: [`
@@ -521,7 +539,20 @@ const MORE_RELEASES = 10;
     .chip-missing { background: var(--color-error-bg); color: var(--color-error-text); font-weight: 600; padding: 0 5px; border-radius: 4px; }
     .vars-empty { font-size: 13px; margin: 0; }
     .vars-empty code, mat-hint code { font-family: var(--font-mono); font-size: 12px; }
-    mat-dialog-content { min-width: 600px; max-width: 800px; max-height: 70vh; overflow-y: auto; }
+    .editor { max-width: 920px; }
+    .editor-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px;
+      padding-bottom: 16px; margin-bottom: 20px; border-bottom: 1px solid var(--border-default);
+      position: sticky; top: 0; background: var(--bg-page, var(--bg-primary)); z-index: 2; padding-top: 4px; }
+    .head-text h1 { margin: 6px 0 2px; font-size: 22px; }
+    .head-text .muted { margin: 0; font-size: 13px; }
+    .back { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--text-secondary); }
+    .back mat-icon { font-size: 16px; width: 16px; height: 16px; }
+    .head-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; padding-top: 10px; }
+    .loading { display: flex; justify-content: center; padding: 60px; }
+    .editor-body { padding-bottom: 8px; }
+    /* Repeated at the foot: the form is long, and scrolling back up to save is a tax. */
+    .editor-foot { display: flex; justify-content: flex-end; gap: 8px;
+      border-top: 1px solid var(--border-default); padding-top: 16px; margin-top: 8px; }
     .form-section { margin-bottom: 28px; }
     .form-section h3 { color: var(--text-primary); margin-bottom: 8px; font-size: 16px; font-weight: 500; }
     .full-width { width: 100%; }
@@ -541,23 +572,37 @@ const MORE_RELEASES = 10;
     mat-panel-title mat-icon { font-size: 20px; }
   `]
 })
-export class InstructionDialogComponent implements OnInit {
+export class InstructionEditorComponent implements OnInit {
   form: FormGroup;
   agents: AgentSummary[] = [];
   jiraCredentials: JiraCredentialOption[] = [];
   chunkingStrategies = CHUNKING_STRATEGIES;
 
+  private route = inject(ActivatedRoute);
+  private router = inject(Router);
+  private snackBar = inject(MatSnackBar);
+
+  /** The set being edited, or null while creating. Set once it has loaded. */
+  data: InstructionSet | null = null;
+  loading = false;
+  saving = false;
+
   constructor(
     private fb: FormBuilder,
-    private dialogRef: MatDialogRef<InstructionDialogComponent>,
     private agentService: HopAgentService,
     private credentialsService: CredentialsService,
     private instructionsService: InstructionsService,
-    @Inject(MAT_DIALOG_DATA) public data: InstructionSet | null
   ) {
+    // Built empty and patched once the set arrives: on a page the data is fetched, not
+    // handed in, so the form has to exist before it does.
+    this.form = this.buildForm(null);
+  }
+
+  private buildForm(data: InstructionSet | null): FormGroup {
     this.variableSpecs = { ...(data?.variables || {}) };
     const layout = { ...DEFAULT_LAYOUT, ...(data?.layout?.structured || {}) };
-    this.form = this.fb.group({
+    return this.fb.group({
+
       name: [data?.name || '', Validators.required],
       description: [data?.description || ''],
       product_name: [data?.product_name || ''],
@@ -666,7 +711,14 @@ export class InstructionDialogComponent implements OnInit {
           this.releasesHasMore = false;
           this.releasesStatus = error.error?.detail || 'Could not read releases from Jira';
         }
-      });
+          });
+  }
+
+  /** Put a loaded set into the form, replacing whatever was there. */
+  private apply(data: InstructionSet | null): void {
+    this.data = data;
+    this.form = this.buildForm(data);
+    this.wireFormRules();
   }
 
   /**
@@ -789,6 +841,38 @@ export class InstructionDialogComponent implements OnInit {
       this.jiraCredentials = credentials;
     });
 
+
+    const id = this.route.snapshot.paramMap.get('id');
+    if (id) {
+      this.loading = true;
+      this.instructionsService.getInstructionSet(id).subscribe({
+        next: set => {
+          this.apply(set);
+          this.loading = false;
+        },
+        error: () => {
+          this.loading = false;
+          this.snackBar.open('Could not open that instruction set', 'Close', { duration: 5000 });
+          this.router.navigate(['/instructions']);
+        }
+      });
+      return;
+    }
+
+    // Duplicating: the set to copy is handed over in navigation state rather than fetched,
+    // because it is already loaded and has had its id and timestamps stripped.
+    const duplicate = (history.state || {}).duplicateOf as InstructionSet | undefined;
+    if (duplicate) {
+      this.form = this.buildForm(duplicate);
+      this.wireFormRules();
+      this.data = null;  // a copy is a new set, however it was seeded
+    } else {
+      this.apply(null);
+    }
+  }
+
+  /** Rules that keep controls in step. Re-applied whenever the form is rebuilt. */
+  private wireFormRules(): void {
     // Switching to template mode with nothing written starts from a working template
     // rather than a blank box someone has to guess the markers for.
     this.form.get('layout_mode')?.valueChanges.subscribe(mode => {
@@ -836,7 +920,7 @@ export class InstructionDialogComponent implements OnInit {
   }
 
   onCancel(): void {
-    this.dialogRef.close();
+    this.router.navigate(['/instructions']);
   }
 
   onSave(): void {
@@ -893,6 +977,32 @@ export class InstructionDialogComponent implements OnInit {
       const names = this.variableNames;
       value.variables = Object.fromEntries(names.map(name => [name, this.variableSpecs[name]]));
     }
-    this.dialogRef.close(value);
+    this.save(value);
+  }
+
+  /**
+   * The page owns persistence now. The list used to do it after the dialog closed, which
+   * cannot work when the form is a route someone may arrive at directly.
+   */
+  private save(value: any): void {
+    this.saving = true;
+    const request = this.data?.id
+      ? this.instructionsService.updateInstructionSet(this.data.id, value)
+      : this.instructionsService.createInstructionSet(value);
+
+    request.subscribe({
+      next: () => {
+        this.saving = false;
+        this.snackBar.open(
+          this.data?.id ? 'Instruction set saved' : 'Instruction set created',
+          'Close', { duration: 3000 });
+        this.router.navigate(['/instructions']);
+      },
+      error: error => {
+        this.saving = false;
+        this.snackBar.open(
+          error.error?.detail || 'Could not save the instruction set', 'Close', { duration: 6000 });
+      }
+    });
   }
 }

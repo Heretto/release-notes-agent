@@ -11,7 +11,6 @@ import { MatMenuModule } from '@angular/material/menu';
 import { HopConfirmDialogComponent } from '@heretto/hop-ui';
 import { InstructionsService, InstructionSet } from '../../core/services/instructions.service';
 import { JobsService, CHUNKING_STRATEGIES } from '../../core/services/jobs.service';
-import { InstructionDialogComponent } from './instruction-dialog.component';
 import { TestQueryDialogComponent } from './test-query-dialog.component';
 import { JobCreateDialogComponent } from '../jobs/job-create-dialog.component';
 import { JqlPart, jqlParts, variableNames } from '../../core/jql-variables';
@@ -299,59 +298,24 @@ export class InstructionsComponent implements OnInit {
   }
 
   createInstructionSet() {
-    const dialogRef = this.dialog.open(InstructionDialogComponent, { width: '800px', maxHeight: '90vh', data: null });
-    dialogRef.afterClosed().subscribe(result => {
-      if (!result) return;
-      this.instructionsService.createInstructionSet(result).subscribe({
-        next: (instruction) => {
-          this.instructionSets.push(instruction);
-          this.snackBar.open('Instruction set created', 'Close', { duration: 3000 });
-        },
-        error: (error) => {
-          this.snackBar.open(error.error?.detail || 'Failed to create instruction set', 'Close', { duration: 5000 });
-        }
-      });
-    });
+    this.router.navigate(['/instructions/new']);
   }
 
   editInstructionSet(instruction: InstructionSet) {
-    const dialogRef = this.dialog.open(InstructionDialogComponent, { width: '800px', maxHeight: '90vh', data: instruction });
-    dialogRef.afterClosed().subscribe(result => {
-      if (!result || !instruction.id) return;
-      this.instructionsService.updateInstructionSet(instruction.id, result).subscribe({
-        next: (updated) => {
-          const index = this.instructionSets.findIndex(i => i.id === instruction.id);
-          if (index >= 0) this.instructionSets[index] = updated;
-          if (updated.is_default) {
-            this.instructionSets.forEach(i => { if (i.id !== updated.id) i.is_default = false; });
-          }
-          this.snackBar.open('Instruction set updated', 'Close', { duration: 3000 });
-        },
-        error: (error) => {
-          this.snackBar.open(error.error?.detail || 'Failed to update instruction set', 'Close', { duration: 5000 });
-        }
-      });
-    });
+    if (instruction.id) this.router.navigate(['/instructions', instruction.id]);
   }
 
+  /**
+   * Seed a new set from this one. The copy travels in navigation state rather than being
+   * re-fetched: it is already here, and it is not a set anyone can load by id — it has no
+   * id yet.
+   */
   duplicateInstructionSet(instruction: InstructionSet) {
     const duplicate: InstructionSet = { ...instruction, name: `${instruction.name} (Copy)`, is_default: false };
     delete duplicate.id;
     delete duplicate.created_at;
     delete duplicate.updated_at;
-    const dialogRef = this.dialog.open(InstructionDialogComponent, { width: '800px', maxHeight: '90vh', data: duplicate });
-    dialogRef.afterClosed().subscribe(result => {
-      if (!result) return;
-      this.instructionsService.createInstructionSet(result).subscribe({
-        next: (created) => {
-          this.instructionSets.push(created);
-          this.snackBar.open('Instruction set duplicated', 'Close', { duration: 3000 });
-        },
-        error: (error) => {
-          this.snackBar.open(error.error?.detail || 'Failed to duplicate instruction set', 'Close', { duration: 5000 });
-        }
-      });
-    });
+    this.router.navigate(['/instructions/new'], { state: { duplicateOf: duplicate } });
   }
 
   deleteInstructionSet(instruction: InstructionSet) {
