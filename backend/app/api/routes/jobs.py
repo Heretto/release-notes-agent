@@ -759,9 +759,15 @@ class PublishResult(BaseModel):
     message: str
 
 
+class PublishRequest(BaseModel):
+    """`folder_id` publishes this one time somewhere other than the usual folder."""
+    folder_id: Optional[str] = Field(None, max_length=255)
+
+
 @router.post("/{job_id}/publish", response_model=List[PublishResult])
 async def publish_job(
     job_id: UUID,
+    request: Optional[PublishRequest] = None,
     context: CurrentUserContext = Depends(get_current_active_user_with_org),
     db: Session = Depends(get_db),
 ):
@@ -771,7 +777,7 @@ async def publish_job(
     if not job.topics:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="There are no topics to publish yet.")
     try:
-        results = await publish_topics(db, job)
+        results = await publish_topics(db, job, (request.folder_id if request else None) or None)
     except PublishError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     return [PublishResult(success=r.success, document_id=r.document_id, message=r.message) for r in results]

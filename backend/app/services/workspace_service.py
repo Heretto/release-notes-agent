@@ -237,11 +237,20 @@ def find_decryptable_credential(db: Session, user_id: UUID, organization_id: Opt
 
 # ── Publishing ───────────────────────────────────────────────────────────────────────
 
-async def publish_topics(db: Session, job: Job) -> List[HerettoUploadResult]:
-    """Create or update every topic in Heretto. Raises PublishError when it cannot start."""
+async def publish_topics(
+    db: Session, job: Job, folder_id: Optional[str] = None
+) -> List[HerettoUploadResult]:
+    """Create or update every topic in Heretto. Raises PublishError when it cannot start.
+
+    `folder_id` publishes this once into somewhere other than the release's usual folder —
+    a person choosing a destination in the workspace. It is deliberately not stored: a
+    one-off destination that quietly became the default is how notes end up somewhere
+    nobody expects on the next run.
+    """
     settings = get_settings()
     instruction_set = job.instruction_set
-    folder_id = job.heretto_folder_id or (instruction_set.heretto_folder_id if instruction_set else None)
+    folder_id = folder_id or job.heretto_folder_id or (
+        instruction_set.heretto_folder_id if instruction_set else None)
     if not folder_id:
         raise PublishError("No Heretto folder is configured for this job or its instruction set.")
     heretto_cred, heretto_config = find_decryptable_credential(db, job.user_id, job.organization_id, CredentialType.HERETTO)

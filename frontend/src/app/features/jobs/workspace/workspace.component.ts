@@ -20,6 +20,7 @@ import { InstructionsService, InstructionSet } from '../../../core/services/inst
 import { WorkspaceChatComponent } from './workspace-chat.component';
 import { WorkspaceItemDetailComponent } from './workspace-item-detail.component';
 import { ShareReviewDialogComponent } from './share-review-dialog.component';
+import { PublishDialogComponent, PublishDialogResult } from './publish-dialog.component';
 
 interface ItemGroup {
   name: string;
@@ -652,19 +653,28 @@ export class WorkspaceComponent implements OnInit, OnDestroy {
     for (const topic of this.topics) this.downloadTopic(topic);
   }
 
+  /**
+   * Publish, with the chance to send this one somewhere else.
+   *
+   * The confirm dialog only ever said how many topics; where they were going was invisible
+   * until they arrived. The folder is now named, and changeable for this publish only —
+   * an override that quietly became the default is how notes end up somewhere nobody
+   * expects on the next run.
+   */
   publish(): void {
     if (!this.job) return;
-    const ref = this.dialog.open(HopConfirmDialogComponent, {
+    const ref = this.dialog.open(PublishDialogComponent, {
+      width: '520px',
       data: {
-        title: 'Publish to Heretto',
-        message: `Create or update ${this.topics.length} topic(s) in Heretto with the current release notes?`,
-        confirmText: 'Publish'
+        topicCount: this.topics.length,
+        folderId: this.job.heretto_folder_id || this.instructionSet?.heretto_folder_id || null,
+        usual: !this.job.heretto_folder_id && !!this.instructionSet?.heretto_folder_id,
       }
     });
-    ref.afterClosed().subscribe(confirmed => {
-      if (!confirmed) return;
+    ref.afterClosed().subscribe((result: PublishDialogResult | undefined) => {
+      if (!result) return;
       this.busy = true;
-      this.jobsService.publish(this.job!.id).subscribe({
+      this.jobsService.publish(this.job!.id, result.folderId || undefined).subscribe({
         next: (results) => {
           this.busy = false;
           const failed = results.filter(r => !r.success);

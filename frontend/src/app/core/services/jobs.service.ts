@@ -362,8 +362,10 @@ export class JobsService {
     return this.http.get(`${this.apiUrl}/${jobId}/topics/${topicId}/download`, { responseType: 'blob' });
   }
 
-  publish(jobId: string): Observable<PublishResult[]> {
-    return this.http.post<PublishResult[]>(`${this.apiUrl}/${jobId}/publish`, {});
+  /** `folderId` publishes this once into a folder other than the release's usual one. */
+  publish(jobId: string, folderId?: string): Observable<PublishResult[]> {
+    return this.http.post<PublishResult[]>(`${this.apiUrl}/${jobId}/publish`,
+      folderId ? { folder_id: folderId } : {});
   }
 
   getChat(jobId: string): Observable<ChatMessage[]> {
