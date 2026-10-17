@@ -1,6 +1,6 @@
 # release-notes-agent — agent notes
 
-Built on [hop-core](https://github.com/Heretto/hop-core), pinned at **v0.1.16**.
+Built on [hop-core](https://github.com/Heretto/hop-core), pinned at **v0.1.17**.
 
 Automated DITA release-notes generation from Jira tickets: FastAPI backend, Angular 22
 frontend, Celery workers, Postgres, Redis.
@@ -213,15 +213,18 @@ credentials stored by the old routes keep working.
   ("temperature is deprecated for this model"); the pipeline and the workspace chat leave it
   unset and take the provider default. `tests/unit/services/test_anthropic_temperature.py`
   covers the older adapter's fallback for the same reason.
-- **hop-core's Heretto browser picks a *file*; publishing needs a *folder*.**
-  `openHerettoFileBrowser` only ever returns a `HerettoFile`, so
-  `shared/heretto-folder-picker.component.ts` navigates with the same `HopHerettoService`
-  and types and returns the folder you are standing in. It is ours only because hop-core
-  has no folder mode — if one appears, delete this and use it. The picker needs
-  `include_heretto_router` (hop-core's default, on).
-  A folder chosen when publishing from the workspace applies to **that publish only** and
-  is never stored: a one-off destination that quietly became the default is how notes end
-  up somewhere nobody expects on the next run.
+- **The Heretto folder is chosen with hop-core's browser** (`openHerettoFolderBrowser`,
+  v0.1.17). v0.1.16 could only pick a file, so this app carried its own folder picker for
+  one release; it is gone. The browser returns a `HerettoFolder` object but an instruction
+  set stores only `heretto_folder_id`, so the path is shown after picking and is **not**
+  stored — it would go stale the moment someone moves the folder in Heretto. If the display
+  ever needs to survive a reload, the better answer is hop-core's
+  `HopHerettoFileFieldComponent` with `selection="folder"`, which is a form control holding
+  the whole object, and a column to put it in. Needs `include_heretto_router` (on by
+  default).
+  A folder chosen when publishing from the workspace applies to **that publish only** and is
+  never stored: a one-off destination that quietly became the default is how notes end up
+  somewhere nobody expects on the next run.
 - **An organization can bring its own DITA grammar, and this app validates against it.**
   `create_hop_app(include_dtd_sets_router=True)` mounts `/dtd-sets`; hop-ui's admin page
   already contains the DTD sets section and **probes that endpoint to decide whether to show

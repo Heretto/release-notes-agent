@@ -15,9 +15,8 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatSelectModule } from '@angular/material/select';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
-import { HopAgentService, AgentSummary } from '@heretto/hop-ui';
+import { HopAgentService, AgentSummary, openHerettoFolderBrowser } from '@heretto/hop-ui';
 import { DEFAULT_LAYOUT, STARTER_TEMPLATE, InstructionSet, InstructionsService, JiraRelease } from '../../core/services/instructions.service';
-import { openHerettoFolderPicker } from '../../shared/heretto-folder-picker.component';
 import { CredentialsService, JiraCredentialOption } from '../../core/services/credentials.service';
 import { CHUNKING_STRATEGIES } from '../../core/services/jobs.service';
 import { JqlPart, JqlVariableSpec, defaultsOf, jqlParts, variableNames } from '../../core/jql-variables';
@@ -944,15 +943,15 @@ export class InstructionEditorComponent implements OnInit {
   }
 
   chooseHerettoFolder(): void {
-    openHerettoFolderPicker(this.dialog, {
+    openHerettoFolderBrowser(this.dialog, {
       title: 'Where should release notes be published?',
       purpose: 'The topics this instruction set produces are created in this folder.',
       folderId: this.form.get('heretto_folder_id')?.value || null,
     }).subscribe(folder => {
       if (!folder) return;
       this.form.patchValue({
-        heretto_folder_id: folder.folder_id,
-        heretto_folder_path: folder.path,
+        heretto_folder_id: folder.id,
+        heretto_folder_path: folder.path || folder.name,
       });
       this.form.markAsDirty();
     });

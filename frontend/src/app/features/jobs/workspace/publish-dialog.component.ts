@@ -2,7 +2,7 @@ import { Component, Inject, ChangeDetectionStrategy, inject } from '@angular/cor
 import { MatDialog, MatDialogModule, MatDialogRef, MAT_DIALOG_DATA } from '@angular/material/dialog';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
-import { openHerettoFolderPicker } from '../../../shared/heretto-folder-picker.component';
+import { openHerettoFolderBrowser } from '@heretto/hop-ui';
 
 export interface PublishDialogData {
   topicCount: number;
@@ -103,14 +103,14 @@ export class PublishDialogComponent {
   }
 
   chooseFolder(): void {
-    openHerettoFolderPicker(this.dialog, {
+    openHerettoFolderBrowser(this.dialog, {
       title: 'Publish these topics where?',
       purpose: 'Used for this publish only.',
       folderId: this.folderId,
     }).subscribe(folder => {
       if (!folder) return;
-      this.chosenId = folder.folder_id;
-      this.chosenPath = folder.path;
+      this.chosenId = folder.id;
+      this.chosenPath = folder.path || folder.name;
     });
   }
 
