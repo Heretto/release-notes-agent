@@ -407,6 +407,16 @@ def _add_shortdesc(topic: etree._Element, layout: Layout, shortdesc: Optional[st
         etree.SubElement(topic, "shortdesc").text = layout.shortdesc_text.strip()
 
 
+def note_element_for(notes_wrapper: str) -> str:
+    """What a note has to be, given what collects it.
+
+    Derived, not configured: a <ul>/<ol> may only contain <li>, and an <li> may only live
+    in a list. The schema refuses a mismatched pair on the way in; this makes sure one that
+    got stored anyway — a hand-edited row, an older record — still assembles to valid DITA.
+    """
+    return "li" if notes_wrapper in ("ul", "ol") else "div"
+
+
 def _group_container(body: etree._Element, slug: str, index: int, name: str, layout: Layout):
     """Where a group's notes go, and the heading that introduces them.
 
@@ -455,16 +465,18 @@ def build_topic_xml(
     elif has_groups:
         for index, (name, group_items) in enumerate(plan.groups, start=1):
             host = _group_container(body, plan.slug, index, name, layout)
+            tag = note_element_for(layout.notes_wrapper)
             for item in group_items:
-                host.append(note_element(item, layout.note_element))
+                host.append(note_element(item, tag))
     else:
         # No groups: the wrapper still applies, so <li> notes remain inside a list.
         host = body
         if layout.notes_wrapper in ("ul", "ol"):
             host = etree.SubElement(body, layout.notes_wrapper)
+        tag = note_element_for(layout.notes_wrapper)
         for _, group_items in plan.groups:
             for item in group_items:
-                host.append(note_element(item, layout.note_element))
+                host.append(note_element(item, tag))
 
     xml = etree.tostring(topic, encoding="unicode", pretty_print=True)
     return f'<?xml version="1.0" encoding="UTF-8"?>\n{DOCTYPE}\n{xml}'

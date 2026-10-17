@@ -197,6 +197,20 @@ class TestLayout:
             assert xml.count('outputclass="release-note"') == 2
             assert xml.count('id="rn-') >= 2
 
+    def test_the_wrapper_decides_what_a_note_is(self):
+        """A stored pair that disagrees still assembles to valid DITA.
+
+        The schema refuses the mismatch on the way in, but a hand-edited row must not be
+        able to put a <div> inside a <ul>.
+        """
+        xml = build_topic_xml(self._plan(), layout=Layout(notes_wrapper="ul", note_element="div"))
+        assert "<div" not in xml and '<li id="rn-' in xml
+        assert validate_topic(xml) == []
+
+        xml = build_topic_xml(self._plan(), layout=Layout(notes_wrapper="none", note_element="li"))
+        assert "<li" not in xml and '<div id="rn-' in xml
+        assert validate_topic(xml) == []
+
     def test_shortdesc_text(self):
         layout = Layout(shortdesc="text", shortdesc_text="What changed this month.")
         assert "<shortdesc>What changed this month.</shortdesc>" in build_topic_xml(self._plan(), layout=layout)

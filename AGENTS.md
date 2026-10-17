@@ -57,8 +57,11 @@ assembly of that release reuses it. That is deliberate: assembly also runs insid
 handlers (a topic-split change, a note edit), and nothing there may call a model. A release
 assembled before its first run, or whose agent failed, falls back to the structured options
 rather than producing no topic.
-An `<li>` outside a list is not DITA, so the schema refuses that pair and the editor moves
-the other control rather than letting it be saved. Whatever that element is, assembly
+What a note *is* follows from what collects it and is not a free choice: a `<ul>`/`<ol>`
+may only contain `<li>`, and an `<li>` may only live in a list. The editor offers only the
+valid element, the schema refuses a mismatched pair, and `note_element_for()` derives the
+element at assembly time rather than trusting the stored one — so a hand-edited row cannot
+put a `<div>` inside a `<ul>` and fail every topic's DTD check. Whatever that element is, assembly
 stamps it with the note's `fragment_id` and `outputclass="release-note"` — the workspace
 preview maps rendered DITA back to a note through exactly that pair, so every layout mode
 must keep doing it.

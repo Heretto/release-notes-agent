@@ -100,10 +100,18 @@ class StructuredLayout(BaseModel):
 
     @model_validator(mode="after")
     def _list_items_need_a_list(self):
-        # <li> outside a list is not DITA, and the DTD check would reject every topic.
+        # The two settings are not independent: a <ul>/<ol> may only contain <li>, and an
+        # <li> may only live in one. Either mismatch makes every topic fail DTD validation,
+        # so both are refused rather than silently corrected here — note_element_for() is
+        # what assembly uses, and it derives the element instead of trusting this pair.
         if self.note_element == "li" and self.notes_wrapper == "none":
             raise ValueError(
                 "Notes can only be <li> when they are collected in a <ul> or <ol>."
+            )
+        if self.note_element != "li" and self.notes_wrapper in ("ul", "ol"):
+            raise ValueError(
+                f"A <{self.notes_wrapper}> can only contain <li>, so notes collected in one "
+                "must be list items."
             )
         if self.shortdesc == "text" and not self.shortdesc_text.strip():
             raise ValueError("Choose what the shortdesc should say, or set it to empty or omit.")

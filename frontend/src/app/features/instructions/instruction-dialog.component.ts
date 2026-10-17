@@ -372,12 +372,11 @@ const MORE_RELEASES = 10;
               <mat-form-field appearance="outline" subscriptSizing="dynamic">
                 <mat-label>Each note is</mat-label>
                 <mat-select formControlName="note_element">
-                  <mat-option value="div">A block (&lt;div&gt;)</mat-option>
-                  <mat-option value="li">A list item (&lt;li&gt;)</mat-option>
+                  @for (option of noteElementOptions; track option.value) {
+                    <mat-option [value]="option.value">{{ option.label }}</mat-option>
+                  }
                 </mat-select>
-                @if (form.get('note_element')?.value === 'li') {
-                  <mat-hint>List items need a list, so the notes are collected in one</mat-hint>
-                }
+                <mat-hint>{{ noteElementHint }}</mat-hint>
               </mat-form-field>
 
               <mat-form-field appearance="outline" subscriptSizing="dynamic">
@@ -671,6 +670,28 @@ export class InstructionDialogComponent implements OnInit {
   }
 
   /**
+   * What a note can be, given what collects it. A <ul>/<ol> may only contain <li>, and an
+   * <li> may only live in a list — so this is not a free choice, it follows the wrapper.
+   * Written as a list rather than a fixed pair so another host (<sl> and <sli>, say) only
+   * has to be added here.
+   */
+  get noteElementOptions(): { value: string; label: string }[] {
+    return this.isListWrapper
+      ? [{ value: 'li', label: 'A list item (<li>)' }]
+      : [{ value: 'div', label: 'A block (<div>)' }];
+  }
+
+  get noteElementHint(): string {
+    return this.isListWrapper
+      ? 'A list can only contain list items'
+      : 'List items need a list to sit in';
+  }
+
+  private get isListWrapper(): boolean {
+    return ['ul', 'ol'].includes(this.form?.get('notes_wrapper')?.value);
+  }
+
+  /**
    * What is wrong with the template, in the words the API would use. Checked here so the
    * problem shows while it is being written rather than on save.
    */
@@ -776,18 +797,10 @@ export class InstructionDialogComponent implements OnInit {
       }
     });
 
-    // An <li> outside a list is not DITA and the API refuses it, so choosing one turns a
-    // list on rather than letting the person save something that cannot assemble.
-    this.form.get('note_element')?.valueChanges.subscribe(value => {
-      if (value === 'li' && this.form.get('notes_wrapper')?.value === 'none') {
-        this.form.patchValue({ notes_wrapper: 'ul' });
-      }
-    });
-    this.form.get('notes_wrapper')?.valueChanges.subscribe(value => {
-      if (value === 'none' && this.form.get('note_element')?.value === 'li') {
-        this.form.patchValue({ note_element: 'div' });
-      }
-    });
+    // What a note is follows from what collects it — see noteElementOptions. Kept in step
+    // here so the stored value always matches the only option the control offers.
+    this.form.get('notes_wrapper')?.valueChanges.subscribe(() => this.syncNoteElement());
+    this.syncNoteElement();
 
     // Only the active mode's field is required, so the validators move with the switch.
     this.applyModeValidators();
@@ -799,6 +812,13 @@ export class InstructionDialogComponent implements OnInit {
       .pipe(debounceTime(400), distinctUntilChanged())
       .subscribe(() => this.loadReleases());
     this.loadReleases();
+  }
+
+  private syncNoteElement(): void {
+    const only = this.noteElementOptions[0].value;
+    if (this.form.get('note_element')?.value !== only) {
+      this.form.patchValue({ note_element: only }, { emitEvent: false });
+    }
   }
 
   private applyModeValidators(): void {
