@@ -4,7 +4,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { openHerettoFolderBrowser } from '@heretto/hop-ui';
-import { JobsService, PublishResult } from '../../../core/services/jobs.service';
+import { JobsService, PublishResponse, PublishResult } from '../../../core/services/jobs.service';
 
 export interface PublishDialogData {
   jobId: string;
@@ -26,8 +26,9 @@ export interface PublishDialogResult {
  * Publish to Heretto: choose where, watch it happen, and open what came out.
  *
  * The dialog does the publishing rather than handing the job back to the workspace,
- * because the result is the part worth seeing — a link to each topic in Heretto. Reported
- * through a toast that replaces itself, those links were gone before anyone could use them.
+ * because the result is the part worth seeing — what landed, and a way into the folder it
+ * landed in. Reported through a toast that replaces itself, that was gone before anyone
+ * could use it.
  *
  * The folder can be changed for this publish only. A one-off destination that quietly
  * became the release's default is how notes end up somewhere nobody expects on the next
@@ -92,14 +93,16 @@ export interface PublishDialogResult {
                 <span class="result-title">{{ result.title || 'Topic' }}</span>
                 @if (!result.success) { <span class="muted">{{ result.message }}</span> }
               </div>
-              @if (result.editor_url) {
-                <a mat-stroked-button [href]="result.editor_url" target="_blank" rel="noopener">
-                  <mat-icon>open_in_new</mat-icon> Open
-                </a>
-              }
             </li>
           }
         </ul>
+
+        @if (outcome?.folder_url) {
+          <a mat-flat-button color="primary" class="open-folder"
+             [href]="outcome!.folder_url!" target="_blank" rel="noopener">
+            <mat-icon>folder_open</mat-icon> Open the folder in Heretto
+          </a>
+        }
       }
     </mat-dialog-content>
 
@@ -138,6 +141,7 @@ export interface PublishDialogResult {
     .failed .mark { color: var(--color-error-text); }
     .result-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
     .result-title { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .open-folder { margin-top: 16px; width: 100%; }
     mat-dialog-actions { padding: 14px 24px; border-top: 1px solid var(--border-default); }
   `]
 })
@@ -153,7 +157,11 @@ export class PublishDialogComponent {
   publishing = false;
   error = '';
   /** Null until a publish has finished; then what came back. */
-  results: PublishResult[] | null = null;
+  outcome: PublishResponse | null = null;
+
+  get results(): PublishResult[] | null {
+    return this.outcome?.results ?? null;
+  }
 
   constructor(
     private dialogRef: MatDialogRef<PublishDialogComponent, PublishDialogResult | undefined>,
@@ -201,10 +209,10 @@ export class PublishDialogComponent {
     this.jobsService.publish(
       this.data.jobId, this.chosenId || undefined, this.chosenCredentialId || undefined,
     ).subscribe({
-      next: results => {
+      next: outcome => {
         this.publishing = false;
         this.dialogRef.disableClose = false;
-        this.results = results;
+        this.outcome = outcome;
       },
       error: error => {
         this.publishing = false;

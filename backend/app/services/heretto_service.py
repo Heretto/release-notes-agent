@@ -35,15 +35,17 @@ class HerettoService:
         self.auth_header = f"Basic {auth_b64}"
 
 
-    def editor_url(self, document_id: Optional[str]) -> Optional[str]:
-        """Where a person opens this document in Heretto.
+    def folder_url(self, folder_id: Optional[str]) -> Optional[str]:
+        """Where a person opens this folder in Heretto.
 
-        `url` on an upload result is the REST endpoint the upload used; it is not something
-        to hand someone — it answers with API output or a 401 in a browser. This is the
-        editor address, built the way hop-core builds its own (`/#/editor/{id}`), so a link
-        offered after publishing lands where the writer expects.
+        `self.base_url` is the credential's own server_url — the same base the upload goes
+        to — so no second setting is involved. The fragment is Heretto's map editor
+        addressed at a folder.
+
+        A document link was tried first and did not resolve; the folder is both what works
+        and what someone wants after publishing several topics into one place.
         """
-        return f"{self.base_url}/#/editor/{document_id}" if document_id else None
+        return f"{self.base_url}/#map-editor;folder={folder_id}" if folder_id else None
 
     def _headers(self, content_type: str = "application/xml") -> dict:
         return {
@@ -147,7 +149,6 @@ class HerettoService:
                     document_id=doc_id,
                     message="Upload successful",
                     url=doc_url,
-                    editor_url=self.editor_url(doc_id),
                 )
 
             except httpx.TimeoutException:
@@ -194,7 +195,6 @@ class HerettoService:
                     document_id=document_id,
                     message="Update successful",
                     url=f"{self.base_url}/rest/all-files/{document_id}",
-                    editor_url=self.editor_url(document_id),
                 )
             except httpx.TimeoutException:
                 return HerettoUploadResult(

@@ -252,8 +252,13 @@ export interface PublishResult {
   message: string;
   /** Which topic this result is for. */
   title?: string | null;
-  /** Where to open it in Heretto. Absent when publishing failed. */
-  editor_url?: string | null;
+}
+
+/** What a publish did, and the folder to open to see it. */
+export interface PublishResponse {
+  folder_id?: string | null;
+  folder_url?: string | null;
+  results: PublishResult[];
 }
 
 @Injectable({
@@ -371,8 +376,8 @@ export class JobsService {
    * Heretto that folder is in — a folder id chosen in one connection means nothing in
    * another, so the two always travel together.
    */
-  publish(jobId: string, folderId?: string, credentialId?: string): Observable<PublishResult[]> {
-    return this.http.post<PublishResult[]>(`${this.apiUrl}/${jobId}/publish`,
+  publish(jobId: string, folderId?: string, credentialId?: string): Observable<PublishResponse> {
+    return this.http.post<PublishResponse>(`${this.apiUrl}/${jobId}/publish`,
       folderId ? { folder_id: folderId, credential_id: credentialId ?? null } : {});
   }
 

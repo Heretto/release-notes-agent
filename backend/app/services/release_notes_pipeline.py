@@ -653,7 +653,7 @@ class ReleaseNotesPipeline:
     async def _publish(self, job: Job) -> None:
         self._set_stage(job, JobStage.PUBLISH, "Publishing to Heretto")
         try:
-            results = await publish_topics(self.db, job)
+            results = (await publish_topics(self.db, job)).results
         except PublishError as exc:
             # Publishing is a convenience step; the notes are done. Say so rather than fail.
             job.stage_message = f"Not published: {exc}"

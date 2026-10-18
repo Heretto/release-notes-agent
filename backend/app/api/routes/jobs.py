@@ -759,8 +759,14 @@ class PublishResult(BaseModel):
     message: str
     #: Which topic this is, so a list of results can be read without counting.
     title: Optional[str] = None
-    #: Where to open it in Heretto. Absent when publishing failed.
-    editor_url: Optional[str] = None
+
+
+class PublishResponse(BaseModel):
+    """What was published, and the folder to open to see it."""
+    folder_id: Optional[str] = None
+    #: Heretto's own address for that folder; absent if it could not be built.
+    folder_url: Optional[str] = None
+    results: List[PublishResult] = Field(default_factory=list)
 
 
 class PublishRequest(BaseModel):
@@ -773,7 +779,7 @@ class PublishRequest(BaseModel):
     credential_id: Optional[UUID] = None
 
 
-@router.post("/{job_id}/publish", response_model=List[PublishResult])
+@router.post("/{job_id}/publish", response_model=PublishResponse)
 async def publish_job(
     job_id: UUID,
     request: Optional[PublishRequest] = None,
@@ -786,20 +792,24 @@ async def publish_job(
     if not job.topics:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="There are no topics to publish yet.")
     try:
-        results = await publish_topics(
+        outcome = await publish_topics(
             db, job,
             (request.folder_id if request else None) or None,
             (request.credential_id if request else None),
         )
     except PublishError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
-    return [
-        PublishResult(
-            success=r.success, document_id=r.document_id, message=r.message,
-            title=getattr(r, "title", None), editor_url=r.editor_url,
-        )
-        for r in results
-    ]
+    return PublishResponse(
+        folder_id=outcome.folder_id,
+        folder_url=outcome.folder_url,
+        results=[
+            PublishResult(
+                success=r.success, document_id=r.document_id, message=r.message,
+                title=getattr(r, "title", None),
+            )
+            for r in outcome.results
+        ],
+    )
 
 
 # ── Workspace: chat ──────────────────────────────────────────────────────────────────

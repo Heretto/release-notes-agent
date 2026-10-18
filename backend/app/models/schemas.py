@@ -567,8 +567,6 @@ class HerettoUploadResult(BaseModel):
     message: str
     #: The REST endpoint the upload used — not a link to give anyone.
     url: Optional[str]
-    #: Where a person opens the document in Heretto.
-    editor_url: Optional[str] = None
     #: The topic this result is for; set by the caller, which knows.
     title: Optional[str] = None
 

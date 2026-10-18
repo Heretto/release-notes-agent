@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import dataclasses
 import logging
+from dataclasses import dataclass
 import re
 import time
 from datetime import datetime, timezone
@@ -270,10 +271,23 @@ def _heretto_credential(db: Session, job: Job, credential_id: Optional[UUID]):
         db, job.user_id, job.organization_id, CredentialType.HERETTO)
 
 
+@dataclass
+class PublishOutcome:
+    """What a publish did, and where. The folder is what a person wants to open after."""
+
+    results: List[HerettoUploadResult]
+    folder_id: Optional[str] = None
+    folder_url: Optional[str] = None
+
+    def __iter__(self):
+        # Callers that only care what happened can still iterate the outcome.
+        return iter(self.results)
+
+
 async def publish_topics(
     db: Session, job: Job, folder_id: Optional[str] = None,
     credential_id: Optional[UUID] = None,
-) -> List[HerettoUploadResult]:
+) -> PublishOutcome:
     """Create or update every topic in Heretto. Raises PublishError when it cannot start.
 
     `folder_id` publishes this once into somewhere other than the release's usual folder —
@@ -335,7 +349,9 @@ async def publish_topics(
             request.error_message = result.message
         db.commit()
         results.append(result)
-    return results
+    return PublishOutcome(
+        results=results, folder_id=folder_id, folder_url=service.folder_url(folder_id),
+    )
 
 
 # ── Response shapes ──────────────────────────────────────────────────────────────────

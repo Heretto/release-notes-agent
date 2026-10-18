@@ -233,9 +233,13 @@ credentials stored by the old routes keep working.
   A folder chosen when publishing from the workspace applies to **that publish only** and is
   never stored: a one-off destination that quietly became the default is how notes end up
   somewhere nobody expects on the next run. The publish dialog **does the publishing itself**
-  and shows the result in place, with a link per topic — `HerettoUploadResult.url` is the
-  REST endpoint the upload used and is not a link to give anyone, so `editor_url`
-  (`{server}/#/editor/{id}`, the shape hop-core uses) is what the UI offers.
+  and shows the result in place, ending with a link to the folder everything landed in:
+  `{server_url}/#map-editor;folder={folder_id}`, built by `HerettoService.folder_url` from
+  the credential's own `server_url` — the same base the upload goes to, so no second setting
+  is involved. Do not reach for `HerettoUploadResult.url`: that is the REST endpoint the
+  upload used and answers a browser with API output or a 401. A per-document link was tried
+  first (`/#/editor/{id}`, copied from hop-core's `editor_url`) and does not resolve in
+  Heretto — hop-core's own file links are likely wrong for the same reason.
 - **An organization can bring its own DITA grammar, and this app validates against it.**
   `create_hop_app(include_dtd_sets_router=True)` mounts `/dtd-sets`; hop-ui's admin page
   already contains the DTD sets section and **probes that endpoint to decide whether to show
