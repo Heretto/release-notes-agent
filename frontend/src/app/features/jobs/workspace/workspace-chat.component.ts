@@ -2,7 +2,6 @@ import { Component, ElementRef, EventEmitter, Input, OnChanges, OnInit, Output, 
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
-import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { JobsService, ChatMessage, ChatSendResponse, ReleaseNoteItem } from '../../../core/services/jobs.service';
@@ -10,7 +9,7 @@ import { JobsService, ChatMessage, ChatSendResponse, ReleaseNoteItem } from '../
 @Component({
   selector: 'app-workspace-chat',
   standalone: true,
-  imports: [FormsModule, MatButtonModule, MatIconModule, MatProgressSpinnerModule, MatTooltipModule],
+  imports: [FormsModule, MatButtonModule, MatIconModule, MatTooltipModule],
   template: `
     <div class="chat">
       <div class="chat-head">
@@ -54,7 +53,9 @@ import { JobsService, ChatMessage, ChatSendResponse, ReleaseNoteItem } from '../
         }
         @if (sending) {
           <div class="turn assistant">
-            <div class="bubble thinking"><mat-spinner diameter="16"></mat-spinner> Working…</div>
+            <div class="bubble thinking" role="status" aria-label="The agent is working on a reply">
+              <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+            </div>
           </div>
         }
       </div>
@@ -83,7 +84,19 @@ import { JobsService, ChatMessage, ChatSendResponse, ReleaseNoteItem } from '../
     .bubble { padding: 10px 14px; border-radius: 12px; font-size: 14px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
     .turn.user .bubble { background: var(--color-primary); color: white; border-bottom-right-radius: 4px; }
     .turn.assistant .bubble { background: var(--bg-secondary); color: var(--text-primary); border-bottom-left-radius: 4px; }
-    .bubble.thinking { display: inline-flex; align-items: center; gap: 8px; color: var(--text-secondary); }
+    .bubble.thinking { display: inline-flex; align-items: center; gap: 5px; padding: 12px 14px; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-tertiary);
+      animation: chat-bounce 1.3s infinite ease-in-out; }
+    .dot:nth-child(2) { animation-delay: 0.15s; }
+    .dot:nth-child(3) { animation-delay: 0.3s; }
+    @keyframes chat-bounce {
+      0%, 60%, 100% { transform: translateY(0); opacity: 0.45; }
+      30% { transform: translateY(-4px); opacity: 1; }
+    }
+    /* Someone who asked for less motion still needs to see that it is working. */
+    @media (prefers-reduced-motion: reduce) {
+      .dot { animation: none; opacity: 0.6; }
+    }
     .actions { list-style: none; margin: 6px 0 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
     .actions li { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
     .actions li mat-icon { font-size: 14px; width: 14px; height: 14px; color: var(--color-success); }
@@ -157,10 +170,20 @@ export class WorkspaceChatComponent implements OnInit, OnChanges {
     if (!text || this.sending) return;
     this.sending = true;
     this.draft = '';
+
+    // Shown straight away rather than when the reply arrives: the agent can take many
+    // seconds, and until now the message vanished from the box with nothing in its place.
+    // The id is local; the server's own copy replaces it below.
+    const pending: ChatMessage = { id: `pending-${Date.now()}`, role: 'user', content: text };
+    this.messages = [...this.messages, pending];
     this.scrollToEnd();
+
     this.jobsService.sendChat(this.jobId, text, this.selectedItem?.id).subscribe({
       next: (response) => {
-        this.messages = [...this.messages, response.user_message, response.assistant_message];
+        this.messages = [
+          ...this.messages.filter(message => message !== pending),
+          response.user_message, response.assistant_message,
+        ];
         this.sending = false;
         this.scrollToEnd();
         if (response.changed_item_ids.length || response.topics_changed) {
@@ -169,6 +192,9 @@ export class WorkspaceChatComponent implements OnInit, OnChanges {
       },
       error: (error) => {
         this.sending = false;
+        // Nothing was said, so take the message back and give the text to the composer —
+        // leaving it in the transcript would claim the agent had heard it.
+        this.messages = this.messages.filter(message => message !== pending);
         this.draft = text;
         this.snackBar.open(error.error?.detail || 'The agent could not answer', 'Close', { duration: 6000 });
       }
