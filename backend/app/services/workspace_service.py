@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import dataclasses
 import logging
+from dataclasses import dataclass
 import re
 import time
 from datetime import datetime, timezone
@@ -237,14 +238,70 @@ def find_decryptable_credential(db: Session, user_id: UUID, organization_id: Opt
 
 # ── Publishing ───────────────────────────────────────────────────────────────────────
 
-async def publish_topics(db: Session, job: Job) -> List[HerettoUploadResult]:
-    """Create or update every topic in Heretto. Raises PublishError when it cannot start."""
+def _heretto_credential(db: Session, job: Job, credential_id: Optional[UUID]):
+    """The Heretto this release publishes to, and its decrypted settings.
+
+    A folder id is only meaningful in one Heretto, so the connection the folder was chosen
+    from is used when it is known. Falling back to "the organization's first Heretto
+    credential that decrypts" is for instruction sets saved before the connection was
+    recorded; with several connections that fallback is a guess, which is the reason the
+    connection is now stored.
+    """
+    chosen = credential_id or (
+        job.instruction_set.heretto_credential_id if job.instruction_set else None)
+    if chosen:
+        credential = db.query(Credential).filter(
+            Credential.id == chosen,
+            Credential.organization_id == job.organization_id,
+            Credential.type == CredentialType.HERETTO,
+        ).first()
+        if credential is None:
+            raise PublishError(
+                "The Heretto connection this folder belongs to is no longer available. "
+                "Choose the folder again."
+            )
+        try:
+            return credential, decrypt_credentials(credential.encrypted_data)
+        except Exception as exc:  # noqa: BLE001 — a stale key is the operator's to fix
+            raise PublishError(
+                f"The Heretto connection '{credential.name}' could not be read."
+            ) from exc
+
+    return find_decryptable_credential(
+        db, job.user_id, job.organization_id, CredentialType.HERETTO)
+
+
+@dataclass
+class PublishOutcome:
+    """What a publish did, and where. The folder is what a person wants to open after."""
+
+    results: List[HerettoUploadResult]
+    folder_id: Optional[str] = None
+    folder_url: Optional[str] = None
+
+    def __iter__(self):
+        # Callers that only care what happened can still iterate the outcome.
+        return iter(self.results)
+
+
+async def publish_topics(
+    db: Session, job: Job, folder_id: Optional[str] = None,
+    credential_id: Optional[UUID] = None,
+) -> PublishOutcome:
+    """Create or update every topic in Heretto. Raises PublishError when it cannot start.
+
+    `folder_id` publishes this once into somewhere other than the release's usual folder —
+    a person choosing a destination in the workspace. It is deliberately not stored: a
+    one-off destination that quietly became the default is how notes end up somewhere
+    nobody expects on the next run.
+    """
     settings = get_settings()
     instruction_set = job.instruction_set
-    folder_id = job.heretto_folder_id or (instruction_set.heretto_folder_id if instruction_set else None)
+    folder_id = folder_id or job.heretto_folder_id or (
+        instruction_set.heretto_folder_id if instruction_set else None)
     if not folder_id:
         raise PublishError("No Heretto folder is configured for this job or its instruction set.")
-    heretto_cred, heretto_config = find_decryptable_credential(db, job.user_id, job.organization_id, CredentialType.HERETTO)
+    heretto_cred, heretto_config = _heretto_credential(db, job, credential_id)
     if not heretto_cred:
         raise PublishError("No Heretto credentials found. Add one in the Credentials page.")
 
@@ -266,8 +323,20 @@ async def publish_topics(db: Session, job: Job) -> List[HerettoUploadResult]:
         db.commit()
         started = time.time()
         try:
-            if topic.heretto_doc_id:
-                result = await service.update_dita_topic(topic.heretto_doc_id, topic.dita_content)
+            document_id = topic.heretto_doc_id
+            if not document_id:
+                # A file of this name may already be there — published by an earlier
+                # release, or by hand. Update it rather than leaving the folder with two
+                # files of the same name and only one of them maintained.
+                document_id = await service.find_document(folder_id, topic.filename)
+                if document_id:
+                    logger.info(
+                        "Publishing '%s' over the existing document %s in folder %s",
+                        topic.filename, document_id, folder_id,
+                    )
+
+            if document_id:
+                result = await service.update_dita_topic(document_id, topic.dita_content)
                 if not result.success and "HTTP 404" in (result.message or ""):
                     # The document was deleted in Heretto; create it again.
                     result = await service.upload_dita_topic(topic.dita_content, topic.filename, folder_id)
@@ -278,6 +347,7 @@ async def publish_topics(db: Session, job: Job) -> List[HerettoUploadResult]:
             result = HerettoUploadResult(success=False, document_id=topic.heretto_doc_id, message="Publishing failed unexpectedly", url=None)
 
         request.duration_ms = int((time.time() - started) * 1000)
+        result.title = topic.title
         if result.success:
             topic.heretto_doc_id = result.document_id
             topic.published_at = datetime.now(timezone.utc)
@@ -291,7 +361,9 @@ async def publish_topics(db: Session, job: Job) -> List[HerettoUploadResult]:
             request.error_message = result.message
         db.commit()
         results.append(result)
-    return results
+    return PublishOutcome(
+        results=results, folder_id=folder_id, folder_url=service.folder_url(folder_id),
+    )
 
 
 # ── Response shapes ──────────────────────────────────────────────────────────────────

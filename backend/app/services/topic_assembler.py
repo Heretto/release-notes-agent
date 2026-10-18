@@ -268,6 +268,20 @@ def _base_filename(output_filename: Optional[str], fallback: str) -> str:
     return re.sub(r"[^\w.\-]", "-", name).strip("-.") or "release-notes"
 
 
+def safe_dita_filename(name: str) -> str:
+    """A filename someone typed, made safe to send to Heretto.
+
+    Path separators and anything outside word characters, dots and hyphens are removed —
+    the name goes into a request that creates a file — and a `.dita` extension is ensured,
+    because a topic published without one is not recognised as DITA.
+    """
+    base = (name or "").strip().rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    if base.lower().endswith(".dita"):
+        base = base[:-5]
+    base = re.sub(r"[^\w.\-]", "-", base).strip("-.")
+    return f"{base or 'release-notes'}.dita"
+
+
 def plan_topics(
     items: Iterable[ReleaseNoteItem],
     strategy: str,

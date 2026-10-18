@@ -18,6 +18,7 @@ from uuid import UUID
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from hop_core import dtd_sets
 from hop_core.dita import DitaValidator
 
 from app.config import get_settings
@@ -60,11 +61,27 @@ class ReleaseNotesPipeline:
     def __init__(self, db: Session, job_id: UUID, validator: Optional[DitaValidator] = None):
         self.db = db
         self.job_id = job_id
+        # Resolved per run in _load, once the job's organization and writer agent are
+        # known: an uploaded DTD set is chosen per agent or per organization.
         self.validator = validator or DitaValidator()
+        self._validator_given = validator is not None
         self.job: Optional[Job] = None
         self.instruction_set: Optional[InstructionSet] = None
         self.writer: Optional[ResolvedAgent] = None
         self.analyst: Optional[ResolvedAgent] = None
+
+    def _resolve_validator(self, job: Job) -> None:
+        """Validate against the grammar this organization — or this agent — chose.
+
+        An admin can upload their own DITA grammar (Administration → DTD sets) and an agent
+        can pick one; hop-core resolves agent choice, then organization default, then the
+        bundled OASIS set, and falls back to the bundled set if a chosen one will not load.
+        A validator handed to the constructor wins, which is how tests pin one.
+        """
+        if self._validator_given:
+            return
+        agent_id = self.instruction_set.writer_agent_id if self.instruction_set else None
+        self.validator = dtd_sets.validator_for(self.db, job.organization_id, agent_id)
 
     # ── Entry point ──────────────────────────────────────────────────────────────────
 
@@ -82,6 +99,7 @@ class ReleaseNotesPipeline:
                 raise PipelineError("The job's instruction set no longer exists.")
 
             self._resolve_agents(job)
+            self._resolve_validator(job)
             tickets = await self._fetch_issues(job)
             snapshot = sync_snapshot(self.db, job, tickets)
             job.tickets_processed = len(snapshot.seen)
@@ -635,7 +653,7 @@ class ReleaseNotesPipeline:
     async def _publish(self, job: Job) -> None:
         self._set_stage(job, JobStage.PUBLISH, "Publishing to Heretto")
         try:
-            results = await publish_topics(self.db, job)
+            results = (await publish_topics(self.db, job)).results
         except PublishError as exc:
             # Publishing is a convenience step; the notes are done. Say so rather than fail.
             job.stage_message = f"Not published: {exc}"

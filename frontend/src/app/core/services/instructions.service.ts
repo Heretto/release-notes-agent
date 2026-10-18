@@ -30,6 +30,8 @@ export interface InstructionSet {
   layout?: TopicLayout;
   dita_template_id?: string;
   heretto_folder_id?: string;
+  /** The Heretto connection that folder is in; an id alone is ambiguous. */
+  heretto_credential_id?: string | null;
   publish_to_heretto: boolean;
   is_default: boolean;
   created_at?: string;

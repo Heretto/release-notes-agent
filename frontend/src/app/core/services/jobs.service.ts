@@ -250,6 +250,15 @@ export interface PublishResult {
   success: boolean;
   document_id?: string | null;
   message: string;
+  /** Which topic this result is for. */
+  title?: string | null;
+}
+
+/** What a publish did, and the folder to open to see it. */
+export interface PublishResponse {
+  folder_id?: string | null;
+  folder_url?: string | null;
+  results: PublishResult[];
 }
 
 @Injectable({
@@ -362,8 +371,20 @@ export class JobsService {
     return this.http.get(`${this.apiUrl}/${jobId}/topics/${topicId}/download`, { responseType: 'blob' });
   }
 
-  publish(jobId: string): Observable<PublishResult[]> {
-    return this.http.post<PublishResult[]>(`${this.apiUrl}/${jobId}/publish`, {});
+  /**
+   * Publish. `folderId` sends this one publish somewhere else, and `credentialId` is the
+   * Heretto that folder is in — a folder id chosen in one connection means nothing in
+   * another, so the two always travel together.
+   */
+  publish(
+    jobId: string,
+    options: { folderId?: string; credentialId?: string; filenames?: { topic_id: string; filename: string }[] } = {},
+  ): Observable<PublishResponse> {
+    return this.http.post<PublishResponse>(`${this.apiUrl}/${jobId}/publish`, {
+      folder_id: options.folderId ?? null,
+      credential_id: options.credentialId ?? null,
+      filenames: options.filenames ?? [],
+    });
   }
 
   getChat(jobId: string): Observable<ChatMessage[]> {

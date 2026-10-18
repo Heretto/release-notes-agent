@@ -1,8 +1,9 @@
 import { Component, OnInit, ChangeDetectionStrategy, inject } from '@angular/core';
-import { Subscription, debounceTime, distinctUntilChanged } from 'rxjs';
+import { Subscription, catchError, concatMap, debounceTime, distinctUntilChanged, first, from, map, of, switchMap } from 'rxjs';
 import { FormBuilder, FormGroup, Validators, ReactiveFormsModule, FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatDialog } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
@@ -14,7 +15,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatSelectModule } from '@angular/material/select';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
-import { HopAgentService, AgentSummary } from '@heretto/hop-ui';
+import { HopAgentService, AgentSummary, HopHerettoService, openHerettoFolderBrowser } from '@heretto/hop-ui';
 import { DEFAULT_LAYOUT, STARTER_TEMPLATE, InstructionSet, InstructionsService, JiraRelease } from '../../core/services/instructions.service';
 import { CredentialsService, JiraCredentialOption } from '../../core/services/credentials.service';
 import { CHUNKING_STRATEGIES } from '../../core/services/jobs.service';
@@ -467,12 +468,35 @@ const MORE_RELEASES = 10;
           </div>
 
           @if (form.get('publish_to_heretto')?.value) {
-            <mat-form-field appearance="outline" class="full-width">
-              <mat-label>Heretto folder ID</mat-label>
-              <input matInput formControlName="heretto_folder_id"
-                     placeholder="e.g., 12345-abcde-67890">
-              <mat-hint>Target folder in Heretto where the topics are created</mat-hint>
-            </mat-form-field>
+            <div class="folder-field">
+              <span class="folder-label">Folder in Heretto</span>
+              @if (form.get('heretto_folder_id')?.value) {
+                <div class="folder-chosen">
+                  <mat-icon>folder</mat-icon>
+                  <span class="folder-text">
+                    @if (herettoFolderPath) {
+                      <span class="folder-name">{{ herettoFolderName }}</span>
+                      <span class="folder-where" [title]="herettoFolderPath">{{ herettoFolderPath }}</span>
+                    } @else if (resolvingFolder) {
+                      <span class="folder-name muted">Looking up the folder…</span>
+                    } @else {
+                      <span class="folder-name">{{ form.get('heretto_folder_id')?.value }}</span>
+                      <span class="folder-where muted">
+                        Heretto did not recognise this folder — it may have been moved or deleted.
+                      </span>
+                    }
+                  </span>
+                  <button mat-stroked-button type="button" (click)="chooseHerettoFolder()">Change</button>
+                  <button mat-icon-button type="button" aria-label="Clear the folder"
+                          (click)="clearHerettoFolder()"><mat-icon>close</mat-icon></button>
+                </div>
+              } @else {
+                <button mat-stroked-button type="button" (click)="chooseHerettoFolder()">
+                  <mat-icon>folder_open</mat-icon> Browse Heretto…
+                </button>
+              }
+              <p class="muted folder-hint">Where the release-note topics are created</p>
+            </div>
           }
         </div>
       </form>
@@ -517,6 +541,16 @@ const MORE_RELEASES = 10;
     .layout-grid mat-form-field { width: 100%; }
     .layout-preview { margin: 0; white-space: pre; overflow-x: auto; }
     .layout-modes { margin-bottom: 8px; }
+    .folder-field { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-bottom: 8px; }
+    .folder-label { font-size: 12px; font-weight: 500; color: var(--text-secondary); }
+    .folder-chosen { display: flex; align-items: center; gap: 8px; width: 100%;
+      border: 1px solid var(--border-default); border-radius: 6px; padding: 8px 10px; }
+    .folder-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+    .folder-name { font-size: 14px; font-weight: 500; overflow: hidden;
+      text-overflow: ellipsis; white-space: nowrap; }
+    .folder-where { font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+    .folder-hint { margin: 0; font-size: 12px; }
     .mode-help { margin: 0 0 12px; font-size: 12px; line-height: 1.5; max-width: 66ch; }
     .marker-help { margin: 2px 0 0; padding-left: 18px; font-size: 12px; line-height: 1.6; }
     .marker-help code { font-family: var(--font-mono); font-size: 11px; }
@@ -574,6 +608,8 @@ export class InstructionEditorComponent implements OnInit {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private snackBar = inject(MatSnackBar);
+  private dialog = inject(MatDialog);
+  private heretto = inject(HopHerettoService);
 
   /** The set being edited, or null while creating. Set once it has loaded. */
   data: InstructionSet | null = null;
@@ -618,6 +654,10 @@ export class InstructionEditorComponent implements OnInit {
       template_dita: [data?.layout?.template?.dita || ''],
       agent_guidance: [data?.layout?.agent?.guidance || ''],
       heretto_folder_id: [data?.heretto_folder_id || ''],
+      heretto_credential_id: [data?.heretto_credential_id || null],
+      // Shown instead of the id. Not stored — the id is what publishing needs, and a
+      // remembered path would go stale the moment someone moves the folder in Heretto.
+      heretto_folder_path: [''],
       publish_to_heretto: [data?.publish_to_heretto || false],
       is_default: [data?.is_default || false]
     });
@@ -712,6 +752,9 @@ export class InstructionEditorComponent implements OnInit {
     this.data = data;
     this.form = this.buildForm(data);
     this.wireFormRules();
+    if (data?.heretto_folder_id) {
+      this.resolveHerettoFolder(data.heretto_folder_id, data.heretto_credential_id || null);
+    }
   }
 
   /**
@@ -912,6 +955,82 @@ export class InstructionEditorComponent implements OnInit {
     project?.updateValueAndValidity({ emitEvent: false });
   }
 
+  resolvingFolder = false;
+
+  /** The folder's full path in Heretto, once known. */
+  get herettoFolderPath(): string {
+    return this.form?.get('heretto_folder_path')?.value || '';
+  }
+
+  /** Just the folder itself — the last segment of the path. */
+  get herettoFolderName(): string {
+    const path = this.herettoFolderPath;
+    return path.split('/').filter(Boolean).pop() || path;
+  }
+
+  /**
+   * Turn a stored folder id into a name to show.
+   *
+   * Looked up rather than stored: a path kept in our database is wrong the moment someone
+   * moves or renames the folder in Heretto, and it would be wrong silently. The id does not
+   * say which connection it belongs to — publishing resolves the organization's Heretto
+   * credential the same way — so each connection is tried until one recognises it.
+   */
+  private resolveHerettoFolder(folderId: string, credentialId: string | null): void {
+    if (!folderId) return;
+    this.resolvingFolder = true;
+
+    // One request, to the connection the folder was chosen from. Instruction sets saved
+    // before that was recorded have none, so those try each connection in turn — right
+    // for a single connection and a guess beyond it, which is why it is stored now.
+    const named = credentialId
+      ? this.heretto.openFolder(credentialId, folderId, true).pipe(
+          map(listing => listing.path || listing.name),
+          catchError(() => of('')),
+        )
+      : this.heretto.connections().pipe(
+          switchMap(connections => from(connections).pipe(
+            concatMap(connection => this.heretto.openFolder(connection.id, folderId, true).pipe(
+              map(listing => listing.path || listing.name),
+              catchError(() => of('')),   // not this connection's folder; try the next
+            )),
+            first(label => !!label, ''),
+          )),
+        );
+
+    named.subscribe({
+      next: label => {
+        this.resolvingFolder = false;
+        if (label) this.form.patchValue({ heretto_folder_path: label });
+      },
+      error: () => this.resolvingFolder = false,
+    });
+  }
+
+  chooseHerettoFolder(): void {
+    openHerettoFolderBrowser(this.dialog, {
+      title: 'Where should release notes be published?',
+      purpose: 'The topics this instruction set produces are created in this folder.',
+      folderId: this.form.get('heretto_folder_id')?.value || null,
+      credentialId: this.form.get('heretto_credential_id')?.value || null,
+    }).subscribe(folder => {
+      if (!folder) return;
+      this.form.patchValue({
+        heretto_folder_id: folder.id,
+        // The connection travels with the folder: an id chosen here means nothing in
+        // another Heretto, and publishing has to know which one to talk to.
+        heretto_credential_id: folder.credential_id,
+        heretto_folder_path: folder.path || folder.name,
+      });
+      this.form.markAsDirty();
+    });
+  }
+
+  clearHerettoFolder(): void {
+    this.form.patchValue({ heretto_folder_id: '', heretto_credential_id: null, heretto_folder_path: '' });
+    this.form.markAsDirty();
+  }
+
   onCancel(): void {
     this.router.navigate(['/instructions']);
   }
@@ -935,7 +1054,8 @@ export class InstructionEditorComponent implements OnInit {
       }
     };
     for (const key of ['group_heading', 'notes_wrapper', 'note_element', 'shortdesc',
-                       'shortdesc_text', 'layout_mode', 'template_dita', 'agent_guidance']) {
+                       'shortdesc_text', 'layout_mode', 'template_dita', 'agent_guidance',
+                       'heretto_folder_path']) {
       delete value[key];
     }
 
@@ -952,7 +1072,8 @@ export class InstructionEditorComponent implements OnInit {
       }
     };
     for (const key of ['group_heading', 'notes_wrapper', 'note_element', 'shortdesc',
-                       'shortdesc_text', 'layout_mode', 'template_dita', 'agent_guidance']) {
+                       'shortdesc_text', 'layout_mode', 'template_dita', 'agent_guidance',
+                       'heretto_folder_path']) {
       delete value[key];
     }
 

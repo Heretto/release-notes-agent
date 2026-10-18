@@ -191,6 +191,8 @@ class InstructionSetBase(BaseModel):
     jira_credential_id: Optional[UUID] = None
     dita_template_id: Optional[UUID] = None
     heretto_folder_id: Optional[str] = None
+    #: The Heretto connection that folder belongs to; an id alone is ambiguous.
+    heretto_credential_id: Optional[UUID] = None
     publish_to_heretto: bool = False
     is_default: bool = False
     # Agents by role: the writer writes every note's DITA and runs the workspace chat; the
@@ -226,6 +228,7 @@ class InstructionSetUpdate(BaseModel):
     jira_credential_id: Optional[UUID] = None
     dita_template_id: Optional[UUID] = None
     heretto_folder_id: Optional[str] = None
+    heretto_credential_id: Optional[UUID] = None
     publish_to_heretto: Optional[bool] = None
     is_default: Optional[bool] = None
     writer_agent_id: Optional[UUID] = None
@@ -562,7 +565,10 @@ class HerettoUploadResult(BaseModel):
     success: bool
     document_id: Optional[str]
     message: str
+    #: The REST endpoint the upload used — not a link to give anyone.
     url: Optional[str]
+    #: The topic this result is for; set by the caller, which knows.
+    title: Optional[str] = None
 
 # Organization schemas
 class OrganizationBase(BaseModel):

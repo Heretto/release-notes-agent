@@ -20,6 +20,7 @@ import { InstructionsService, InstructionSet } from '../../../core/services/inst
 import { WorkspaceChatComponent } from './workspace-chat.component';
 import { WorkspaceItemDetailComponent } from './workspace-item-detail.component';
 import { ShareReviewDialogComponent } from './share-review-dialog.component';
+import { PublishDialogComponent, PublishDialogResult } from './publish-dialog.component';
 
 interface ItemGroup {
   name: string;
@@ -652,33 +653,32 @@ export class WorkspaceComponent implements OnInit, OnDestroy {
     for (const topic of this.topics) this.downloadTopic(topic);
   }
 
+  /**
+   * Publish, with the chance to send this one somewhere else.
+   *
+   * The confirm dialog only ever said how many topics; where they were going was invisible
+   * until they arrived. The folder is now named, and changeable for this publish only —
+   * an override that quietly became the default is how notes end up somewhere nobody
+   * expects on the next run.
+   */
+  /**
+   * Publish to Heretto. The dialog does the work and shows what came out, including a
+   * link to each topic — this only reloads afterwards, so published-at times are current.
+   */
   publish(): void {
     if (!this.job) return;
-    const ref = this.dialog.open(HopConfirmDialogComponent, {
+    const ref = this.dialog.open(PublishDialogComponent, {
+      width: '540px',
       data: {
-        title: 'Publish to Heretto',
-        message: `Create or update ${this.topics.length} topic(s) in Heretto with the current release notes?`,
-        confirmText: 'Publish'
+        jobId: this.job.id,
+        topics: this.topics,
+        folderId: this.job.heretto_folder_id || this.instructionSet?.heretto_folder_id || null,
+        credentialId: this.instructionSet?.heretto_credential_id || null,
+        usual: !this.job.heretto_folder_id && !!this.instructionSet?.heretto_folder_id,
       }
     });
-    ref.afterClosed().subscribe(confirmed => {
-      if (!confirmed) return;
-      this.busy = true;
-      this.jobsService.publish(this.job!.id).subscribe({
-        next: (results) => {
-          this.busy = false;
-          const failed = results.filter(r => !r.success);
-          this.snackBar.open(
-            failed.length ? `Published ${results.length - failed.length} of ${results.length}: ${failed[0].message}` : `Published ${results.length} topic(s)`,
-            'Close', { duration: 6000 }
-          );
-          this.reload();
-        },
-        error: (error) => {
-          this.busy = false;
-          this.snackBar.open(error.error?.detail || 'Publishing failed', 'Close', { duration: 6000 });
-        }
-      });
+    ref.afterClosed().subscribe((result: PublishDialogResult | undefined) => {
+      if (result?.published) this.reload();
     });
   }
 

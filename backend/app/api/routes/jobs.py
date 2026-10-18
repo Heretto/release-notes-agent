@@ -28,9 +28,12 @@ from app.models.schemas import (
     JobStatusEnum, JobUpdate, ReassembleRequest, ReleaseNoteItemDetailResponse, ReleaseNoteItemResponse,
     ReleaseNoteItemUpdate, ReleaseNoteTopicResponse,
 )
+from hop_core import dtd_sets
+from hop_core.dita import DitaValidator
+
 from app.services.job_orchestrator import JobOrchestrator
 from app.services.jql_variables import RELEASE_VARIABLE, query_for_job, release_query, resolve as resolve_jql
-from app.services.topic_assembler import FragmentError
+from app.services.topic_assembler import FragmentError, safe_dita_filename
 from app.services.workspace_chat import ChatUnavailable, WorkspaceChat
 from app.services.workspace_service import (
     PublishError, assemble_job_topics, chat_message_to_response, comment_to_response,
@@ -115,9 +118,20 @@ def _queue_run(job: Job, background_tasks: BackgroundTasks, db: Session) -> None
     background_tasks.add_task(JobOrchestrator().process_job, job_id=job.id)
 
 
+def _validator_for(db: Session, job: Job) -> DitaValidator:
+    """The grammar this release validates against — see hop_core.dtd_sets.validator_for.
+
+    Resolved per request rather than cached: an admin can change the organization's DTD
+    set between one save and the next, and a stale validator would accept markup the set
+    no longer allows.
+    """
+    agent_id = job.instruction_set.writer_agent_id if job.instruction_set else None
+    return dtd_sets.validator_for(db, job.organization_id, agent_id)
+
+
 def _reassemble(db: Session, job: Job) -> None:
     try:
-        assemble_job_topics(db, job)
+        assemble_job_topics(db, job, validator=_validator_for(db, job))
     except FragmentError as exc:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -516,7 +530,8 @@ async def update_job_item(
         changed = True
     if update.dita_content is not None:
         try:
-            if set_item_content(db, item, update.dita_content, actor="user", user_id=user_id):
+            if set_item_content(db, item, update.dita_content, actor="user", user_id=user_id,
+                                validator=_validator_for(db, job)):
                 changed = True
         except FragmentError as exc:
             db.rollback()
@@ -711,7 +726,7 @@ async def reassemble_job_topics(
     job = _get_job(job_id, context, db)
     _require_idle(job)
     try:
-        assemble_job_topics(db, job, data.chunking_strategy)
+        assemble_job_topics(db, job, data.chunking_strategy, _validator_for(db, job))
     except FragmentError as exc:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -742,11 +757,42 @@ class PublishResult(BaseModel):
     success: bool
     document_id: Optional[str] = None
     message: str
+    #: Which topic this is, so a list of results can be read without counting.
+    title: Optional[str] = None
 
 
-@router.post("/{job_id}/publish", response_model=List[PublishResult])
+class PublishResponse(BaseModel):
+    """What was published, and the folder to open to see it."""
+    folder_id: Optional[str] = None
+    #: Heretto's own address for that folder; absent if it could not be built.
+    folder_url: Optional[str] = None
+    results: List[PublishResult] = Field(default_factory=list)
+
+
+class PublishFilename(BaseModel):
+    topic_id: UUID
+    filename: str = Field(..., min_length=1, max_length=255)
+
+
+class PublishRequest(BaseModel):
+    """`folder_id` publishes this one time somewhere other than the usual folder.
+
+    `credential_id` is the Heretto that folder is in. Sent with it, because a folder id
+    chosen in one connection means nothing in another.
+
+    `filenames` renames topics before publishing. Unlike the folder, these **are** kept:
+    a filename is what the topic is called, not a property of one publish, and the next
+    run would otherwise write the old name back.
+    """
+    folder_id: Optional[str] = Field(None, max_length=255)
+    credential_id: Optional[UUID] = None
+    filenames: List[PublishFilename] = Field(default_factory=list)
+
+
+@router.post("/{job_id}/publish", response_model=PublishResponse)
 async def publish_job(
     job_id: UUID,
+    request: Optional[PublishRequest] = None,
     context: CurrentUserContext = Depends(get_current_active_user_with_org),
     db: Session = Depends(get_db),
 ):
@@ -755,11 +801,42 @@ async def publish_job(
     _require_idle(job)
     if not job.topics:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="There are no topics to publish yet.")
+
+    for chosen in (request.filenames if request else []):
+        topic = next((t for t in job.topics if t.id == chosen.topic_id), None)
+        if topic is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="One of the topics being renamed is not part of this release.",
+            )
+        filename = safe_dita_filename(chosen.filename)
+        if filename != topic.filename:
+            # A rename means the old document is no longer this topic's; publishing finds
+            # or creates the one that matches the new name.
+            topic.filename = filename
+            topic.heretto_doc_id = None
+    if request and request.filenames:
+        db.commit()
+
     try:
-        results = await publish_topics(db, job)
+        outcome = await publish_topics(
+            db, job,
+            (request.folder_id if request else None) or None,
+            (request.credential_id if request else None),
+        )
     except PublishError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
-    return [PublishResult(success=r.success, document_id=r.document_id, message=r.message) for r in results]
+    return PublishResponse(
+        folder_id=outcome.folder_id,
+        folder_url=outcome.folder_url,
+        results=[
+            PublishResult(
+                success=r.success, document_id=r.document_id, message=r.message,
+                title=getattr(r, "title", None),
+            )
+            for r in outcome.results
+        ],
+    )
 
 
 # ── Workspace: chat ──────────────────────────────────────────────────────────────────

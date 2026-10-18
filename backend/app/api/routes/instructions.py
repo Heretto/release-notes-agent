@@ -24,7 +24,7 @@ router = APIRouter(prefix="/instructions")
 _INSTRUCTION_UPDATABLE_FIELDS = {
     "name", "description", "source_mode", "jira_project", "extra_jql",
     "jql_query", "variables", "jira_credential_id",
-    "dita_template_id", "heretto_folder_id",
+    "dita_template_id", "heretto_folder_id", "heretto_credential_id",
     "publish_to_heretto", "is_default",
     "writer_agent_id", "analysis_agent_id", "product_name",
     "relevance_guidance", "organization_guidance", "chunking_strategy", "layout",
@@ -45,6 +45,7 @@ def _to_response(instruction_set: InstructionSet) -> InstructionSetResponse:
         jira_credential_id=instruction_set.jira_credential_id,
         dita_template_id=instruction_set.dita_template_id,
         heretto_folder_id=instruction_set.heretto_folder_id,
+        heretto_credential_id=instruction_set.heretto_credential_id,
         publish_to_heretto=bool(instruction_set.publish_to_heretto),
         is_default=bool(instruction_set.is_default),
         writer_agent_id=instruction_set.writer_agent_id,
@@ -70,6 +71,26 @@ def _validate_agent_id(agent_id: Optional[UUID], organization_id: UUID, db: Sess
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"{role.capitalize()} agent not found in organization: {agent_id}"
+        )
+
+
+def _validate_heretto_credential_id(heretto_credential_id, organization_id: UUID, db: Session) -> None:
+    """Raise 404 if the Heretto connection doesn't belong to this organization.
+
+    Same reason the Jira one is checked: a credential id arrives from the browser, and
+    publishing would otherwise use another organization's connection.
+    """
+    if heretto_credential_id is None:
+        return
+    found = db.query(Credential.id).filter(
+        Credential.id == heretto_credential_id,
+        Credential.organization_id == organization_id,
+        Credential.type == CredentialType.HERETTO,
+    ).first()
+    if not found:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Heretto connection not found in organization: {heretto_credential_id}"
         )
 
 
@@ -111,6 +132,7 @@ async def create_instruction_set(
     _validate_agent_id(instruction_data.writer_agent_id, context.organization_id, db, "writer")
     _validate_agent_id(instruction_data.analysis_agent_id, context.organization_id, db, "analysis")
     _validate_jira_credential_id(instruction_data.jira_credential_id, context.organization_id, db)
+    _validate_heretto_credential_id(instruction_data.heretto_credential_id, context.organization_id, db)
 
     if instruction_data.is_default:
         db.query(InstructionSet).filter(
@@ -171,6 +193,8 @@ async def update_instruction_set(
     update_data = instruction_data.model_dump(exclude_unset=True, mode="json")
     if "jira_credential_id" in update_data:
         _validate_jira_credential_id(update_data["jira_credential_id"], context.organization_id, db)
+    if "heretto_credential_id" in update_data:
+        _validate_heretto_credential_id(update_data["heretto_credential_id"], context.organization_id, db)
     if "writer_agent_id" in update_data:
         _validate_agent_id(update_data["writer_agent_id"], context.organization_id, db, "writer")
     if "analysis_agent_id" in update_data:

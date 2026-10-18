@@ -1,6 +1,6 @@
 # release-notes-agent — agent notes
 
-Built on [hop-core](https://github.com/Heretto/hop-core), pinned at **v0.1.14**.
+Built on [hop-core](https://github.com/Heretto/hop-core), pinned at **v0.1.17**.
 
 Automated DITA release-notes generation from Jira tickets: FastAPI backend, Angular 22
 frontend, Celery workers, Postgres, Redis.
@@ -213,11 +213,60 @@ credentials stored by the old routes keep working.
   ("temperature is deprecated for this model"); the pipeline and the workspace chat leave it
   unset and take the provider default. `tests/unit/services/test_anthropic_temperature.py`
   covers the older adapter's fallback for the same reason.
-- **The bundled DITA 1.3 DTD (hop-core `topic.dtd`) does not declare `<codeph>`, `<codeblock>`,
-  `<uicontrol>` or `<filepath>`.** The writer's format rules (`pipeline_prompts.FRAGMENT_FORMAT`)
-  list only elements that validate (`<tt>`, `<pre>`, `<note>`, `<dl>`, `<simpletable>`, …); a
-  fragment that fails the DTD is retried once with the errors and then falls back to the plain
-  summary, flagged for attention.
+- **The Heretto folder is chosen with hop-core's browser** (`openHerettoFolderBrowser`,
+  v0.1.17). v0.1.16 could only pick a file, so this app carried its own folder picker for
+  one release; it is gone. The browser returns a `HerettoFolder` but an instruction set
+  stores only `heretto_folder_id`, and the folder's name is **looked up, never stored** — a
+  path kept in our database is wrong the moment someone moves or renames the folder in
+  Heretto, and wrong silently. Opening an instruction set resolves the id through
+  `HopHerettoService.openFolder` — one request, because
+  `instruction_sets.heretto_credential_id` records **which Heretto the folder is in**. A
+  folder id is meaningless without it: an organization can have several connections, and the
+  same id in another one is missing or a different folder. Publishing uses that connection
+  too; it used to take "the organization's first Heretto credential that decrypts", which
+  beyond one connection is a guess that can aim a folder id at the wrong system. Sets saved
+  before the column existed have no connection and fall back to trying each in turn (display)
+  and to the old guess (publishing) — re-picking the folder records it. The publish override
+  carries its connection the same way. A folder Heretto no longer recognises shows its id and
+  says so, rather than a name that is no longer true. Needs `include_heretto_router` (on by
+  default).
+  A folder chosen when publishing from the workspace applies to **that publish only** and is
+  never stored: a one-off destination that quietly became the default is how notes end up
+  somewhere nobody expects on the next run. The publish dialog **does the publishing itself**
+  and shows the result in place, ending with a link to the folder everything landed in:
+  `{server_url}/#map-editor;folder={folder_id}`, built by `HerettoService.folder_url` from
+  the credential's own `server_url` — the same base the upload goes to, so no second setting
+  is involved. The dialog also names the files: a
+  filename **is** kept (unlike the folder) because it is what the topic is called, not a
+  property of one publish, and the next run would write the old name back. Renaming clears
+  `heretto_doc_id`, since the old document is no longer this topic's. **Publishing adopts a
+  file of the same name rather than creating a second one** — `HerettoService.find_document`
+  looks in the folder first, because Heretto will happily hold two files with one name and
+  only one of them maintained. The overwrite warning in the dialog is advisory (it needs a
+  connection id to browse with, which older instruction sets lack); the adoption is what
+  actually protects the folder.
+  Do not reach for `HerettoUploadResult.url`: that is the REST endpoint the
+  upload used and answers a browser with API output or a 401. A per-document link was tried
+  first (`/#/editor/{id}`, copied from hop-core's `editor_url`) and does not resolve in
+  Heretto — hop-core's own file links are likely wrong for the same reason.
+- **An organization can bring its own DITA grammar, and this app validates against it.**
+  `create_hop_app(include_dtd_sets_router=True)` mounts `/dtd-sets`; hop-ui's admin page
+  already contains the DTD sets section and **probes that endpoint to decide whether to show
+  itself**, so leaving the router off (its default) silently hides the feature rather than
+  erroring. Uploads live in the database, so there is nothing to configure. Validation then
+  has to *use* the set: every validator comes from `hop_core.dtd_sets.validator_for(db,
+  organization_id, agent_id)`, which resolves the agent's choice, then the organization
+  default, then the bundled OASIS grammar — a bare `DitaValidator()` ignores an uploaded set
+  and silently validates against the wrong grammar. Request handlers resolve it per request
+  (`jobs._validator_for`), because an admin can change the set between two saves.
+- **DITA validates against the full technicalContent shells as of hop-core v0.1.16** —
+  `hop_core/dita/grammar.py` maps `topic` to `dtd/technicalContent/dtd/topic.dtd` and gives
+  xmllint a catalog and an entity-amplification profile. Until v0.1.14 a `<topic>` was
+  validated against the *base* DTD, which declares none of the technical-content domains, so
+  `<codeph>`, `<codeblock>`, `<uicontrol>` and `<filepath>` were rejected as invalid and
+  `pipeline_prompts.FRAGMENT_FORMAT` told the writer to avoid them. They validate now.
+  A fragment that still fails the DTD is retried once with the errors and then falls back to
+  the plain summary, flagged for attention.
 - **Jobs run in the API process via `BackgroundTasks` with their own session** (`JobOrchestrator()`
   without a `db`): a request-scoped session is closed before a background task runs on this
   FastAPI version's successor, so never hand one in from a route.
@@ -254,6 +303,10 @@ credentials stored by the old routes keep working.
   `ng update @angular/cli --name migrate-karma-to-vitest`.
 
 ## Upgrading hop-core
+
+Pinned at **v0.1.16**. v0.1.16 removed `DitaValidator._XMLLINT_DTD_FILES` (the grammar moved
+to `hop_core/dita/grammar.py`), so anything that subclassed it to redirect a DTD breaks at
+import — check for that before upgrading again.
 
 Resolve the current release (hop-core `AGENTS.md`, Step 0 — do not copy a version out of any
 document, including this one), bump the Python requirement in `backend/requirements.txt` and

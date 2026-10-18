@@ -10,8 +10,8 @@ from app.models.database import ChunkingStrategy
 from app.services.llm_json import extract_json
 from app.services.topic_assembler import (
     FragmentError, Layout, build_topic_xml, coerce_fragment, fragment_title, normalize_fragment,
-    note_element, plan_topics, plain_text_fragment, template_errors, validate_fragment,
-    validate_topic,
+    note_element, plan_topics, plain_text_fragment, safe_dita_filename, template_errors,
+    validate_fragment, validate_topic,
 )
 
 
@@ -275,3 +275,23 @@ class TestTemplateLayout:
         layout = Layout(mode="agent", guidance="something", template="")
         xml = build_topic_xml(self._plan(), layout=layout)
         assert "<section" in xml and validate_topic(xml) == []
+
+
+class TestSafeDitaFilename:
+    """A filename someone typed goes into a request that creates a file in Heretto."""
+
+    @pytest.mark.parametrize("typed,expected", [
+        ("notes", "notes.dita"),
+        ("notes.dita", "notes.dita"),
+        ("NOTES.DITA", "NOTES.dita"),
+        ("Release Notes 2026.10", "Release-Notes-2026.10.dita"),
+        ("", "release-notes.dita"),
+        ("   ", "release-notes.dita"),
+    ])
+    def test_shapes(self, typed, expected):
+        assert safe_dita_filename(typed) == expected
+
+    @pytest.mark.parametrize("typed", ["../../etc/passwd", "a/b/c.dita", "..\\\\windows\\\\x"])
+    def test_path_separators_do_not_survive(self, typed):
+        out = safe_dita_filename(typed)
+        assert "/" not in out and "\\\\" not in out and ".." not in out
