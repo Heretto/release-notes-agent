@@ -66,6 +66,19 @@ stamps it with the note's `fragment_id` and `outputclass="release-note"` — the
 preview maps rendered DITA back to a note through exactly that pair, so every layout mode
 must keep doing it.
 
+**Chat feedback can become the writer agent's standing memory.** The workspace chat has a
+`remember` tool that appends to `agents.feedback_memory` — hop-core's own field, written in
+the same `### heading` shape its `POST /agents/{id}/memory` route uses — and hop-core feeds
+that field into the agent's system prompt on every run ("Feedback you have received"), so a
+rule recorded in chat reaches the next release with nothing else wired up. It is the
+**agent's** memory, so it also applies to every other instruction set using that writer.
+The judgement is prompt-side (`workspace_chat`, "Feedback and memory") and deliberately
+biased against recording: explicit standing language ("always", "never", "from now on") is
+recorded and reported in one sentence; a preference whose reach is unclear is acted on and
+then *asked* about once; a one-off correction is acted on with memory never mentioned. The
+asymmetry is the reason — a rule taken from a passing remark is wrong on every later release
+and nobody watches it happen, while a missed rule costs one sentence next time.
+
 **Instruction sets name agents by role** (`writer_agent_id`, `analysis_agent_id`), not an
 ordered chain; the `instruction_set_agents` table is gone (migration
 `add_collaborative_workflow` moved the first chain agent into the writer slot).

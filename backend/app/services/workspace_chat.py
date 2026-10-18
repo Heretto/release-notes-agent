@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Set
 from uuid import UUID
 
@@ -84,6 +85,17 @@ TOOLS: List[ToolSpec] = [
            "group_name": {"type": "string"},
            "issue_keys": {"type": "array", "items": {"type": "string"}}},
           ["title", "summary"]),
+    _tool("remember",
+          "Record a standing rule in your own memory, so it applies to every release you write "
+          "from now on. Only for instructions meant to hold beyond this note — see 'Feedback "
+          "and memory' for when to call this and when not to.",
+          {"rule": {"type": "string",
+                    "description": "The rule, written so it makes sense months later and with no "
+                                   "reference to this conversation. E.g. 'Mark anything affecting "
+                                   "the public API as Breaking change.'"},
+           "heading": {"type": "string",
+                       "description": "A few words naming the rule (optional); today's date is used otherwise."}},
+          ["rule"]),
     _tool("reorganize_topics",
           "Re-split the notes into DITA topics: 'single' (one topic), 'by_group' (one per group), "
           "'by_component' (one per Jira component).",
@@ -227,6 +239,31 @@ Groups in order: {', '.join(groups) if groups else '(none yet)'}.
   facts true to its Jira issues, and send the COMPLETE fragment to update_note.
 - Statuses: draft, review, approved, rejected (rejected notes are left out of the output).
 - When asked to split or reorganize the release notes into topics, use reorganize_topics.
+
+## Feedback and memory
+
+Some requests are about this note. A few are about how you write, always. Only the second
+kind belongs in your memory, and the cost of the two mistakes is not the same: a rule
+recorded from a passing remark is wrong on every release afterwards and nobody sees it
+happen, while a rule missed costs one sentence next time. **When it is not clear, do not
+record it.**
+
+Judge what was asked and take exactly one of these three:
+
+1. **Plainly a standing rule** — "always", "never", "from now on", "every release", "our
+   style is". Do the work, call `remember` with the rule, and say in one short sentence that
+   you have added it. Do not ask first; they already told you.
+
+2. **Possibly a standing rule, possibly this once** — a preference stated without saying how
+   far it reaches ("this should be in past tense", "we don't say 'excited' here"). Do the
+   work, then ask whether to remember it for future releases. One question, at the end of
+   your reply. Call `remember` only if they say yes.
+
+3. **This note, this time** — a correction, a fact, a wording fix ("this is wrong, it should
+   say X", "drop the second paragraph"). Do the work. Say nothing about memory at all.
+
+Most requests are the third kind. Do not ask about memory more than once in a reply, and
+never ask about something you have already been told to remember.
 {house_style(job.instruction_set.organization_guidance if job.instruction_set else None)}
 
 {FRAGMENT_FORMAT}"""
@@ -438,6 +475,36 @@ Groups in order: {', '.join(groups) if groups else '(none yet)'}.
         self.db.flush()
         self._log("create_note", args, True, f"created {item.fragment_id}", f"Created “{item.title}”")
         return f"Created “{item.title}” ({item.fragment_id})" + (f" linked to {', '.join(linked)}" if linked else "") + "."
+
+    def _tool_remember(self, args: dict) -> str:
+        """Append a standing rule to the writer agent's feedback memory.
+
+        hop-core already feeds `feedback_memory` into the agent's system prompt on every
+        run ("Feedback you have received"), so a rule recorded here applies to the next
+        release without anything else being wired up. Written in the same shape as
+        hop-core's own append route so the agent editor's memory reads consistently.
+        """
+        rule = (args.get("rule") or "").strip()
+        if not rule:
+            self._log("remember", args, False, "no rule given")
+            return "Say what the rule is."
+
+        agent = self.job.instruction_set.writer_agent if self.job.instruction_set else None
+        if agent is None:
+            self._log("remember", args, False, "no writer agent")
+            return "There is no writer agent to remember this."
+
+        heading = (args.get("heading") or "").strip() or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        entry = f"### {heading}\n\n{rule}"
+        existing = (agent.feedback_memory or "").rstrip()
+        agent.feedback_memory = f"{existing}\n\n{entry}" if existing else entry
+        self.db.commit()
+
+        self._log("remember", args, True, f"remembered: {rule[:80]}", f"Added a rule to {agent.name}'s memory")
+        return (
+            f"Added to your memory under '{heading}'. It will apply to every release you write "
+            "from now on."
+        )
 
     def _tool_reorganize_topics(self, args: dict) -> str:
         strategy = (args.get("strategy") or "").strip().lower()
