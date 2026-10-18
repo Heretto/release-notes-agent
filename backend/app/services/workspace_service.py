@@ -321,6 +321,7 @@ async def publish_topics(
             result = HerettoUploadResult(success=False, document_id=topic.heretto_doc_id, message="Publishing failed unexpectedly", url=None)
 
         request.duration_ms = int((time.time() - started) * 1000)
+        result.title = topic.title
         if result.success:
             topic.heretto_doc_id = result.document_id
             topic.published_at = datetime.now(timezone.utc)

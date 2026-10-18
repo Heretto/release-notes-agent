@@ -250,6 +250,10 @@ export interface PublishResult {
   success: boolean;
   document_id?: string | null;
   message: string;
+  /** Which topic this result is for. */
+  title?: string | null;
+  /** Where to open it in Heretto. Absent when publishing failed. */
+  editor_url?: string | null;
 }
 
 @Injectable({

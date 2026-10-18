@@ -757,6 +757,10 @@ class PublishResult(BaseModel):
     success: bool
     document_id: Optional[str] = None
     message: str
+    #: Which topic this is, so a list of results can be read without counting.
+    title: Optional[str] = None
+    #: Where to open it in Heretto. Absent when publishing failed.
+    editor_url: Optional[str] = None
 
 
 class PublishRequest(BaseModel):
@@ -789,7 +793,13 @@ async def publish_job(
         )
     except PublishError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
-    return [PublishResult(success=r.success, document_id=r.document_id, message=r.message) for r in results]
+    return [
+        PublishResult(
+            success=r.success, document_id=r.document_id, message=r.message,
+            title=getattr(r, "title", None), editor_url=r.editor_url,
+        )
+        for r in results
+    ]
 
 
 # ── Workspace: chat ──────────────────────────────────────────────────────────────────

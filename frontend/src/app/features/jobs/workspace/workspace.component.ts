@@ -661,36 +661,24 @@ export class WorkspaceComponent implements OnInit, OnDestroy {
    * an override that quietly became the default is how notes end up somewhere nobody
    * expects on the next run.
    */
+  /**
+   * Publish to Heretto. The dialog does the work and shows what came out, including a
+   * link to each topic — this only reloads afterwards, so published-at times are current.
+   */
   publish(): void {
     if (!this.job) return;
     const ref = this.dialog.open(PublishDialogComponent, {
-      width: '520px',
+      width: '540px',
       data: {
+        jobId: this.job.id,
         topicCount: this.topics.length,
         folderId: this.job.heretto_folder_id || this.instructionSet?.heretto_folder_id || null,
+        credentialId: this.instructionSet?.heretto_credential_id || null,
         usual: !this.job.heretto_folder_id && !!this.instructionSet?.heretto_folder_id,
       }
     });
     ref.afterClosed().subscribe((result: PublishDialogResult | undefined) => {
-      if (!result) return;
-      this.busy = true;
-      this.jobsService.publish(
-        this.job!.id, result.folderId || undefined, result.credentialId || undefined,
-      ).subscribe({
-        next: (results) => {
-          this.busy = false;
-          const failed = results.filter(r => !r.success);
-          this.snackBar.open(
-            failed.length ? `Published ${results.length - failed.length} of ${results.length}: ${failed[0].message}` : `Published ${results.length} topic(s)`,
-            'Close', { duration: 6000 }
-          );
-          this.reload();
-        },
-        error: (error) => {
-          this.busy = false;
-          this.snackBar.open(error.error?.detail || 'Publishing failed', 'Close', { duration: 6000 });
-        }
-      });
+      if (result?.published) this.reload();
     });
   }
 

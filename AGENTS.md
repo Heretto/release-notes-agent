@@ -232,7 +232,10 @@ credentials stored by the old routes keep working.
   default).
   A folder chosen when publishing from the workspace applies to **that publish only** and is
   never stored: a one-off destination that quietly became the default is how notes end up
-  somewhere nobody expects on the next run.
+  somewhere nobody expects on the next run. The publish dialog **does the publishing itself**
+  and shows the result in place, with a link per topic — `HerettoUploadResult.url` is the
+  REST endpoint the upload used and is not a link to give anyone, so `editor_url`
+  (`{server}/#/editor/{id}`, the shape hop-core uses) is what the UI offers.
 - **An organization can bring its own DITA grammar, and this app validates against it.**
   `create_hop_app(include_dtd_sets_router=True)` mounts `/dtd-sets`; hop-ui's admin page
   already contains the DTD sets section and **probes that endpoint to decide whether to show
