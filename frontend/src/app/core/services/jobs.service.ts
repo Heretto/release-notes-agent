@@ -376,9 +376,15 @@ export class JobsService {
    * Heretto that folder is in — a folder id chosen in one connection means nothing in
    * another, so the two always travel together.
    */
-  publish(jobId: string, folderId?: string, credentialId?: string): Observable<PublishResponse> {
-    return this.http.post<PublishResponse>(`${this.apiUrl}/${jobId}/publish`,
-      folderId ? { folder_id: folderId, credential_id: credentialId ?? null } : {});
+  publish(
+    jobId: string,
+    options: { folderId?: string; credentialId?: string; filenames?: { topic_id: string; filename: string }[] } = {},
+  ): Observable<PublishResponse> {
+    return this.http.post<PublishResponse>(`${this.apiUrl}/${jobId}/publish`, {
+      folder_id: options.folderId ?? null,
+      credential_id: options.credentialId ?? null,
+      filenames: options.filenames ?? [],
+    });
   }
 
   getChat(jobId: string): Observable<ChatMessage[]> {

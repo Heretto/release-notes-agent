@@ -4,11 +4,14 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { openHerettoFolderBrowser } from '@heretto/hop-ui';
-import { JobsService, PublishResponse, PublishResult } from '../../../core/services/jobs.service';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatInputModule } from '@angular/material/input';
+import { HopHerettoService } from '@heretto/hop-ui';
+import { JobsService, PublishResponse, PublishResult, ReleaseNoteTopic } from '../../../core/services/jobs.service';
 
 export interface PublishDialogData {
   jobId: string;
-  topicCount: number;
+  topics: ReleaseNoteTopic[];
   /** Where this release publishes today — its own folder, or its instruction set's. */
   folderId: string | null;
   /** The Heretto that folder is in, when the instruction set recorded one. */
@@ -34,18 +37,26 @@ export interface PublishDialogResult {
  * became the release's default is how notes end up somewhere nobody expects on the next
  * run, so nothing here is saved.
  */
+/** One topic, and what it will be called in Heretto. */
+interface PublishFile {
+  topicId: string;
+  title: string;
+  filename: string;
+}
+
 @Component({
   selector: 'app-publish-dialog',
   standalone: true,
-  imports: [MatDialogModule, MatButtonModule, MatIconModule, MatProgressSpinnerModule],
+  imports: [MatDialogModule, MatButtonModule, MatIconModule, MatProgressSpinnerModule,
+    MatFormFieldModule, MatInputModule],
   template: `
     <h2 mat-dialog-title>{{ results ? heading : 'Publish to Heretto' }}</h2>
 
     <mat-dialog-content>
       @if (!results) {
         <p class="intro">
-          Create or update {{ data.topicCount }} topic{{ data.topicCount === 1 ? '' : 's' }} with
-          the current release notes.
+          Create or update {{ files.length }} topic{{ files.length === 1 ? '' : 's' }} with the
+          current release notes.
         </p>
 
         <span class="label">Destination</span>
@@ -75,10 +86,31 @@ export interface PublishDialogResult {
           </button>
         }
 
+        <span class="label files-label">
+          File name{{ files.length === 1 ? '' : 's' }}
+          @if (checkingFolder) { <span class="muted"> · checking the folder…</span> }
+        </span>
+        @for (file of files; track file.topicId) {
+          <div class="file">
+            <mat-form-field appearance="outline" subscriptSizing="dynamic" class="file-field">
+              <mat-label>{{ file.title }}</mat-label>
+              <input matInput class="mono" [value]="file.filename" [disabled]="publishing"
+                     (input)="rename(file, $any($event.target).value)">
+            </mat-form-field>
+            @if (collision(file)) {
+              <p class="overwrite">
+                <mat-icon>warning</mat-icon>
+                A file called <code>{{ file.filename }}</code> is already in this folder. Publishing
+                will overwrite it.
+              </p>
+            }
+          </div>
+        }
+
         @if (publishing) {
           <div class="working">
             <mat-spinner diameter="20"></mat-spinner>
-            <span>Publishing {{ data.topicCount }} topic{{ data.topicCount === 1 ? '' : 's' }}…</span>
+            <span>Publishing {{ files.length }} topic{{ files.length === 1 ? '' : 's' }}…</span>
           </div>
         }
         @if (error) {
@@ -142,12 +174,21 @@ export interface PublishDialogResult {
     .result-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
     .result-title { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .open-folder { margin-top: 16px; width: 100%; }
+    .files-label { margin-top: 18px; }
+    .file { margin-bottom: 10px; }
+    .file-field { width: 100%; }
+    .mono { font-family: var(--font-mono); font-size: 13px; }
+    .overwrite { display: flex; align-items: flex-start; gap: 6px; margin: 6px 0 0;
+      font-size: 12px; line-height: 1.5; color: var(--color-warning-text); }
+    .overwrite mat-icon { font-size: 16px; width: 16px; height: 16px; flex-shrink: 0; }
+    .overwrite code { font-family: var(--font-mono); }
     mat-dialog-actions { padding: 14px 24px; border-top: 1px solid var(--border-default); }
   `]
 })
 export class PublishDialogComponent {
   private dialog = inject(MatDialog);
   private jobsService = inject(JobsService);
+  private heretto = inject(HopHerettoService);
 
   /** Set when a different folder was picked for this publish. */
   chosenId: string | null = null;
@@ -156,6 +197,12 @@ export class PublishDialogComponent {
 
   publishing = false;
   error = '';
+
+  /** The names to publish under; editable, and kept when the publish succeeds. */
+  files: PublishFile[] = [];
+  /** File names already in the destination folder, lower-cased. */
+  private taken = new Set<string>();
+  checkingFolder = false;
   /** Null until a publish has finished; then what came back. */
   outcome: PublishResponse | null = null;
 
@@ -169,6 +216,53 @@ export class PublishDialogComponent {
   ) {
     // Closing mid-publish would lose the links, which are the point of staying.
     dialogRef.disableClose = true;
+    this.files = data.topics.map(topic => ({
+      topicId: topic.id, title: topic.title, filename: topic.filename,
+    }));
+    this.checkFolder();
+  }
+
+  /**
+   * What is already in the destination folder, so a name that would overwrite can say so.
+   *
+   * Advisory only: the warning needs a connection id to browse with, which instruction
+   * sets saved before that was recorded do not have. Publishing protects itself regardless
+   * — it finds a file of the same name and updates it rather than creating a second one.
+   */
+  private checkFolder(): void {
+    const credentialId = this.chosenCredentialId || this.data.credentialId;
+    const folderId = this.folderId;
+    this.taken = new Set();
+    if (!credentialId || !folderId) return;
+
+    this.checkingFolder = true;
+    this.heretto.openFolder(credentialId, folderId).subscribe({
+      next: listing => {
+        this.checkingFolder = false;
+        this.taken = new Set(
+          listing.entries.filter(entry => entry.kind !== 'folder')
+            .map(entry => entry.name.trim().toLowerCase()),
+        );
+      },
+      error: () => this.checkingFolder = false,
+    });
+  }
+
+  /** True when this name is already a file in the folder — publishing overwrites it. */
+  collision(file: PublishFile): boolean {
+    return this.taken.has(this.normalize(file.filename).toLowerCase());
+  }
+
+  rename(file: PublishFile, value: string): void {
+    file.filename = value;
+  }
+
+  /** The same shape the server enforces, so the warning matches what will be written. */
+  private normalize(name: string): string {
+    const base = (name || '').trim().split(/[\\/]/).pop() || '';
+    const stem = base.toLowerCase().endsWith('.dita') ? base.slice(0, -5) : base;
+    const safe = stem.replace(/[^\w.\-]/g, '-').replace(/^[-.]+|[-.]+$/g, '');
+    return `${safe || 'release-notes'}.dita`;
   }
 
   get folderId(): string | null {
@@ -193,6 +287,7 @@ export class PublishDialogComponent {
       // A folder id is only meaningful in the Heretto it was chosen from.
       this.chosenCredentialId = folder.credential_id;
       this.chosenPath = folder.path || folder.name;
+      this.checkFolder();   // a different folder has different names in it
     });
   }
 
@@ -200,15 +295,18 @@ export class PublishDialogComponent {
     this.chosenId = null;
     this.chosenCredentialId = null;
     this.chosenPath = '';
+    this.checkFolder();
   }
 
   publish(): void {
     if (this.publishing) return;
     this.publishing = true;
     this.error = '';
-    this.jobsService.publish(
-      this.data.jobId, this.chosenId || undefined, this.chosenCredentialId || undefined,
-    ).subscribe({
+    this.jobsService.publish(this.data.jobId, {
+      folderId: this.chosenId || undefined,
+      credentialId: this.chosenCredentialId || undefined,
+      filenames: this.files.map(file => ({ topic_id: file.topicId, filename: file.filename })),
+    }).subscribe({
       next: outcome => {
         this.publishing = false;
         this.dialogRef.disableClose = false;

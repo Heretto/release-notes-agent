@@ -671,7 +671,7 @@ export class WorkspaceComponent implements OnInit, OnDestroy {
       width: '540px',
       data: {
         jobId: this.job.id,
-        topicCount: this.topics.length,
+        topics: this.topics,
         folderId: this.job.heretto_folder_id || this.instructionSet?.heretto_folder_id || null,
         credentialId: this.instructionSet?.heretto_credential_id || null,
         usual: !this.job.heretto_folder_id && !!this.instructionSet?.heretto_folder_id,

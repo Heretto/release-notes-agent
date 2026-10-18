@@ -323,8 +323,20 @@ async def publish_topics(
         db.commit()
         started = time.time()
         try:
-            if topic.heretto_doc_id:
-                result = await service.update_dita_topic(topic.heretto_doc_id, topic.dita_content)
+            document_id = topic.heretto_doc_id
+            if not document_id:
+                # A file of this name may already be there — published by an earlier
+                # release, or by hand. Update it rather than leaving the folder with two
+                # files of the same name and only one of them maintained.
+                document_id = await service.find_document(folder_id, topic.filename)
+                if document_id:
+                    logger.info(
+                        "Publishing '%s' over the existing document %s in folder %s",
+                        topic.filename, document_id, folder_id,
+                    )
+
+            if document_id:
+                result = await service.update_dita_topic(document_id, topic.dita_content)
                 if not result.success and "HTTP 404" in (result.message or ""):
                     # The document was deleted in Heretto; create it again.
                     result = await service.upload_dita_topic(topic.dita_content, topic.filename, folder_id)

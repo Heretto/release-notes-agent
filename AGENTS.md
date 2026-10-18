@@ -236,7 +236,16 @@ credentials stored by the old routes keep working.
   and shows the result in place, ending with a link to the folder everything landed in:
   `{server_url}/#map-editor;folder={folder_id}`, built by `HerettoService.folder_url` from
   the credential's own `server_url` — the same base the upload goes to, so no second setting
-  is involved. Do not reach for `HerettoUploadResult.url`: that is the REST endpoint the
+  is involved. The dialog also names the files: a
+  filename **is** kept (unlike the folder) because it is what the topic is called, not a
+  property of one publish, and the next run would write the old name back. Renaming clears
+  `heretto_doc_id`, since the old document is no longer this topic's. **Publishing adopts a
+  file of the same name rather than creating a second one** — `HerettoService.find_document`
+  looks in the folder first, because Heretto will happily hold two files with one name and
+  only one of them maintained. The overwrite warning in the dialog is advisory (it needs a
+  connection id to browse with, which older instruction sets lack); the adoption is what
+  actually protects the folder.
+  Do not reach for `HerettoUploadResult.url`: that is the REST endpoint the
   upload used and answers a browser with API output or a 401. A per-document link was tried
   first (`/#/editor/{id}`, copied from hop-core's `editor_url`) and does not resolve in
   Heretto — hop-core's own file links are likely wrong for the same reason.

@@ -33,7 +33,7 @@ from hop_core.dita import DitaValidator
 
 from app.services.job_orchestrator import JobOrchestrator
 from app.services.jql_variables import RELEASE_VARIABLE, query_for_job, release_query, resolve as resolve_jql
-from app.services.topic_assembler import FragmentError
+from app.services.topic_assembler import FragmentError, safe_dita_filename
 from app.services.workspace_chat import ChatUnavailable, WorkspaceChat
 from app.services.workspace_service import (
     PublishError, assemble_job_topics, chat_message_to_response, comment_to_response,
@@ -769,14 +769,24 @@ class PublishResponse(BaseModel):
     results: List[PublishResult] = Field(default_factory=list)
 
 
+class PublishFilename(BaseModel):
+    topic_id: UUID
+    filename: str = Field(..., min_length=1, max_length=255)
+
+
 class PublishRequest(BaseModel):
     """`folder_id` publishes this one time somewhere other than the usual folder.
 
     `credential_id` is the Heretto that folder is in. Sent with it, because a folder id
     chosen in one connection means nothing in another.
+
+    `filenames` renames topics before publishing. Unlike the folder, these **are** kept:
+    a filename is what the topic is called, not a property of one publish, and the next
+    run would otherwise write the old name back.
     """
     folder_id: Optional[str] = Field(None, max_length=255)
     credential_id: Optional[UUID] = None
+    filenames: List[PublishFilename] = Field(default_factory=list)
 
 
 @router.post("/{job_id}/publish", response_model=PublishResponse)
@@ -791,6 +801,23 @@ async def publish_job(
     _require_idle(job)
     if not job.topics:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="There are no topics to publish yet.")
+
+    for chosen in (request.filenames if request else []):
+        topic = next((t for t in job.topics if t.id == chosen.topic_id), None)
+        if topic is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="One of the topics being renamed is not part of this release.",
+            )
+        filename = safe_dita_filename(chosen.filename)
+        if filename != topic.filename:
+            # A rename means the old document is no longer this topic's; publishing finds
+            # or creates the one that matches the new name.
+            topic.filename = filename
+            topic.heretto_doc_id = None
+    if request and request.filenames:
+        db.commit()
+
     try:
         outcome = await publish_topics(
             db, job,

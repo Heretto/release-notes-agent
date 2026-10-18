@@ -253,6 +253,47 @@ class HerettoService:
             except Exception:
                 return None
 
+    async def find_document(self, folder_id: str, filename: str) -> Optional[str]:
+        """The id of a file already called `filename` in this folder, if there is one.
+
+        Publishing a name that is already taken has to update that document, not create a
+        second one beside it: Heretto allows the duplicate, and the folder then has two
+        files with the same name and only one of them maintained.
+
+        Returns None when the folder cannot be read — the caller then creates, which is the
+        behaviour that existed before this and is better than refusing to publish.
+        """
+        try:
+            _validate_heretto_id(folder_id, "folder ID")
+        except ValueError:
+            return None
+        wanted = (filename or "").strip().lower()
+        if not wanted:
+            return None
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            try:
+                response = await client.get(
+                    f"{self.base_url}/rest/all-files/{folder_id}",
+                    headers=self._headers("application/xml"),
+                )
+                if response.status_code != 200:
+                    return None
+                root = ET.fromstring(response.text)
+            except Exception:
+                logger.warning("Could not read folder %s to check for an existing file", folder_id)
+                return None
+
+        # Heretto nests each child under the folder; a resource is a file, a folder is not.
+        for child in root:
+            if child.tag == "folder":
+                continue
+            name_el = child.find("name")
+            name = (name_el.text or "").strip().lower() if name_el is not None else ""
+            if name == wanted and child.get("id"):
+                return child.get("id")
+        return None
+
     async def list_folders(self, parent_id: Optional[str] = None) -> List[HerettoFolder]:
         """List child folders inside a parent folder."""
         if not parent_id:
