@@ -72,6 +72,14 @@ export const routes: Routes = [
       },
       { path: 'account', loadComponent: () => import('@heretto/hop-ui').then(m => m.HopAccountComponent) },
       { path: 'admin', canActivate: [hopAdminGuard], loadComponent: () => import('@heretto/hop-ui').then(m => m.HopAdminComponent) },
+      // hop-ui's DTD-set list navigates to /admin/dtd-sets/:id. An app with its own routes
+      // has to declare it (hop-core AGENTS.md, "Route the detail page") or opening a set
+      // falls through to the wildcard below and lands on the dashboard.
+      {
+        path: 'admin/dtd-sets/:dtdSetId',
+        canActivate: [hopAdminGuard],
+        loadComponent: () => import('@heretto/hop-ui').then(m => m.HopDtdSetDetailComponent),
+      },
       {
         path: 'superadmin',
         canActivate: [hopSuperuserGuard],

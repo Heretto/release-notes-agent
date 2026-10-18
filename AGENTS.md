@@ -262,6 +262,13 @@ credentials stored by the old routes keep working.
   upload used and answers a browser with API output or a 401. A per-document link was tried
   first (`/#/editor/{id}`, copied from hop-core's `editor_url`) and does not resolve in
   Heretto — hop-core's own file links are likely wrong for the same reason.
+- **The DTD-set detail page needs a route of our own.** hop-ui's list navigates to
+  `/admin/dtd-sets/:dtdSetId`; apps using `HOP_ROUTES` get it for free and this app does not,
+  so without the entry beside `admin` in `app.routes.ts` clicking a set falls through to the
+  `**` wildcard and lands on the dashboard — no error, just the wrong page. hop-core's
+  AGENTS.md calls this out under "Route the detail page". Uploads also need the proxy's
+  `client_max_body_size` at or above `DTD_UPLOAD_MAX_MB` (50 by default) or nginx answers 413
+  before the app sees the request; both of this repo's nginx configs allow 100M.
 - **An organization can bring its own DITA grammar, and this app validates against it.**
   `create_hop_app(include_dtd_sets_router=True)` mounts `/dtd-sets`; hop-ui's admin page
   already contains the DTD sets section and **probes that endpoint to decide whether to show
