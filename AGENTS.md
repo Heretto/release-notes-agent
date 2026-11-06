@@ -1,6 +1,6 @@
 # release-notes-agent — agent notes
 
-Built on [hop-core](https://github.com/Heretto/hop-core), pinned at **v0.1.17**.
+Built on [hop-core](https://github.com/Heretto/hop-core), pinned at **v0.1.20**.
 
 Automated DITA release-notes generation from Jira tickets: FastAPI backend, Angular 22
 frontend, Celery workers, Postgres, Redis.
@@ -297,7 +297,7 @@ credentials stored by the old routes keep working.
   `backend/alembic/env.py` derives `OUR_TABLES` from mappers only. The reasoning is in a
   comment there — read it before changing the filter.
 - **The `initial` bundle budget is deliberately 2 MB, not Angular's default 1 MB.** The real
-  bundle is ~1.39 MB (was ~1.36 MB on v0.1.8 / Angular 22, ~1.14 MB on v0.1.4 / Angular 19),
+  bundle is ~1.55 MB on v0.1.20 (~1.50 MB on v0.1.17, ~1.36 MB on v0.1.8 / Angular 22, ~1.14 MB on v0.1.4 / Angular 19),
   and nothing in this repo can shrink it: an eager `hopAuthInterceptor` import pins the whole
   flat `@heretto/hop-ui` bundle and its Angular Material tree into the initial chunk, and
   hop-ui has no secondary entry points to split it. At the default budget `ng build` — and so
@@ -324,7 +324,7 @@ credentials stored by the old routes keep working.
 
 ## Upgrading hop-core
 
-Pinned at **v0.1.16**. v0.1.16 removed `DitaValidator._XMLLINT_DTD_FILES` (the grammar moved
+Pinned at **v0.1.20**. v0.1.16 removed `DitaValidator._XMLLINT_DTD_FILES` (the grammar moved
 to `hop_core/dita/grammar.py`), so anything that subclassed it to redirect a DTD breaks at
 import — check for that before upgrading again.
 
