@@ -1059,24 +1059,6 @@ export class InstructionEditorComponent implements OnInit {
       delete value[key];
     }
 
-    value.layout = {
-      mode: value.layout_mode,
-      template: { dita: value.layout_mode === 'template' ? (value.template_dita || '').trim() : (value.template_dita || '') },
-      agent: { guidance: (value.agent_guidance || '').trim() },
-      structured: {
-        group_heading: value.group_heading,
-        notes_wrapper: value.notes_wrapper,
-        note_element: value.note_element,
-        shortdesc: value.shortdesc,
-        shortdesc_text: value.shortdesc === 'text' ? (value.shortdesc_text || '').trim() : ''
-      }
-    };
-    for (const key of ['group_heading', 'notes_wrapper', 'note_element', 'shortdesc',
-                       'shortdesc_text', 'layout_mode', 'template_dita', 'agent_guidance',
-                       'heretto_folder_path']) {
-      delete value[key];
-    }
-
     if (this.isReleasesMode) {
       // The query is built per release from these two; a template would have nothing to fill.
       value.jira_project = (value.jira_project || '').trim().toUpperCase();

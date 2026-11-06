@@ -203,6 +203,9 @@ class InstructionSetBase(BaseModel):
     relevance_guidance: Optional[str] = Field(None, max_length=8000)
     organization_guidance: Optional[str] = Field(None, max_length=8000)
     chunking_strategy: str = Field("single", pattern=r'^(single|by_group|by_component)$')
+    # Declared here, not only on the update schema: without it the response silently drops
+    # the layout, the editor loads the defaults, and the next save writes them back.
+    layout: TopicLayout = Field(default_factory=TopicLayout)
 
     @model_validator(mode="after")
     def _require_the_fields_the_mode_uses(self):
