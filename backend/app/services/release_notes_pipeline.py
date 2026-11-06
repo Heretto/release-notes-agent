@@ -406,7 +406,7 @@ class ReleaseNotesPipeline:
             })
             try:
                 result = await self.analyst.run(
-                    prompts.CONSOLIDATE_INSTRUCTIONS, prompts.candidates_json(candidates), max_tokens=8192, temperature=0.2,
+                    prompts.CONSOLIDATE_INSTRUCTIONS, prompts.candidates_json(candidates), max_tokens=8192,
                 )
                 parsed = extract_json(result.output)
                 final = [
@@ -477,7 +477,7 @@ class ReleaseNotesPipeline:
         try:
             result = await self.analyst.run(
                 prompts.organize_instructions(self.instruction_set.organization_guidance, existing_groups),
-                prompts.organize_input(new_items), max_tokens=4096, temperature=0.2,
+                prompts.organize_input(new_items), max_tokens=4096,
             )
             parsed = extract_json(result.output)
             groups = (parsed.get("groups") if isinstance(parsed, dict) else parsed) or []

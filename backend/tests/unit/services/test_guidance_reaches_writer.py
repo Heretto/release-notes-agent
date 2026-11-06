@@ -37,3 +37,20 @@ def test_fragment_format_still_follows_the_guidance() -> None:
     """Ordering matters: the format rules are last, so they win on any conflict."""
     instructions = prompts.write_instructions("Heretto CCMS", GUIDANCE)
     assert instructions.index(GUIDANCE) < instructions.index("## Output format")
+
+
+def test_house_style_does_not_ask_for_a_wrapper() -> None:
+    """The format rules forbid a wrapping <div>; the house style once asked for one, so a
+    writer with guidance was given two contradictory instructions."""
+    block = prompts.house_style(GUIDANCE)
+    assert "Return one <div>" not in block
+    assert "no wrapper" in block
+
+
+@pytest.mark.parametrize("element", ["<codeph>", "<codeblock>", "<uicontrol>", "<filepath>"])
+def test_technical_content_elements_are_offered(element) -> None:
+    """These validate against the technicalContent shells (hop-core v0.1.16+). The prompt
+    banned them while the base DTD rejected them, and the ban outlived the reason."""
+    allowed, forbidden = prompts.FRAGMENT_FORMAT.split("Do NOT use", 1)
+    assert element in allowed
+    assert element not in forbidden

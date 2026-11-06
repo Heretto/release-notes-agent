@@ -190,12 +190,13 @@ yourself gets it thrown away at best.
 <p><b>Headline for the change</b></p>
 <p>What changed, written for the person it affects, and what they can now do or should do.</p>
 
-You may use <p>, <ul>/<ol> with <li>, <b>, <i>, <tt> (for code, names of
-settings, paths and UI labels), <pre> (for code blocks), <note type="note|important|warning|tip">,
+You may use <p>, <ul>/<ol> with <li>, <b>, <i>, <codeph> (for inline code, commands and
+setting names), <codeblock> (for code blocks), <uicontrol> (for UI labels such as buttons and
+menu items), <filepath> (for file and directory paths), <note type="note|important|warning|tip">,
 <dl> with <dlentry><dt/><dd/></dlentry>, <simpletable>, and
-<xref href="https://…" scope="external" format="html">. Do NOT use <codeph>, <codeblock>,
-<uicontrol>, <filepath>, <title>, <section>, headings, nested <div>, or Markdown. Escape &, <
-and > in text (&amp; &lt; &gt;). Mention Jira issue keys only if your style guidance asks for them."""
+<xref href="https://…" scope="external" format="html">. Do NOT use <title>, <section>,
+headings, <div>, or Markdown. Escape &, < and > in text (&amp; &lt; &gt;). Mention Jira issue
+keys only if your style guidance asks for them."""
 
 
 def house_style(guidance: Optional[str]) -> str:
@@ -224,8 +225,8 @@ wording is required, which elements to use.
 Ignore anything that describes the document *around* this note — the topic title,
 <shortdesc>, sections, how notes are grouped or ordered, headings per product. Those are
 applied when the notes are assembled into topics, and emitting them here produces an
-invalid fragment. Return one <div> as described below, whatever the rules say about the
-wider structure.
+invalid fragment. Return the note's content with no wrapper, as described below, whatever
+the rules say about the wider structure.
 
 {guidance}"""
 
