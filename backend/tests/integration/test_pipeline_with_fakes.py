@@ -59,7 +59,7 @@ class FakeAgent:
     calls: List[Dict] = field(default_factory=list)
 
     async def run(self, instructions: str, input_text: str = "", max_tokens=None, temperature=None) -> FakeResult:
-        self.calls.append({"instructions": instructions[:60], "input": input_text})
+        self.calls.append({"instructions": instructions[:60], "input": input_text, "temperature": temperature})
         if "deciding what belongs in the release notes" in instructions or "reviewing Jira issues" in instructions:
             issues = json.loads(input_text)
             out = {"issues": []}
@@ -172,13 +172,16 @@ def test_first_run_then_rerun_with_changes(db, seeded_job):
     for item in job.items:
         assert item.group_name == "Improvements"
         assert "written:" in item.dita_content
-        assert item.dita_content.startswith(f'<div id="{item.fragment_id}"')
+        # A note stores its content; the element around it is added at assembly.
+        assert not item.dita_content.lstrip().startswith("<div")
         assert [h.event_type for h in item.history] == [HistoryEvent.CREATED]
     assert len(job.topics) == 1
     topic = job.topics[0]
     assert topic.title == "Testo 2026.10"
     assert all(item.fragment_id in topic.dita_content for item in job.items)
     assert any(a.artifact_type == "dita" for a in job.artifacts)
+    # Several Anthropic models reject temperature with a 400; no stage may send one.
+    assert [c for c in agent.calls if c["temperature"] is not None] == []
 
     # A person edits the T-2 note; the rerun must not overwrite it.
     t2_item = next(i for i in job.items if "T-2" in [l.issue.issue_key for l in i.issue_links])
