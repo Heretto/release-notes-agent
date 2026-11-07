@@ -169,13 +169,13 @@ import { JqlPart, jqlParts, variableNames } from '../../core/jql-variables';
                 </div>
               </dl>
 
-              @if (instruction.relevance_guidance || instruction.organization_guidance) {
+              @if (instruction.relevance_guidance || instruction.layout?.guidance) {
                 <div class="guidance">
                   @if (instruction.relevance_guidance) {
                     <p><strong>Relevance:</strong> {{ instruction.relevance_guidance }}</p>
                   }
-                  @if (instruction.organization_guidance) {
-                    <p><strong>Organization:</strong> {{ instruction.organization_guidance }}</p>
+                  @if (instruction.layout?.guidance) {
+                    <p><strong>Output:</strong> {{ instruction.layout?.guidance }}</p>
                   }
                 </div>
               }

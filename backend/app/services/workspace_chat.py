@@ -29,7 +29,7 @@ from app.models.database import (
 from app.models.schemas import ChatSendResponse
 from app.services.agents import AgentUnavailable, resolve_agent
 from app.services.pipeline_prompts import FRAGMENT_FORMAT, house_style, issue_record
-from app.services.topic_assembler import FragmentError, coerce_fragment
+from app.services.topic_assembler import FragmentError, Layout, coerce_fragment
 from app.services.workspace_service import (
     assemble_job_topics, chat_message_to_response, group_order, move_item, product_name,
     record_history, release_title, set_item_content,
@@ -264,7 +264,7 @@ Judge what was asked and take exactly one of these three:
 
 Most requests are the third kind. Do not ask about memory more than once in a reply, and
 never ask about something you have already been told to remember.
-{house_style(job.instruction_set.organization_guidance if job.instruction_set else None)}
+{house_style(Layout.of(job.instruction_set).guidance if job.instruction_set else None)}
 
 {FRAGMENT_FORMAT}"""
 

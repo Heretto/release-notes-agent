@@ -312,7 +312,7 @@ const MORE_RELEASES = 10;
         </div>
 
         <div class="form-section">
-          <h3>Guidance</h3>
+          <h3>Relevance</h3>
 
           <mat-form-field appearance="outline" class="full-width">
             <mat-label>What counts as a change users need to know about</mat-label>
@@ -321,20 +321,25 @@ const MORE_RELEASES = 10;
             <mat-hint>Shown to the analysis agent when it decides which issues become release notes</mat-hint>
           </mat-form-field>
 
-          <mat-form-field appearance="outline" class="full-width">
-            <mat-label>How the release notes are organized and written</mat-label>
-            <textarea matInput formControlName="organization_guidance" rows="4"
-                      placeholder="e.g. Group as New features, Improvements, Fixes, then Known issues. Open every note with Added. / Changed. / Fixed. and write in past simple."></textarea>
-            <mat-hint>
-              Given to the agent that groups the notes and to the one that writes them. Rules about
-              the topic around a note — its title, shortdesc or sections — are set by Topics below,
-              not here.
-            </mat-hint>
-          </mat-form-field>
         </div>
 
         <div class="form-section">
           <h3>Output</h3>
+
+          <mat-form-field appearance="outline" class="full-width">
+            <mat-label>Output guidance</mat-label>
+            <textarea matInput formControlName="output_guidance" rows="10"
+                      placeholder="e.g. One group per product, in this order: Heretto CCMS, Heretto Portal, Cloud Publishing. Each group's heading is the product name and version (yy.mm.dd). Each note starts with Added. / Changed. / Fixed. and links its Jira issue with an internal xref."></textarea>
+            <mat-hint>
+              How the notes are grouped and ordered, what each group's heading says, and how each note
+              is formatted. Read by the agent that organizes the notes, by the writer, and — with
+              "Describe it" below — by the agent that builds the topic. Tone and voice come from the
+              writer agent's own instructions, not from here.
+            </mat-hint>
+            @if (form.get('output_guidance')?.hasError('required')) {
+              <mat-error>"Describe it" builds the topic from this, so it cannot be empty.</mat-error>
+            }
+          </mat-form-field>
 
           <div class="layout-card">
             <div class="vars-head">
@@ -356,9 +361,10 @@ const MORE_RELEASES = 10;
                   populated shortdesc — comes through untouched.
                 }
                 @case ('agent') {
-                  Describe the structure in your own words. At the start of each release an
-                  agent turns it into a template, which that release then keeps — so the
-                  shape stays put while you edit notes.
+                  The output guidance above describes the structure too. At the start of each
+                  release an agent turns it into a template, which that release then keeps — so
+                  the shape stays put while you edit notes. Until the first run, releases from
+                  this set use the default shape.
                 }
                 @default {
                   Pick from the shapes this app can build. Always valid, nothing to author.
@@ -441,17 +447,6 @@ const MORE_RELEASES = 10;
               </ul>
             }
 
-            @if (form.get('layout_mode')?.value === 'agent') {
-              <mat-form-field appearance="outline" class="full-width" subscriptSizing="dynamic">
-                <mat-label>Describe the structure</mat-label>
-                <textarea matInput formControlName="agent_guidance" rows="8"
-                          placeholder="e.g. One bold paragraph per product release with the product name and version, then that product's notes as a single bulleted list. Leave the short description empty."></textarea>
-                <mat-hint>
-                  Turned into a template when a release starts, and kept for that release.
-                  Until the first run, releases from this set use the default shape.
-                </mat-hint>
-              </mat-form-field>
-            }
           </div>
 
           <mat-form-field appearance="outline" class="full-width">
@@ -646,7 +641,6 @@ export class InstructionEditorComponent implements OnInit {
       writer_agent_id: [data?.writer_agent_id || null, Validators.required],
       analysis_agent_id: [data?.analysis_agent_id || null],
       relevance_guidance: [data?.relevance_guidance || ''],
-      organization_guidance: [data?.organization_guidance || ''],
       chunking_strategy: [data?.chunking_strategy || 'single'],
       group_heading: [layout.group_heading],
       notes_wrapper: [layout.notes_wrapper],
@@ -655,7 +649,7 @@ export class InstructionEditorComponent implements OnInit {
       shortdesc_text: [layout.shortdesc_text],
       layout_mode: [data?.layout?.mode || 'structured'],
       template_dita: [data?.layout?.template?.dita || ''],
-      agent_guidance: [data?.layout?.agent?.guidance || ''],
+      output_guidance: [data?.layout?.guidance || ''],
       heretto_folder_id: [data?.heretto_folder_id || ''],
       heretto_credential_id: [data?.heretto_credential_id || null],
       // Shown instead of the id. Not stored — the id is what publishing needs, and a
@@ -936,7 +930,9 @@ export class InstructionEditorComponent implements OnInit {
       if (mode === 'template' && !(this.form.get('template_dita')?.value || '').trim()) {
         this.form.patchValue({ template_dita: STARTER_TEMPLATE });
       }
+      this.applyLayoutValidators();
     });
+    this.applyLayoutValidators();
 
     // What a note is follows from what collects it — see noteElementOptions. Kept in step
     // here so the stored value always matches the only option the control offers.
@@ -960,6 +956,17 @@ export class InstructionEditorComponent implements OnInit {
     if (this.form.get('note_element')?.value !== only) {
       this.form.patchValue({ note_element: only }, { emitEvent: false });
     }
+  }
+
+  /** "Describe it" builds the topic from the output guidance, so there it is required. */
+  private applyLayoutValidators(): void {
+    const guidance = this.form.get('output_guidance');
+    if (this.form.get('layout_mode')?.value === 'agent') {
+      guidance?.setValidators(Validators.required);
+    } else {
+      guidance?.clearValidators();
+    }
+    guidance?.updateValueAndValidity({ emitEvent: false });
   }
 
   private applyModeValidators(): void {
@@ -1059,13 +1066,13 @@ export class InstructionEditorComponent implements OnInit {
   onSave(): void {
     if (!this.form.valid) return;
     const value = { ...this.form.value };
-    for (const key of ['description', 'product_name', 'relevance_guidance', 'organization_guidance', 'heretto_folder_id']) {
+    for (const key of ['description', 'product_name', 'relevance_guidance', 'heretto_folder_id']) {
       if (typeof value[key] === 'string' && !value[key].trim()) value[key] = null;
     }
     value.layout = {
       mode: value.layout_mode,
       template: { dita: value.layout_mode === 'template' ? (value.template_dita || '').trim() : (value.template_dita || '') },
-      agent: { guidance: (value.agent_guidance || '').trim() },
+      guidance: (value.output_guidance || '').trim(),
       structured: {
         group_heading: value.group_heading,
         notes_wrapper: value.notes_wrapper,
@@ -1075,7 +1082,7 @@ export class InstructionEditorComponent implements OnInit {
       }
     };
     for (const key of ['group_heading', 'notes_wrapper', 'note_element', 'shortdesc',
-                       'shortdesc_text', 'layout_mode', 'template_dita', 'agent_guidance',
+                       'shortdesc_text', 'layout_mode', 'template_dita', 'output_guidance',
                        'heretto_folder_path']) {
       delete value[key];
     }

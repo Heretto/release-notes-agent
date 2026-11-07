@@ -279,3 +279,26 @@ def test_rerun_evaluates_issues_a_failed_run_left_pending(db, seeded_job):
     assert job.status.value == "completed", job.error_message
     assert [i.relevance for i in job.issues] == [IssueRelevance.RELEVANT]
     assert [i.title for i in job.items] == ["Note for T-5"]
+
+
+def test_output_guidance_reaches_organize_and_the_writer(db, seeded_job):
+    """One field describes the output; it used to be split across two that each reached
+    different agents, so most of a description written in either was ignored."""
+    marker = "OUTPUT-GUIDANCE-MARKER: one group per product"
+    seeded_job.instruction_set.layout = {"mode": "structured", "guidance": marker}
+    db.commit()
+
+    seen: Dict[str, bool] = {}
+
+    @dataclass
+    class Recording(FakeAgent):
+        async def run(self, instructions, input_text="", max_tokens=None, temperature=None):
+            stage = "organize" if "organizing release notes" in instructions else (
+                "write" if instructions.startswith("Write the release note") else None)
+            if stage:
+                seen[stage] = seen.get(stage, False) or marker in instructions
+            return await super().run(instructions, input_text, max_tokens, temperature)
+
+    job = _run(db, seeded_job.id, [_ticket("T-1", "Faster search", "Search got faster")], Recording())
+    assert job.status.value == "completed", job.error_message
+    assert seen == {"organize": True, "write": True}

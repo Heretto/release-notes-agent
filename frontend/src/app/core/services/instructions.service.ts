@@ -24,7 +24,6 @@ export interface InstructionSet {
   analysis_agent_name?: string | null;
   product_name?: string | null;
   relevance_guidance?: string | null;
-  organization_guidance?: string | null;
   chunking_strategy: ChunkingStrategy;
   /** How topics are laid out; absent means the default shape. */
   layout?: TopicLayout;
@@ -103,11 +102,15 @@ export type LayoutMode = 'structured' | 'template' | 'agent';
 
 export interface TopicLayout {
   mode: LayoutMode;
+  /**
+   * The output described in words, in every mode: organize reads it for group names and
+   * order, the writer for how a note is formatted, and in 'agent' mode an agent turns it
+   * into a template once per release. Tone and voice belong to the writer agent instead.
+   */
+  guidance: string;
   structured: StructuredLayout;
   /** A DITA topic with rn-group / rn-notes markers. */
   template: { dita: string };
-  /** The structure described in words; an agent turns it into a template per release. */
-  agent: { guidance: string };
 }
 
 /** Offered when someone switches to template mode with nothing written yet. */

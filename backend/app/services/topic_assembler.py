@@ -394,14 +394,13 @@ class Layout:
         if not isinstance(options, dict):
             options = {}
         template = (stored.get("template") or {}) if isinstance(stored.get("template"), dict) else {}
-        agent = (stored.get("agent") or {}) if isinstance(stored.get("agent"), dict) else {}
         mode = stored.get("mode") if stored.get("mode") in ("structured", "template", "agent") else "structured"
 
         fields = {f.name for f in dataclasses.fields(cls)} - {"mode", "template", "guidance"}
         resolved = cls(
             mode=mode,
             template=str(template.get("dita") or ""),
-            guidance=str(agent.get("guidance") or ""),
+            guidance=str(stored.get("guidance") or ""),
             **{k: v for k, v in options.items() if k in fields and isinstance(v, str)},
         )
         # A template mode with no template cannot build anything; the schema refuses to

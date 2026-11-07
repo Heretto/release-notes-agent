@@ -27,7 +27,7 @@ _INSTRUCTION_UPDATABLE_FIELDS = {
     "dita_template_id", "heretto_folder_id", "heretto_credential_id",
     "publish_to_heretto", "is_default",
     "writer_agent_id", "analysis_agent_id", "product_name",
-    "relevance_guidance", "organization_guidance", "chunking_strategy", "layout",
+    "relevance_guidance", "chunking_strategy", "layout",
 }
 
 
@@ -54,7 +54,6 @@ def _to_response(instruction_set: InstructionSet) -> InstructionSetResponse:
         analysis_agent_name=instruction_set.analysis_agent.name if instruction_set.analysis_agent else None,
         product_name=instruction_set.product_name,
         relevance_guidance=instruction_set.relevance_guidance,
-        organization_guidance=instruction_set.organization_guidance,
         chunking_strategy=instruction_set.chunking_strategy or "single",
         layout=TopicLayout(**(instruction_set.layout or {})) if instruction_set.layout else TopicLayout(),
         created_at=instruction_set.created_at,

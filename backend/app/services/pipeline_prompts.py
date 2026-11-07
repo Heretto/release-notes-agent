@@ -128,10 +128,25 @@ def candidates_json(candidates: Sequence[dict]) -> str:
 
 # ── Stage 4: organize ────────────────────────────────────────────────────────────────
 
-def organize_instructions(organization_guidance: Optional[str], existing_groups: Sequence[str]) -> str:
-    guidance = (organization_guidance or "").strip()
+def organize_instructions(output_guidance: Optional[str], existing_groups: Sequence[str]) -> str:
+    """Group and order the notes, following the instruction set's output guidance.
+
+    The guidance describes the whole output — topic structure and note formatting as well
+    as grouping — because it is one field that several agents read. This stage takes from
+    it only which groups exist, what they are called and in what order things appear.
+    """
+    guidance = (output_guidance or "").strip()
     if guidance:
-        guidance_block = f"\n\n## How these release notes are organized\n\n{guidance}"
+        guidance_block = (
+            "\n\n## How these release notes are organized\n\n"
+            "The guidance below describes the whole output. From it, take which groups the notes "
+            "fall into, what each group is called, the order of the groups, and the order of notes "
+            "within a group; ignore what it says about markup and wording, which other stages "
+            "apply. A group's name is printed as its heading, so name each group exactly as the "
+            "guidance says its heading reads. When a heading includes a version, take it from the "
+            "notes' fix_versions in the input, in the format the guidance gives; never invent one."
+            f"\n\n{guidance}"
+        )
     else:
         guidance_block = (
             "\n\n## How these release notes are organized\n\n"
@@ -168,6 +183,9 @@ def organize_input(items: Sequence[ReleaseNoteItem]) -> str:
     for index, item in enumerate(items, start=1):
         issue_types = sorted({i.issue_type for i in item.issues if i.issue_type})
         components = sorted({c for i in item.issues for c in (i.components or [])})
+        # The Jira versions the note shipped in: what a group heading like
+        # "Heretto Portal v6 26.10.22" is built from. Without them a version is a guess.
+        fix_versions = sorted({v for i in item.issues for v in (i.fix_versions or [])})
         records.append({
             "n": index,
             "title": item.title,
@@ -175,6 +193,7 @@ def organize_input(items: Sequence[ReleaseNoteItem]) -> str:
             "category": item.group_name,
             "issue_types": issue_types,
             "components": components,
+            "fix_versions": fix_versions,
             "issue_keys": [i.issue_key for i in item.issues],
         })
     return json.dumps(records, indent=1, ensure_ascii=False)
@@ -204,12 +223,13 @@ from the input as the <xref> href, never a URL you construct."""
 
 
 def house_style(guidance: Optional[str]) -> str:
-    """The instruction set's guidance, as the writer sees it.
+    """The instruction set's output guidance, as the writer sees it.
 
-    The same text also goes to the organize stage, which uses it to choose group names and
-    order. Writers get it because people put their whole house style in that box — the
-    wording of a note, the prefixes it opens with, which elements to use — and none of it
-    used to reach the agent that writes the words, so the guidance appeared to do nothing.
+    The same text goes to organize (group names and order) and, in "Describe it" mode, to
+    the template agent (topic structure). The writer gets it because it also says how a
+    note is formatted — the label it opens with, which elements to use, whether it links
+    its issue — and that is the writer's to do. Tone and voice are not in it: those come
+    from the writer agent's own configuration.
 
     Scoped on the way in: a single note is all this agent can affect. Rules about the topic
     around it are carried out by assembly, and telling the writer to produce them makes it
@@ -220,7 +240,7 @@ def house_style(guidance: Optional[str]) -> str:
         return ""
     return f"""
 
-## House style
+## Output guidance
 
 These rules come from the instruction set and are **binding**. Follow everything in them
 that governs this one release note: how it opens, what tense and voice it uses, what
@@ -248,7 +268,7 @@ names, credentials).{house_style(guidance)}
 
 def rewrite_instructions(product: str, errors: Sequence[str], guidance: Optional[str] = None) -> str:
     listed = "\n".join(f"- {e}" for e in errors)
-    # The house style rides along: a retry that drops it fixes the DITA and loses the
+    # The output guidance rides along: a retry that drops it fixes the DITA and loses the
     # wording the first attempt got right.
     return f"""Your previous fragment for this release note was not valid DITA. Fix these problems and
 return the corrected fragment only:
@@ -296,7 +316,12 @@ def topic_structure_instructions(guidance: str) -> str:
     return f"""You are turning a description of a release-notes topic structure into a DITA
 topic template. Return the template and nothing else — no commentary, no code fences.
 
-## The structure wanted
+## The output wanted
+
+The description covers the whole output. Take from it only the structure of the topic: what
+surrounds the notes, what repeats per group, and what fixed content appears where. What it
+says about how each note is worded or marked up, and about which groups exist and in what
+order, is applied by other stages — leave it out of the template.
 
 {guidance.strip()}
 

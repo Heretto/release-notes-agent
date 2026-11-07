@@ -23,7 +23,7 @@ def test_guidance_survives_the_dita_retry() -> None:
 @pytest.mark.parametrize("empty", [None, "", "   ", "\n"])
 def test_no_guidance_adds_nothing(empty) -> None:
     assert prompts.house_style(empty) == ""
-    assert "House style" not in prompts.write_instructions("Heretto CCMS", empty)
+    assert "Output guidance" not in prompts.write_instructions("Heretto CCMS", empty)
 
 
 def test_writer_is_told_to_ignore_topic_level_rules() -> None:
@@ -68,3 +68,41 @@ def test_the_writer_can_link_each_issue() -> None:
     )
     assert prompts.issue_record(issue)["url"] == "https://example.atlassian.net/browse/EZD-1"
     assert '"url"' in prompts.FRAGMENT_FORMAT
+
+
+# ── One output guidance, read by every stage that shapes the output ────────────────────
+
+def test_organize_follows_the_output_guidance() -> None:
+    """Grouping by product is in the output guidance; organize used to read another box
+    and fell back to grouping by kind of change."""
+    instructions = prompts.organize_instructions(GUIDANCE, [])
+    assert GUIDANCE in instructions
+    assert "kind of change" not in instructions          # the default is for no guidance only
+    assert "kind of change" in prompts.organize_instructions(None, [])
+
+
+def test_organize_can_put_versions_in_group_names() -> None:
+    """A heading like "Heretto Portal v6 26.10.22" needs the version from Jira."""
+    from types import SimpleNamespace
+
+    issue = SimpleNamespace(issue_key="P-1", issue_type="Bug", components=["Portal"],
+                            fix_versions=["Portal v6 26.10.22"])
+    item = SimpleNamespace(title="t", summary="s", group_name="Fix", issues=[issue])
+    import json
+    record = json.loads(prompts.organize_input([item]))[0]
+    assert record["fix_versions"] == ["Portal v6 26.10.22"]
+    assert "fix_versions" in prompts.organize_instructions(GUIDANCE, [])
+
+
+def test_the_template_agent_takes_only_the_structure() -> None:
+    """It now receives the whole output description, note wording included."""
+    instructions = prompts.topic_structure_instructions(GUIDANCE)
+    assert GUIDANCE in instructions and "Take from it only the structure" in instructions
+
+
+def test_layout_guidance_is_what_the_stages_read() -> None:
+    from types import SimpleNamespace
+    from app.services.topic_assembler import Layout
+
+    stored = SimpleNamespace(layout={"mode": "structured", "guidance": GUIDANCE})
+    assert Layout.of(stored).guidance == GUIDANCE

@@ -169,7 +169,6 @@ class InstructionSet(Base):
     # Pipeline configuration
     product_name = Column(String(255), nullable=True)
     relevance_guidance = Column(Text, nullable=True)      # what counts as a change users must know about
-    organization_guidance = Column(Text, nullable=True)   # how to group and order the notes
     chunking_strategy = Column(String(40), nullable=False, default=ChunkingStrategy.SINGLE, server_default=ChunkingStrategy.SINGLE)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())

@@ -13,7 +13,7 @@ from app.models.schemas import InstructionSetCreate
 
 AGENT_LAYOUT = {
     "mode": "agent",
-    "agent": {"guidance": "One bold paragraph per product, then its notes as a list."},
+    "guidance": "One bold paragraph per product, then its notes as a list.",
 }
 
 
@@ -25,7 +25,7 @@ def _stored_set(layout):
         heretto_folder_id=None, heretto_credential_id=None, publish_to_heretto=False,
         is_default=False, writer_agent_id=None, analysis_agent_id=None,
         writer_agent=None, analysis_agent=None, product_name=None,
-        relevance_guidance=None, organization_guidance=None, chunking_strategy="single",
+        relevance_guidance=None, chunking_strategy="single",
         layout=layout, created_at=datetime.now(), updated_at=None,
     )
 
@@ -33,7 +33,7 @@ def _stored_set(layout):
 def test_response_carries_the_stored_layout():
     body = _to_response(_stored_set(AGENT_LAYOUT)).model_dump(mode="json")
     assert body["layout"]["mode"] == "agent"
-    assert body["layout"]["agent"]["guidance"] == AGENT_LAYOUT["agent"]["guidance"]
+    assert body["layout"]["guidance"] == AGENT_LAYOUT["guidance"]
 
 
 def test_create_keeps_the_layout_it_was_sent():
@@ -41,4 +41,4 @@ def test_create_keeps_the_layout_it_was_sent():
         name="Set", jql_query="project = X", layout=AGENT_LAYOUT
     ).model_dump(mode="json")
     assert fields["layout"]["mode"] == "agent"
-    assert fields["layout"]["agent"]["guidance"] == AGENT_LAYOUT["agent"]["guidance"]
+    assert fields["layout"]["guidance"] == AGENT_LAYOUT["guidance"]

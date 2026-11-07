@@ -476,7 +476,7 @@ class ReleaseNotesPipeline:
         group_sequence: List[str] = list(existing_groups)
         try:
             result = await self.analyst.run(
-                prompts.organize_instructions(self.instruction_set.organization_guidance, existing_groups),
+                prompts.organize_instructions(Layout.of(self.instruction_set).guidance, existing_groups),
                 prompts.organize_input(new_items), max_tokens=4096,
             )
             parsed = extract_json(result.output)
@@ -529,9 +529,9 @@ class ReleaseNotesPipeline:
         self._set_stage(job, JobStage.WRITE, f"Writing release notes (0 of {total})")
         semaphore = asyncio.Semaphore(WRITE_CONCURRENCY)
         product = product_name(job)
-        # The instruction set's guidance reaches the writer, not just the organize stage:
-        # it is where people put how a note should read, and the writer is what writes it.
-        guidance = self.instruction_set.organization_guidance if self.instruction_set else None
+        # The output guidance reaches the writer, not just organize: it says how a note is
+        # formatted, and the writer is what writes it. house_style() scopes it to one note.
+        guidance = Layout.of(self.instruction_set).guidance if self.instruction_set else None
         instructions = prompts.write_instructions(product, guidance)
 
         async def generate(item: ReleaseNoteItem, is_rewrite: bool) -> Tuple[ReleaseNoteItem, bool, str, Optional[str]]:

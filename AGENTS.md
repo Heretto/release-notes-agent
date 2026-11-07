@@ -33,13 +33,20 @@ note's history), the fragment shape (a note stores **content**, and assembly wra
 `tests/integration/test_pipeline_with_fakes.py` runs the whole pipeline against the local
 Postgres with fake Jira and fake agents; keep it green when touching the stages.
 
-**Guidance reaches two stages, and only governs one note at a time.**
-`organization_guidance` goes to the organize stage (group names and order) *and*, since the
-writer is what actually writes the words, to the writer and the workspace chat agent via
-`pipeline_prompts.house_style()`. It used to reach only the organize stage, so anyone who
-wrote their house style in that box — note prefixes, tense, which elements to use — saw no
-change in the output and reasonably reported the guidance as ignored. The block scopes
-itself on the way in: the writer is told to follow every rule about **this note** and to
+**One output guidance, read by every stage that shapes the output; tone is the agent's.**
+`instruction_sets.layout.guidance` (the "Output guidance" box in the editor's Output section)
+describes grouping, group headings, order and note format, in every layout mode. Organize
+reads it for group names and order (with each note's `fix_versions`, so a heading can carry
+a version); the writer and the workspace chat read it through
+`pipeline_prompts.house_style()`; in "Describe it" mode the template agent reads it for the
+topic structure. Each is told which part is its job. It replaced two fields that reached
+different agents — `organization_guidance` (organize and the writer) and
+`layout.agent.guidance` (the template agent only) — so a whole description written in
+either was mostly ignored; migration `move_org_guidance_to_layout` folded them together.
+**Tone and voice are not in it**: they belong to the writer agent's own configuration
+(description, context files, feedback memory), which hop-core puts in its system prompt —
+so two products with different voices need two writer agents. The writer's block scopes
+itself on the way in: it is told to follow every rule about **this note** and to
 ignore rules about the topic around it. That is not politeness — a writer told to emit
 `<title>`, `<shortdesc>` or `<ul>` wrappers returns a fragment that fails DTD validation and
 the note silently falls back to its plain summary. Topic-level structure is `topic_assembler.build_topic_xml`, and it is
@@ -52,7 +59,7 @@ marking what repeats per group and `rn-notes` marking where notes go; the notes 
 decides whether a note is an `<li>` or a `<div>`, and both markers are stripped from the
 output; an element inside the group block with `rn-for-group="…"` is kept only for groups
 whose name *contains* that text — containment, because organize puts the version in the
-name — which is how one product gets an introduction the others do not), or **agent** (the structure described in words). Each mode keeps its own settings,
+name — which is how one product gets an introduction the others do not), or **agent** ("Describe it": the output guidance turned into a template). Each mode keeps its own settings,
 so switching back does not lose the other. Agent mode resolves to a template **once per
 run** — `_settle_topic_structure` writes it to `jobs.topic_template` and every later
 assembly of that release reuses it. That is deliberate: assembly also runs inside request
