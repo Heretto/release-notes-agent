@@ -504,6 +504,11 @@ def build_topic_xml(
 #: in an editor, validated, and carry whatever else a house template carries.
 GROUP_MARKER = "rn-group"
 NOTES_MARKER = "rn-notes"
+#: On an element inside the group block: keep it only for groups whose name contains this
+#: text (case-insensitive; ``|`` separates alternatives). Containment, not equality, because
+#: a group's name carries its version — "Cloud Publishing 26.10.22". An attribute rather
+#: than an outputclass token because the value has spaces; like the markers, it never ships.
+FOR_GROUP_ATTR = "rn-for-group"
 
 #: A <ul>/<ol> host means the notes are list items; anything else holds blocks.
 _LIST_HOSTS = {"ul", "ol", "sl"}
@@ -539,6 +544,55 @@ def _fill_tokens(el: etree._Element, **values: str) -> None:
             setattr(node, attr, text)
 
 
+def _group_patterns(el: etree._Element) -> List[str]:
+    return [p.strip().lower() for p in (el.get(FOR_GROUP_ATTR) or "").split("|") if p.strip()]
+
+
+def _remove_keeping_tail(el: etree._Element) -> None:
+    """Remove an element without losing the text that follows it."""
+    parent = el.getparent()
+    if el.tail:
+        previous = el.getprevious()
+        if previous is not None:
+            previous.tail = (previous.tail or "") + el.tail
+        else:
+            parent.text = (parent.text or "") + el.tail
+    parent.remove(el)
+
+
+def _apply_group_conditions(block: etree._Element, group_name: str) -> None:
+    """Keep the block's group-specific elements that are for this group; drop the rest."""
+    name = (group_name or "").lower()
+    for el in [e for e in block.iter() if isinstance(e.tag, str) and e.get(FOR_GROUP_ATTR) is not None]:
+        if any(pattern in name for pattern in _group_patterns(el)):
+            el.attrib.pop(FOR_GROUP_ATTR, None)
+        else:
+            _remove_keeping_tail(el)
+
+
+def _for_group_errors(root: etree._Element) -> List[str]:
+    conditional = [e for e in root.iter() if isinstance(e.tag, str) and e.get(FOR_GROUP_ATTR) is not None]
+    if not conditional:
+        return []
+    group_block = _marked(root, GROUP_MARKER)
+    errors = []
+    for el in conditional:
+        inside = group_block is not None and el is not group_block and group_block in el.iterancestors()
+        if not inside:
+            errors.append(
+                f'{FOR_GROUP_ATTR} only works on an element inside the outputclass="{GROUP_MARKER}" '
+                f'block; it is on a <{el.tag}> outside it.'
+            )
+        elif not _group_patterns(el):
+            errors.append(f'{FOR_GROUP_ATTR} on a <{el.tag}> names no group.')
+        elif _marked(el, NOTES_MARKER) is not None:  # iter() includes el itself
+            errors.append(
+                f'The notes must not depend on the group: outputclass="{NOTES_MARKER}" is inside '
+                f'an element with {FOR_GROUP_ATTR}, so other groups would lose their notes.'
+            )
+    return errors
+
+
 def template_errors(dita: str) -> List[str]:
     """What is wrong with a template, for the editor to show before it is saved.
 
@@ -564,6 +618,7 @@ def template_errors(dita: str) -> List[str]:
         )
     if root.find("title") is None:
         errors.append("The template needs a <title>.")
+    errors.extend(_for_group_errors(root))
     return errors
 
 
@@ -592,6 +647,12 @@ def build_topic_from_template(plan: TopicPlan, template: str) -> str:
             host.append(note_element(item, tag))
         _strip_marker(host, NOTES_MARKER)
 
+    # Outside a group block there is no group to test against; template_errors refuses
+    # that, and a stored template that predates the check simply keeps the element.
+    for el in root.iter():
+        if isinstance(el.tag, str) and (group_block is None or group_block not in el.iterancestors()):
+            el.attrib.pop(FOR_GROUP_ATTR, None)
+
     if group_block is None:
         place(notes_host, plan.items)
         return _serialize_topic(root)
@@ -602,6 +663,7 @@ def build_topic_from_template(plan: TopicPlan, template: str) -> str:
 
     for offset, (name, group_items) in enumerate(plan.groups):
         block = copy.deepcopy(group_block)
+        _apply_group_conditions(block, name or "Other changes")
         _fill_tokens(block, group=name or "Other changes")
         host = _marked(block, NOTES_MARKER)
         if host is None:

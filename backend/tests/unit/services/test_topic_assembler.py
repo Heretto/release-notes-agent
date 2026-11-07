@@ -270,6 +270,47 @@ class TestTemplateLayout:
         xml = build_topic_xml(self._plan(), layout=Layout(mode="template", template=template))
         assert '<div id="rn-' in xml
 
+    INTRO_TEMPLATE = (
+        '<topic id="x"><title>{title}</title><body>'
+        '<div outputclass="rn-group">'
+        '<p rn-for-group="Cloud Publishing">Cloud publishing intro.</p> '
+        '<p rn-for-group="portal v5|Portal v6">Portal intro.</p>'
+        '<p><b>{group}</b></p><ul outputclass="rn-notes"/></div>'
+        "</body></topic>"
+    )
+
+    def _product_plan(self):
+        items = [_item("A", "Heretto CCMS 2026.10.22", 0, dita="<p>One</p>"),
+                 _item("B", "Heretto Portal v6 26.10.22", 1, dita="<p>Two</p>"),
+                 _item("C", "Cloud Publishing 26.10.22", 2, dita="<p>Three</p>")]
+        return plan_topics(items, ChunkingStrategy.SINGLE, "October 22, 2026", "n")[0]
+
+    def test_group_specific_content_appears_only_for_its_group(self):
+        assert template_errors(self.INTRO_TEMPLATE) == []
+        xml = build_topic_xml(self._product_plan(), layout=Layout(mode="template", template=self.INTRO_TEMPLATE))
+        assert xml.count("Cloud publishing intro.") == 1
+        assert xml.count("Portal intro.") == 1                # "|" alternatives, matched ignoring case
+        blocks = etree.fromstring(xml.split("\n", 2)[2].encode()).findall(".//body/div")
+        texts = ["".join(b.itertext()) for b in blocks]
+        assert "Cloud publishing intro." in texts[2] and "Cloud publishing intro." not in texts[0]
+        assert "Portal intro." in texts[1]
+        assert texts[2].index("Cloud publishing intro.") < texts[2].index("Cloud Publishing 26.10.22")
+        assert "rn-for-group" not in xml                      # the condition does not ship
+        assert validate_topic(xml) == []
+
+    @pytest.mark.parametrize("bad,expected", [
+        ('<topic><title>t</title><body><p rn-for-group="X">x</p>'
+         '<div outputclass="rn-group"><ul outputclass="rn-notes"/></div></body></topic>', "outside it"),
+        ('<topic><title>t</title><body><div outputclass="rn-group" rn-for-group="X">'
+         '<ul outputclass="rn-notes"/></div></body></topic>', "outside it"),
+        ('<topic><title>t</title><body><div outputclass="rn-group"><p rn-for-group=" | ">x</p>'
+         '<ul outputclass="rn-notes"/></div></body></topic>', "names no group"),
+        ('<topic><title>t</title><body><div outputclass="rn-group"><div rn-for-group="X">'
+         '<ul outputclass="rn-notes"/></div></div></body></topic>', "lose their notes"),
+    ])
+    def test_misplaced_group_conditions_are_refused(self, bad, expected):
+        assert any(expected in e for e in template_errors(bad))
+
     def test_agent_mode_without_a_settled_template_uses_the_options(self):
         """Before a release's first run there is no template; a topic is still produced."""
         layout = Layout(mode="agent", guidance="something", template="")

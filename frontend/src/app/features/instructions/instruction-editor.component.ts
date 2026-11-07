@@ -435,6 +435,9 @@ const MORE_RELEASES = 10;
                 <li><code>outputclass="rn-group"</code> — the element repeated once per group,
                   with the notes marker inside it. Leave it out if you do not group notes.</li>
                 <li><code>&#123;title&#125;</code> and <code>&#123;group&#125;</code> are replaced as the topic is built.</li>
+                <li><code>rn-for-group="Cloud Publishing"</code> — on an element inside the group block:
+                  kept only for groups whose name contains that text (<code>|</code> separates
+                  alternatives), dropped for the rest. For an introduction one product needs.</li>
               </ul>
             }
 
@@ -797,6 +800,24 @@ export class InstructionEditorComponent implements OnInit {
       problems.push('Nothing says where the notes go. Put outputclass="rn-notes" on the element that should hold them.');
     }
     if (!root.querySelector('title')) problems.push('The template needs a <title>.');
+    problems.push(...this.forGroupProblems(root));
+    return problems;
+  }
+
+  /** Mirrors topic_assembler._for_group_errors. */
+  private forGroupProblems(root: Element): string[] {
+    const block = Array.from(root.getElementsByTagName('*'))
+      .find(el => (el.getAttribute('outputclass') || '').split(/\s+/).includes('rn-group'));
+    const problems: string[] = [];
+    for (const el of Array.from(root.querySelectorAll('[rn-for-group]'))) {
+      if (!block || el === block || !block.contains(el)) {
+        problems.push(`rn-for-group only works on an element inside the outputclass="rn-group" block; it is on a <${el.nodeName}> outside it.`);
+      } else if (!(el.getAttribute('rn-for-group') || '').split('|').some(p => p.trim())) {
+        problems.push(`rn-for-group on a <${el.nodeName}> names no group.`);
+      } else if (this.hasMarker(el, 'rn-notes')) {
+        problems.push('The notes must not depend on the group: outputclass="rn-notes" is inside an element with rn-for-group, so other groups would lose their notes.');
+      }
+    }
     return problems;
   }
 

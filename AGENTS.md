@@ -50,7 +50,9 @@ note a `<div>` or an `<li>`, and what the `<shortdesc>` does. `layout.mode` pick
 options above), **template** (a DITA topic the writer authors, with `outputclass="rn-group"`
 marking what repeats per group and `rn-notes` marking where notes go; the notes host's tag
 decides whether a note is an `<li>` or a `<div>`, and both markers are stripped from the
-output), or **agent** (the structure described in words). Each mode keeps its own settings,
+output; an element inside the group block with `rn-for-group="…"` is kept only for groups
+whose name *contains* that text — containment, because organize puts the version in the
+name — which is how one product gets an introduction the others do not), or **agent** (the structure described in words). Each mode keeps its own settings,
 so switching back does not lose the other. Agent mode resolves to a template **once per
 run** — `_settle_topic_structure` writes it to `jobs.topic_template` and every later
 assembly of that release reuses it. That is deliberate: assembly also runs inside request

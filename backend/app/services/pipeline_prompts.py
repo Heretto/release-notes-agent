@@ -23,6 +23,9 @@ def issue_record(issue: JobJiraIssue, description_limit: int = 1800, comment_lim
     comments = [_clip(c, comment_limit) for c in (issue.comments or [])[-max_comments:] if c and c.strip()]
     return {
         "key": issue.issue_key,
+        # The issue's page in Jira, so a note that is meant to link its issue can: the
+        # writer has no other way to know which Jira site the keys belong to.
+        "url": issue.url,
         "type": issue.issue_type,
         "status": issue.status,
         "priority": issue.priority,
@@ -196,7 +199,8 @@ menu items), <filepath> (for file and directory paths), <note type="note|importa
 <dl> with <dlentry><dt/><dd/></dlentry>, <simpletable>, and
 <xref href="https://…" scope="external" format="html">. Do NOT use <title>, <section>,
 headings, <div>, or Markdown. Escape &, < and > in text (&amp; &lt; &gt;). Mention Jira issue
-keys only if your style guidance asks for them."""
+keys or link issues only if your guidance asks for them; to link one, use the issue's "url"
+from the input as the <xref> href, never a URL you construct."""
 
 
 def house_style(guidance: Optional[str]) -> str:
@@ -308,6 +312,12 @@ markers and two tokens:
   group notes at all.
 - {{title}} anywhere in the text is replaced by the release's title.
 - {{group}} inside the repeating block is replaced by that group's name.
+- Content that belongs to only some groups — an introduction that comes before one
+  product's heading, say — goes inside the repeating block with rn-for-group="…" naming
+  the group. It is kept only for groups whose name contains that text (ignoring case;
+  separate alternatives with |) and dropped for every other group. Group names carry a
+  version, so name the product ("Cloud Publishing"), not the version. Never put
+  rn-for-group on the rn-notes element or anything containing it.
 
 Everything else in the template is emitted as written, so fixed paragraphs, <ph
 conkeyref="..."/> references and a populated <shortdesc> all belong in it.
@@ -319,6 +329,7 @@ conkeyref="..."/> references and a populated <shortdesc> all belong in it.
   <shortdesc/>
   <body>
     <section outputclass="rn-group">
+      <p rn-for-group="Cloud Publishing">Cloud Publishing ships separately from the CCMS.</p>
       <p><b>{{group}}</b></p>
       <ul outputclass="rn-notes"/>
     </section>

@@ -54,3 +54,17 @@ def test_technical_content_elements_are_offered(element) -> None:
     allowed, forbidden = prompts.FRAGMENT_FORMAT.split("Do NOT use", 1)
     assert element in allowed
     assert element not in forbidden
+
+
+def test_the_writer_can_link_each_issue() -> None:
+    """Guidance can ask for an internal link to each Jira issue; without the issue's URL the
+    writer can only guess the Jira site, so the links were missing or wrong."""
+    from types import SimpleNamespace
+
+    issue = SimpleNamespace(
+        issue_key="EZD-1", url="https://example.atlassian.net/browse/EZD-1", issue_type="Bug",
+        status="Done", priority=None, summary="s", description=None, labels=[], components=[],
+        fix_versions=[], comments=[],
+    )
+    assert prompts.issue_record(issue)["url"] == "https://example.atlassian.net/browse/EZD-1"
+    assert '"url"' in prompts.FRAGMENT_FORMAT
