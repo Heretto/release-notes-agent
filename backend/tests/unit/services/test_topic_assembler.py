@@ -311,6 +311,25 @@ class TestTemplateLayout:
     def test_misplaced_group_conditions_are_refused(self, bad, expected):
         assert any(expected in e for e in template_errors(bad))
 
+    def test_an_unwrapped_group_puts_heading_and_list_in_the_body(self):
+        """A house style with no element around each product: <p><b>…</b></p><ul>… in <body>."""
+        template = self.INTRO_TEMPLATE.replace('outputclass="rn-group"', 'outputclass="rn-group rn-unwrap"')
+        assert template_errors(template) == []
+        xml = build_topic_xml(self._product_plan(), layout=Layout(mode="template", template=template))
+        body = etree.fromstring(xml.split("\n", 2)[2].encode()).find("body")
+        assert [c.tag for c in body] == ["p", "ul", "p", "p", "ul", "p", "p", "ul"]
+        assert "rn-unwrap" not in xml and "<div" not in xml
+        assert validate_topic(xml) == []
+
+    @pytest.mark.parametrize("bad,expected", [
+        ('<topic><title>t</title><body outputclass="rn-unwrap"><ul outputclass="rn-notes"/></body></topic>',
+         "cannot go on the <body>"),
+        ('<topic><title>t</title><body><ul outputclass="rn-notes rn-unwrap"/></body></topic>',
+         "cannot go on the notes element"),
+    ])
+    def test_unwrapping_what_the_topic_needs_is_refused(self, bad, expected):
+        assert any(expected in e for e in template_errors(bad))
+
     def test_agent_mode_without_a_settled_template_uses_the_options(self):
         """Before a release's first run there is no template; a topic is still produced."""
         layout = Layout(mode="agent", guidance="something", template="")
@@ -336,3 +355,33 @@ class TestSafeDitaFilename:
     def test_path_separators_do_not_survive(self, typed):
         out = safe_dita_filename(typed)
         assert "/" not in out and "\\\\" not in out and ".." not in out
+
+
+class TestConditionalNotes:
+    """A whole note can be internal-only; the condition has to land on the note's element."""
+
+    def test_a_conditional_wrapper_is_kept_in_storage(self):
+        out = normalize_fragment('<div audience="internal" id="x"><p>Secret</p></div>', "rn-1", "T")
+        assert out.startswith('<div audience="internal">') and 'id="x"' not in out
+        assert validate_fragment(out) == []
+
+    def test_a_plain_wrapper_is_still_dropped(self):
+        assert not normalize_fragment('<div><p>Open</p></div>', "rn-1", "T").startswith("<div")
+
+    @pytest.mark.parametrize("tag", ["li", "div"])
+    def test_assembly_moves_the_condition_onto_the_note(self, tag):
+        item = _item("Secret", dita='<div audience="internal">\n<p>Secret</p>\n</div>')
+        el = note_element(item, tag)
+        assert el.tag == tag and el.get("audience") == "internal"
+        assert [c.tag for c in el] == ["p"]                    # no wrapper left inside
+        assert el.get("outputclass") == "release-note" and el.get("id") == item.fragment_id
+
+    def test_a_conditional_list_item_validates(self):
+        items = [_item("Open", "Fixes", 0, dita="<p>Open</p>"),
+                 _item("Secret", "Fixes", 1, dita='<div audience="internal"><p>Secret</p></div>')]
+        plan = plan_topics(items, ChunkingStrategy.SINGLE, "R", "n")[0]
+        layout = Layout(group_heading="paragraph", notes_wrapper="ul", note_element="li")
+        xml = build_topic_xml(plan, layout=layout)
+        notes = etree.fromstring(xml.split("\n", 2)[2].encode()).findall(".//li")
+        assert [n.get("audience") for n in notes] == [None, "internal"]
+        assert validate_topic(xml) == []

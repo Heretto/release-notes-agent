@@ -377,6 +377,9 @@ class ReleaseNoteItemResponse(BaseModel):
     attention_reason: Optional[str] = None
     user_edited: bool = False
     issue_keys: List[str] = Field(default_factory=list)
+    # "note", or "nothing_to_report": stands for `fix_version`, a release with no notes.
+    kind: str = "note"
+    fix_version: Optional[str] = None
     has_notes: bool = False
     # Review is its own axis, separate from `status`: who was asked to read this note,
     # whether they have said they are done, and how much they said.

@@ -151,6 +151,9 @@ export interface ReleaseNoteItem {
   attention_reason?: string | null;
   user_edited: boolean;
   issue_keys: string[];
+  /** 'nothing_to_report' stands for fix_version, a release whose issues produced no note. */
+  kind?: 'note' | 'nothing_to_report';
+  fix_version?: string | null;
   has_notes: boolean;
   /** Review is its own axis, separate from `status`: who was asked, and their answer. */
   reviewer_id?: string | null;

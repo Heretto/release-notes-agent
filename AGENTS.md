@@ -59,13 +59,31 @@ marking what repeats per group and `rn-notes` marking where notes go; the notes 
 decides whether a note is an `<li>` or a `<div>`, and both markers are stripped from the
 output; an element inside the group block with `rn-for-group="…"` is kept only for groups
 whose name *contains* that text — containment, because organize puts the version in the
-name — which is how one product gets an introduction the others do not), or **agent** ("Describe it": the output guidance turned into a template). Each mode keeps its own settings,
+name — which is how one product gets an introduction the others do not; and
+`rn-unwrap` in an element's outputclass emits its children in its place, so the `rn-group`
+element can exist only in the template and each group's heading and list sit directly in
+`<body>`), or **agent** ("Describe it": the output guidance turned into a template). Each mode keeps its own settings,
 so switching back does not lose the other. Agent mode resolves to a template **once per
 run** — `_settle_topic_structure` writes it to `jobs.topic_template` and every later
 assembly of that release reuses it. That is deliberate: assembly also runs inside request
 handlers (a topic-split change, a note edit), and nothing there may call a model. A release
 assembled before its first run, or whose agent failed, falls back to the structured options
 rather than producing no topic.
+**A whole note can be conditional, and the condition lives in its content.** The writer
+never sees the `<li>` around a note, so it marks an internal-only note by wrapping all of
+it in one `<div>` that carries only DITA conditional attributes (`audience`, `platform`,
+`product`, `props`, `otherprops`, `deliveryTarget`). `normalize_fragment` keeps that one
+wrapper — every other wrapping `<div>` is still dropped — and `note_element` moves its
+attributes onto the note's own element, so filtering removes the whole `<li>`. It is stored
+in `dita_content` rather than a column so every editor (workspace, chat, regeneration)
+round-trips it without knowing about it.
+**A release with nothing to report gets an entry only while that is true.** After organize,
+`_report_quiet_releases` finds fix versions whose in-query issues were all judged not
+relevant and, if the output guidance asks for it, creates a `kind = 'nothing_to_report'`
+item for each (`fix_version` says which), which the writer then writes from the guidance.
+It has no issues of its own — linking the irrelevant ones would stop a changed issue from
+being re-evaluated. A rerun that finds a note for that version deletes the entry if nobody
+touched it and flags it otherwise.
 What a note *is* follows from what collects it and is not a free choice: a `<ul>`/`<ol>`
 may only contain `<li>`, and an `<li>` may only live in a list. The editor offers only the
 valid element, the schema refuses a mismatched pair, and `note_element_for()` derives the

@@ -444,6 +444,8 @@ const MORE_RELEASES = 10;
                 <li><code>rn-for-group="Cloud Publishing"</code> — on an element inside the group block:
                   kept only for groups whose name contains that text (<code>|</code> separates
                   alternatives), dropped for the rest. For an introduction one product needs.</li>
+                <li><code>outputclass="rn-group rn-unwrap"</code> — emit the element's children in its
+                  place, so each group's heading and list sit directly in <code>&lt;body&gt;</code>.</li>
               </ul>
             }
 
@@ -795,6 +797,22 @@ export class InstructionEditorComponent implements OnInit {
     }
     if (!root.querySelector('title')) problems.push('The template needs a <title>.');
     problems.push(...this.forGroupProblems(root));
+    problems.push(...this.unwrapProblems(root));
+    return problems;
+  }
+
+  /** Mirrors topic_assembler._unwrap_errors. */
+  private unwrapProblems(root: Element): string[] {
+    const problems: string[] = [];
+    for (const el of [root, ...Array.from(root.getElementsByTagName('*'))]) {
+      const classes = (el.getAttribute('outputclass') || '').split(/\s+/);
+      if (!classes.includes('rn-unwrap')) continue;
+      if (el === root || ['topic', 'title', 'shortdesc', 'body'].includes(el.nodeName)) {
+        problems.push(`outputclass="rn-unwrap" cannot go on the <${el.nodeName}>; the topic needs it.`);
+      } else if (classes.includes('rn-notes')) {
+        problems.push('outputclass="rn-unwrap" cannot go on the notes element: its tag is what decides whether notes are list items, and loose list items are invalid.');
+      }
+    }
     return problems;
   }
 

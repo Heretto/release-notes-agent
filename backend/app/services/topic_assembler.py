@@ -37,6 +37,16 @@ _UNWRAP_TAGS = {"section", "body", "topic", "conbody", "refbody", "concept", "re
 
 DOCTYPE = '<!DOCTYPE topic PUBLIC "-//OASIS//DTD DITA Topic//EN" "topic.dtd">'
 
+#: DITA's conditional-processing attributes. A note whose content is one <div> carrying
+#: only these keeps that <div> in storage, and assembly moves them onto the note's own
+#: element — the only way a whole <li> can be internal, since the writer never sees the
+#: <li>. Kept in the content rather than a column so every editor round-trips it.
+CONDITION_ATTRS = ("audience", "platform", "product", "props", "otherprops", "deliveryTarget")
+
+
+def _conditions(el: etree._Element) -> dict:
+    return {k: el.get(k) for k in CONDITION_ATTRS if (el.get(k) or "").strip()}
+
 
 class FragmentError(ValueError):
     """A release note fragment is not well-formed or not valid DITA."""
@@ -113,8 +123,10 @@ def normalize_fragment(raw: str, fragment_id: str, title: str) -> str:
                 break
 
     children = [c for c in root if isinstance(c.tag, str)]
+    conditions: dict = {}
     if len(children) == 1 and children[0].tag == "div" and not (root.text or "").strip():
         div = children[0]
+        conditions = _conditions(div)
     else:
         div = etree.Element("div")
         if (root.text or "").strip():
@@ -149,11 +161,15 @@ def normalize_fragment(raw: str, fragment_id: str, title: str) -> str:
         div.text = None
         div.insert(0, lead)
 
-    return "\n".join(
+    content = "\n".join(
         etree.tostring(child, encoding="unicode", pretty_print=True).strip()
         for child in div
         if isinstance(child.tag, str)
     ).strip()
+    if conditions:
+        attrs = "".join(f' {k}="{escape(v, {chr(34): "&quot;"})}"' for k, v in conditions.items())
+        content = f"<div{attrs}>\n{content}\n</div>"
+    return content
 
 
 def plain_text_fragment(fragment_id: str, title: str, summary: str) -> str:
@@ -362,6 +378,15 @@ def note_element(item: ReleaseNoteItem, tag: str = "div") -> etree._Element:
     except etree.XMLSyntaxError:
         fallback = plain_text_fragment(item.fragment_id, item.title, item.summary)
         el = etree.fromstring(f"<{tag}>{fallback}</{tag}>", _parser())
+    # A note stored as one conditional <div> — see CONDITION_ATTRS — puts its conditions
+    # on its own element, so filtering removes the whole note rather than its insides.
+    only = [c for c in el if isinstance(c.tag, str)]
+    if (len(only) == 1 and only[0].tag == "div" and not (el.text or "").strip()
+            and only[0].attrib and set(only[0].attrib) <= set(CONDITION_ATTRS)):
+        wrapper = only[0]
+        for key, value in wrapper.attrib.items():
+            el.set(key, value)
+        _unwrap(wrapper)
     el.set("id", item.fragment_id)
     el.set("outputclass", "release-note")
     return el
@@ -508,6 +533,12 @@ NOTES_MARKER = "rn-notes"
 #: a group's name carries its version — "Cloud Publishing 26.10.22". An attribute rather
 #: than an outputclass token because the value has spaces; like the markers, it never ships.
 FOR_GROUP_ATTR = "rn-for-group"
+#: On an element: emit its children in its place. A template needs an element to mark
+#: what repeats per group, but a house style may want each group's heading and list
+#: directly in <body> — this lets the marked element exist in the template only.
+UNWRAP_MARKER = "rn-unwrap"
+#: Elements whose removal would leave an invalid topic or orphan the notes.
+_CANNOT_UNWRAP = {"topic", "title", "shortdesc", "body"}
 
 #: A <ul>/<ol> host means the notes are list items; anything else holds blocks.
 _LIST_HOSTS = {"ul", "ol", "sl"}
@@ -569,6 +600,53 @@ def _apply_group_conditions(block: etree._Element, group_name: str) -> None:
             _remove_keeping_tail(el)
 
 
+def _unwrap(el: etree._Element) -> None:
+    """Replace an element with its children, keeping its text and tail in place."""
+    parent = el.getparent()
+    index = parent.index(el)
+    if el.text:
+        previous = el.getprevious()
+        if previous is not None:
+            previous.tail = (previous.tail or "") + el.text
+        else:
+            parent.text = (parent.text or "") + el.text
+    children = list(el)
+    for offset, child in enumerate(children):
+        parent.insert(index + offset, child)
+    if el.tail:
+        if children:
+            children[-1].tail = (children[-1].tail or "") + el.tail
+        else:
+            _remove_keeping_tail(el)
+            return
+    parent.remove(el)
+
+
+def _unwrap_marked(root: etree._Element) -> None:
+    for el in [e for e in root.iter() if isinstance(e.tag, str)
+               and UNWRAP_MARKER in (e.get("outputclass") or "").split()]:
+        if el is root or el.tag in _CANNOT_UNWRAP:
+            _strip_marker(el, UNWRAP_MARKER)
+            continue
+        _strip_marker(el, UNWRAP_MARKER)
+        _unwrap(el)
+
+
+def _unwrap_errors(root: etree._Element) -> List[str]:
+    errors = []
+    for el in root.iter():
+        if not isinstance(el.tag, str) or UNWRAP_MARKER not in (el.get("outputclass") or "").split():
+            continue
+        if el is root or el.tag in _CANNOT_UNWRAP:
+            errors.append(f'outputclass="{UNWRAP_MARKER}" cannot go on the <{el.tag}>; the topic needs it.')
+        elif NOTES_MARKER in (el.get("outputclass") or "").split():
+            errors.append(
+                f'outputclass="{UNWRAP_MARKER}" cannot go on the notes element: its tag is what '
+                "decides whether notes are list items, and loose list items are invalid."
+            )
+    return errors
+
+
 def _for_group_errors(root: etree._Element) -> List[str]:
     conditional = [e for e in root.iter() if isinstance(e.tag, str) and e.get(FOR_GROUP_ATTR) is not None]
     if not conditional:
@@ -618,6 +696,7 @@ def template_errors(dita: str) -> List[str]:
     if root.find("title") is None:
         errors.append("The template needs a <title>.")
     errors.extend(_for_group_errors(root))
+    errors.extend(_unwrap_errors(root))
     return errors
 
 
@@ -678,6 +757,7 @@ def build_topic_from_template(plan: TopicPlan, template: str) -> str:
 
 
 def _serialize_topic(root: etree._Element) -> str:
+    _unwrap_marked(root)
     xml = etree.tostring(root, encoding="unicode", pretty_print=True)
     return f'<?xml version="1.0" encoding="UTF-8"?>\n{DOCTYPE}\n{xml}'
 

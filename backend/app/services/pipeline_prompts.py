@@ -8,7 +8,7 @@ structured stage asks for JSON and nothing else; the writer asks for one DITA fr
 from __future__ import annotations
 
 import json
-from typing import Iterable, List, Optional, Sequence
+from typing import Dict, Iterable, List, Optional, Sequence
 
 from app.models.database import JobJiraIssue, ReleaseNoteItem
 
@@ -199,6 +199,65 @@ def organize_input(items: Sequence[ReleaseNoteItem]) -> str:
     return json.dumps(records, indent=1, ensure_ascii=False)
 
 
+# ── Stage 4b: releases with nothing to report ────────────────────────────────────────
+
+def quiet_release_instructions(output_guidance: str, existing_groups: Sequence[str], query: str) -> str:
+    listed = "\n".join(f"- {g}" for g in existing_groups) or "(none yet)"
+    return f"""Some product releases covered by these release notes have Jira issues, but none of
+those issues is a change users need to know about, so no release note was written for them.
+Decide, from the guidance below only, whether each such release gets an entry of its own —
+for example a single line saying there are no end-user updates.
+
+- If the guidance says nothing about releases with nothing to report, return no entries.
+- Skip a version that is not one of the releases these notes are for. The query that
+  selected the issues says which those are: {query.strip() or "(not given)"}
+- Otherwise return one entry per release:
+  - "version": exactly as given in the input.
+  - "group": the group the entry belongs in, named exactly as the guidance says a group's
+    heading reads (product and version, in the version format the guidance gives).
+  - "focus": a very general description of what the work in that release focused on,
+    written for customers. No issue keys, internal names or customer names.
+- "order": every group name — the existing ones below and any new ones — in the order the
+  guidance puts them.
+
+## Existing groups, in their current order
+
+{listed}
+
+## Guidance
+
+{output_guidance.strip()}
+
+## Output
+
+Return JSON only, in exactly this shape:
+
+{{
+  "entries": [
+    {{ "version": "Portal v5 26.10.22", "group": "Heretto Portal v5 26.10.22", "focus": "stability and performance" }}
+  ],
+  "order": ["Heretto CCMS 2026.10.22 (Next-Gen Infrastructure)", "Heretto Portal v5 26.10.22"]
+}}"""
+
+
+def quiet_release_input(issues_by_version: Dict[str, Sequence[JobJiraIssue]]) -> str:
+    return json.dumps(
+        [
+            {
+                "version": version,
+                "issues": [
+                    {"summary": _clip(i.summary, 200), "type": i.issue_type,
+                     "components": list(i.components or [])}
+                    for i in list(issues)[:25]
+                ],
+            }
+            for version, issues in issues_by_version.items()
+        ],
+        indent=1,
+        ensure_ascii=False,
+    )
+
+
 # ── Stage 5: write ───────────────────────────────────────────────────────────────────
 
 FRAGMENT_FORMAT = """## Output format
@@ -217,7 +276,11 @@ setting names), <codeblock> (for code blocks), <uicontrol> (for UI labels such a
 menu items), <filepath> (for file and directory paths), <note type="note|important|warning|tip">,
 <dl> with <dlentry><dt/><dd/></dlentry>, <simpletable>, and
 <xref href="https://…" scope="external" format="html">. Do NOT use <title>, <section>,
-headings, <div>, or Markdown. Escape &, < and > in text (&amp; &lt; &gt;). Mention Jira issue
+headings, <div>, or Markdown — with one exception: when your guidance makes a whole note
+conditional (for example internal-only), wrap the entire note in exactly one
+<div audience="internal"> (or platform, product, props, otherprops, deliveryTarget) and put
+nothing else on that <div>. The condition is moved onto the note's own element when the
+topic is assembled. Conditions on part of a note go on that part, as usual. Escape &, < and > in text (&amp; &lt; &gt;). Mention Jira issue
 keys or link issues only if your guidance asks for them; to link one, use the issue's "url"
 from the input as the <xref> href, never a URL you construct."""
 
@@ -285,6 +348,14 @@ def write_input(item: ReleaseNoteItem, previous_fragment: Optional[str] = None) 
         "group": item.group_name,
         "issues": [issue_record(i) for i in item.issues],
     }
+    if getattr(item, "kind", None) == "nothing_to_report":
+        record["kind"] = "nothing_to_report"
+        record["release"] = item.fix_version
+        record["instructions"] = (
+            "No issue in this release is a change users need to know about. Write the entry your "
+            "guidance prescribes for a release with nothing to report; 'summary' is what the "
+            "work focused on."
+        )
     text = json.dumps(record, indent=1, ensure_ascii=False)
     if previous_fragment:
         text += f"\n\n## Previous fragment\n\n{previous_fragment}"
@@ -343,6 +414,10 @@ markers and two tokens:
   separate alternatives with |) and dropped for every other group. Group names carry a
   version, so name the product ("Cloud Publishing"), not the version. Never put
   rn-for-group on the rn-notes element or anything containing it.
+- Add rn-unwrap to an element's outputclass (outputclass="rn-group rn-unwrap") to emit its
+  children in its place. Use it when the structure wanted has a group's heading and list
+  directly in <body>, with no element around each group. Not on <topic>, <title>,
+  <shortdesc>, <body> or the rn-notes element.
 
 Everything else in the template is emitted as written, so fixed paragraphs, <ph
 conkeyref="..."/> references and a populated <shortdesc> all belong in it.
