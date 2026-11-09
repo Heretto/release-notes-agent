@@ -203,7 +203,7 @@ type StepState = 'done' | 'current' | 'pending' | 'failed';
                     <dt>Guidance</dt>
                     <dd>
                       {{ instructionSet.relevance_guidance ? 'Relevance set' : 'Relevance: default' }}
-                      · {{ instructionSet.organization_guidance ? 'Organization set' : 'Organization: default' }}
+                      · {{ instructionSet.layout?.guidance ? 'Output set' : 'Output: default' }}
                     </dd>
                   </div>
                 }

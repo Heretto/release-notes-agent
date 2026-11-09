@@ -24,7 +24,7 @@ from hop_core.dita import DitaValidator
 from app.config import get_settings
 from app.core.security import decrypt_credentials
 from app.models.database import (
-    Credential, CredentialType, HistoryEvent, InstructionSet, IssueRelevance, ItemStatus, Job,
+    Credential, CredentialType, HistoryEvent, InstructionSet, IssueRelevance, ItemKind, ItemStatus, Job,
     JobJiraIssue, JobRequest, JobStage, JobStatus, ReleaseNoteItem, ReleaseNoteItemIssue,
 )
 from app.services import pipeline_prompts as prompts
@@ -129,11 +129,14 @@ class ReleaseNotesPipeline:
             await self._organize(job, new_items)
             self._check_cancelled(job)
 
+            quiet_items = await self._report_quiet_releases(job)
+            self._check_cancelled(job)
+
             to_regenerate = [
                 item for item in job.items
                 if getattr(item, "_regenerate_reason", None)
             ]
-            await self._write(job, new_items, to_regenerate)
+            await self._write(job, new_items + quiet_items, to_regenerate)
             self._check_cancelled(job)
 
             await self._settle_topic_structure(job)
@@ -476,7 +479,7 @@ class ReleaseNotesPipeline:
         group_sequence: List[str] = list(existing_groups)
         try:
             result = await self.analyst.run(
-                prompts.organize_instructions(self.instruction_set.organization_guidance, existing_groups),
+                prompts.organize_instructions(Layout.of(self.instruction_set).guidance, existing_groups),
                 prompts.organize_input(new_items), max_tokens=4096,
             )
             parsed = extract_json(result.output)
@@ -517,6 +520,110 @@ class ReleaseNotesPipeline:
         renumber_positions(job, group_sequence)
         self.db.commit()
 
+    # ── Stage 4b: releases with nothing to report ────────────────────────────────────
+
+    async def _report_quiet_releases(self, job: Job) -> List[ReleaseNoteItem]:
+        """Keep a "nothing to report" entry for each release the guidance wants one for.
+
+        A release is quiet when it has issues in the query and every one of them was judged
+        not relevant — pending issues may still become notes, so they keep it from counting.
+        Entries whose release is no longer quiet are retired first: deleted while nobody has
+        touched them, flagged otherwise, because a person's edits are never thrown away.
+        New entries are only created when the output guidance asks for them; the model
+        decides that, and returns [] when it does not. A failure here is logged, not fatal.
+        """
+        live = [issue for issue in job.issues if issue.in_query]
+        by_version: Dict[str, List[JobJiraIssue]] = {}
+        for issue in live:
+            for version in issue.fix_versions or []:
+                by_version.setdefault(version, []).append(issue)
+        quiet = {
+            version: issues for version, issues in by_version.items()
+            if all(i.relevance == IssueRelevance.NOT_RELEVANT for i in issues)
+        }
+
+        entries = [i for i in job.items if i.kind == ItemKind.NOTHING_TO_REPORT]
+        for entry in entries:
+            if entry.fix_version in quiet:
+                continue
+            untouched = not entry.user_edited and entry.status == ItemStatus.DRAFT and not entry.reviewed
+            if untouched:
+                job.items.remove(entry)
+                self.db.delete(entry)
+            elif not entry.needs_attention:
+                entry.needs_attention = True
+                entry.attention_reason = (
+                    f"{entry.fix_version} now has release notes, so this nothing-to-report entry "
+                    "probably no longer applies."
+                )
+                record_history(self.db, entry, HistoryEvent.FLAGGED, entry.attention_reason,
+                               details={"run": job.run_count})
+        self.db.commit()
+
+        guidance = Layout.of(self.instruction_set).guidance.strip()
+        have = {e.fix_version for e in job.items if e.kind == ItemKind.NOTHING_TO_REPORT}
+        missing = [v for v in sorted(quiet) if v not in have]
+        if not guidance or not missing:
+            return []
+
+        self._set_stage(job, JobStage.ORGANIZE, "Checking releases with nothing to report")
+        request, started = self._log_request(job, "quiet_releases", {
+            "agent": self.analyst.name, "versions": missing,
+        })
+        try:
+            result = await self.analyst.run(
+                prompts.quiet_release_instructions(guidance, group_order(job), job.jql_query or ""),
+                prompts.quiet_release_input({v: quiet[v] for v in missing}),
+                max_tokens=4096,
+            )
+            parsed = extract_json(result.output)
+        except Exception as exc:  # noqa: BLE001 — an optional entry is not worth a failed release
+            logger.warning("Nothing-to-report check failed for job %s: %s", job.id, exc)
+            self._finish_request(request, started, error=str(exc))
+            return []
+
+        parsed = parsed if isinstance(parsed, dict) else {}
+        created: List[ReleaseNoteItem] = []
+        next_position = max((i.position for i in job.items), default=-1) + 1
+        for record in parsed.get("entries") or []:
+            if not isinstance(record, dict):
+                continue
+            version = str(record.get("version") or "").strip()
+            if version not in missing or version in {i.fix_version for i in created}:
+                continue
+            item = ReleaseNoteItem(
+                job_id=job.id,
+                position=next_position,
+                group_name=str(record.get("group") or "").strip()[:255] or version,
+                title=f"Nothing to report in {version}"[:500],
+                summary=str(record.get("focus") or "").strip(),
+                dita_content="",
+                status=ItemStatus.DRAFT,
+                kind=ItemKind.NOTHING_TO_REPORT,
+                fix_version=version,
+            )
+            next_position += 1
+            self.db.add(item)
+            job.items.append(item)
+            self.db.flush()
+            record_history(
+                self.db, item, HistoryEvent.CREATED,
+                f"Created because no issue in {version} is a change users need to know about (run {job.run_count})",
+                details={"fix_version": version, "run": job.run_count},
+            )
+            created.append(item)
+
+        if created:
+            names = {(i.group_name or "").strip() for i in job.items}
+            order = [str(g).strip() for g in parsed.get("order") or [] if str(g).strip() in names]
+            order = list(dict.fromkeys(order + group_order(job)))
+            renumber_positions(job, order)
+        self._finish_request(request, started, {
+            "created": [i.fix_version for i in created], "provider": result.provider, "model": result.model,
+        })
+        self.db.commit()
+        return created
+
     # ── Stage 5: write ───────────────────────────────────────────────────────────────
 
     async def _write(self, job: Job, new_items: List[ReleaseNoteItem], regenerate: List[ReleaseNoteItem]) -> None:
@@ -529,9 +636,9 @@ class ReleaseNotesPipeline:
         self._set_stage(job, JobStage.WRITE, f"Writing release notes (0 of {total})")
         semaphore = asyncio.Semaphore(WRITE_CONCURRENCY)
         product = product_name(job)
-        # The instruction set's guidance reaches the writer, not just the organize stage:
-        # it is where people put how a note should read, and the writer is what writes it.
-        guidance = self.instruction_set.organization_guidance if self.instruction_set else None
+        # The output guidance reaches the writer, not just organize: it says how a note is
+        # formatted, and the writer is what writes it. house_style() scopes it to one note.
+        guidance = Layout.of(self.instruction_set).guidance if self.instruction_set else None
         instructions = prompts.write_instructions(product, guidance)
 
         async def generate(item: ReleaseNoteItem, is_rewrite: bool) -> Tuple[ReleaseNoteItem, bool, str, Optional[str]]:

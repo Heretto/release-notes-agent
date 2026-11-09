@@ -388,6 +388,7 @@ def _item_fields(item: ReleaseNoteItem) -> dict:
         dita_content=item.dita_content or "", status=item.status, needs_attention=bool(item.needs_attention),
         attention_reason=item.attention_reason, user_edited=bool(item.user_edited),
         issue_keys=[link.issue.issue_key for link in item.issue_links],
+        kind=item.kind or "note", fix_version=item.fix_version,
         has_notes=bool((item.notes or "").strip()),
         reviewer_id=item.reviewer_id,
         reviewer_email=item.reviewer.email if item.reviewer else None,

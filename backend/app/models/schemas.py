@@ -143,36 +143,31 @@ class TemplateLayout(BaseModel):
         return self
 
 
-class AgentLayout(BaseModel):
-    """Structure described in words; an agent turns it into a template.
-
-    The agent runs **once per release**, at the start of a run, and the template it
-    produces is kept on the job. Every assembly of that release then uses it — changing
-    the topic split, editing a note — so a release's shape is settled by its run rather
-    than re-decided each time something is saved, and nothing calls a model from inside a
-    request.
-    """
-    guidance: str = Field("", max_length=8000)
-
-
 class TopicLayout(BaseModel):
-    """How an instruction set's topics are built.
+    """How an instruction set's output is laid out and formatted.
 
-    `mode` picks who owns the structure: these options, a DITA template the writer
-    authors, or an agent given free-form guidance. Each mode keeps its own settings, so
-    switching back and forth does not lose what was configured in the other.
+    `mode` picks who owns the topic structure: these options, a DITA template the writer
+    authors, or ("Describe it") an agent that turns `guidance` into a template **once per
+    release** — kept on the job, so every later assembly reuses it and nothing calls a
+    model from inside a request. Each mode keeps its own settings, so switching back and
+    forth does not lose what was configured in the other.
+
+    `guidance` is the one place the output is described, in every mode: organize reads it
+    for group names and order, the writer and the workspace chat for how a note is
+    formatted (scoped to one note), and in "Describe it" mode the template agent for the
+    structure. Tone and voice are not here — they belong to the writer agent itself.
     """
     mode: str = Field("structured", pattern=r'^(structured|template|agent)$')
+    guidance: str = Field("", max_length=16000)
     structured: StructuredLayout = Field(default_factory=StructuredLayout)
     template: TemplateLayout = Field(default_factory=TemplateLayout)
-    agent: AgentLayout = Field(default_factory=AgentLayout)
 
     @model_validator(mode="after")
     def _the_chosen_mode_must_be_usable(self):
         if self.mode == "template" and not self.template.dita.strip():
             raise ValueError("Write the DITA template, or choose another layout mode.")
-        if self.mode == "agent" and not self.agent.guidance.strip():
-            raise ValueError("Describe the structure you want, or choose another layout mode.")
+        if self.mode == "agent" and not self.guidance.strip():
+            raise ValueError("Describe the output you want, or choose another layout mode.")
         return self
 
 
@@ -201,7 +196,6 @@ class InstructionSetBase(BaseModel):
     analysis_agent_id: Optional[UUID] = None
     product_name: Optional[str] = Field(None, max_length=255)
     relevance_guidance: Optional[str] = Field(None, max_length=8000)
-    organization_guidance: Optional[str] = Field(None, max_length=8000)
     chunking_strategy: str = Field("single", pattern=r'^(single|by_group|by_component)$')
     # Declared here, not only on the update schema: without it the response silently drops
     # the layout, the editor loads the defaults, and the next save writes them back.
@@ -238,7 +232,6 @@ class InstructionSetUpdate(BaseModel):
     analysis_agent_id: Optional[UUID] = None
     product_name: Optional[str] = Field(None, max_length=255)
     relevance_guidance: Optional[str] = Field(None, max_length=8000)
-    organization_guidance: Optional[str] = Field(None, max_length=8000)
     chunking_strategy: Optional[str] = Field(None, pattern=r'^(single|by_group|by_component)$')
     layout: Optional[TopicLayout] = None
 
@@ -384,6 +377,9 @@ class ReleaseNoteItemResponse(BaseModel):
     attention_reason: Optional[str] = None
     user_edited: bool = False
     issue_keys: List[str] = Field(default_factory=list)
+    # "note", or "nothing_to_report": stands for `fix_version`, a release with no notes.
+    kind: str = "note"
+    fix_version: Optional[str] = None
     has_notes: bool = False
     # Review is its own axis, separate from `status`: who was asked to read this note,
     # whether they have said they are done, and how much they said.

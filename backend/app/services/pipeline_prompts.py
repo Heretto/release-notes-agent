@@ -8,7 +8,7 @@ structured stage asks for JSON and nothing else; the writer asks for one DITA fr
 from __future__ import annotations
 
 import json
-from typing import Iterable, List, Optional, Sequence
+from typing import Dict, Iterable, List, Optional, Sequence
 
 from app.models.database import JobJiraIssue, ReleaseNoteItem
 
@@ -23,6 +23,9 @@ def issue_record(issue: JobJiraIssue, description_limit: int = 1800, comment_lim
     comments = [_clip(c, comment_limit) for c in (issue.comments or [])[-max_comments:] if c and c.strip()]
     return {
         "key": issue.issue_key,
+        # The issue's page in Jira, so a note that is meant to link its issue can: the
+        # writer has no other way to know which Jira site the keys belong to.
+        "url": issue.url,
         "type": issue.issue_type,
         "status": issue.status,
         "priority": issue.priority,
@@ -125,10 +128,25 @@ def candidates_json(candidates: Sequence[dict]) -> str:
 
 # ── Stage 4: organize ────────────────────────────────────────────────────────────────
 
-def organize_instructions(organization_guidance: Optional[str], existing_groups: Sequence[str]) -> str:
-    guidance = (organization_guidance or "").strip()
+def organize_instructions(output_guidance: Optional[str], existing_groups: Sequence[str]) -> str:
+    """Group and order the notes, following the instruction set's output guidance.
+
+    The guidance describes the whole output — topic structure and note formatting as well
+    as grouping — because it is one field that several agents read. This stage takes from
+    it only which groups exist, what they are called and in what order things appear.
+    """
+    guidance = (output_guidance or "").strip()
     if guidance:
-        guidance_block = f"\n\n## How these release notes are organized\n\n{guidance}"
+        guidance_block = (
+            "\n\n## How these release notes are organized\n\n"
+            "The guidance below describes the whole output. From it, take which groups the notes "
+            "fall into, what each group is called, the order of the groups, and the order of notes "
+            "within a group; ignore what it says about markup and wording, which other stages "
+            "apply. A group's name is printed as its heading, so name each group exactly as the "
+            "guidance says its heading reads. When a heading includes a version, take it from the "
+            "notes' fix_versions in the input, in the format the guidance gives; never invent one."
+            f"\n\n{guidance}"
+        )
     else:
         guidance_block = (
             "\n\n## How these release notes are organized\n\n"
@@ -165,6 +183,9 @@ def organize_input(items: Sequence[ReleaseNoteItem]) -> str:
     for index, item in enumerate(items, start=1):
         issue_types = sorted({i.issue_type for i in item.issues if i.issue_type})
         components = sorted({c for i in item.issues for c in (i.components or [])})
+        # The Jira versions the note shipped in: what a group heading like
+        # "Heretto Portal v6 26.10.22" is built from. Without them a version is a guess.
+        fix_versions = sorted({v for i in item.issues for v in (i.fix_versions or [])})
         records.append({
             "n": index,
             "title": item.title,
@@ -172,9 +193,69 @@ def organize_input(items: Sequence[ReleaseNoteItem]) -> str:
             "category": item.group_name,
             "issue_types": issue_types,
             "components": components,
+            "fix_versions": fix_versions,
             "issue_keys": [i.issue_key for i in item.issues],
         })
     return json.dumps(records, indent=1, ensure_ascii=False)
+
+
+# ── Stage 4b: releases with nothing to report ────────────────────────────────────────
+
+def quiet_release_instructions(output_guidance: str, existing_groups: Sequence[str], query: str) -> str:
+    listed = "\n".join(f"- {g}" for g in existing_groups) or "(none yet)"
+    return f"""Some product releases covered by these release notes have Jira issues, but none of
+those issues is a change users need to know about, so no release note was written for them.
+Decide, from the guidance below only, whether each such release gets an entry of its own —
+for example a single line saying there are no end-user updates.
+
+- If the guidance says nothing about releases with nothing to report, return no entries.
+- Skip a version that is not one of the releases these notes are for. The query that
+  selected the issues says which those are: {query.strip() or "(not given)"}
+- Otherwise return one entry per release:
+  - "version": exactly as given in the input.
+  - "group": the group the entry belongs in, named exactly as the guidance says a group's
+    heading reads (product and version, in the version format the guidance gives).
+  - "focus": a very general description of what the work in that release focused on,
+    written for customers. No issue keys, internal names or customer names.
+- "order": every group name — the existing ones below and any new ones — in the order the
+  guidance puts them.
+
+## Existing groups, in their current order
+
+{listed}
+
+## Guidance
+
+{output_guidance.strip()}
+
+## Output
+
+Return JSON only, in exactly this shape:
+
+{{
+  "entries": [
+    {{ "version": "Portal v5 26.10.22", "group": "Heretto Portal v5 26.10.22", "focus": "stability and performance" }}
+  ],
+  "order": ["Heretto CCMS 2026.10.22 (Next-Gen Infrastructure)", "Heretto Portal v5 26.10.22"]
+}}"""
+
+
+def quiet_release_input(issues_by_version: Dict[str, Sequence[JobJiraIssue]]) -> str:
+    return json.dumps(
+        [
+            {
+                "version": version,
+                "issues": [
+                    {"summary": _clip(i.summary, 200), "type": i.issue_type,
+                     "components": list(i.components or [])}
+                    for i in list(issues)[:25]
+                ],
+            }
+            for version, issues in issues_by_version.items()
+        ],
+        indent=1,
+        ensure_ascii=False,
+    )
 
 
 # ── Stage 5: write ───────────────────────────────────────────────────────────────────
@@ -195,17 +276,23 @@ setting names), <codeblock> (for code blocks), <uicontrol> (for UI labels such a
 menu items), <filepath> (for file and directory paths), <note type="note|important|warning|tip">,
 <dl> with <dlentry><dt/><dd/></dlentry>, <simpletable>, and
 <xref href="https://…" scope="external" format="html">. Do NOT use <title>, <section>,
-headings, <div>, or Markdown. Escape &, < and > in text (&amp; &lt; &gt;). Mention Jira issue
-keys only if your style guidance asks for them."""
+headings, <div>, or Markdown — with one exception: when your guidance makes a whole note
+conditional (for example internal-only), wrap the entire note in exactly one
+<div audience="internal"> (or platform, product, props, otherprops, deliveryTarget) and put
+nothing else on that <div>. The condition is moved onto the note's own element when the
+topic is assembled. Conditions on part of a note go on that part, as usual. Escape &, < and > in text (&amp; &lt; &gt;). Mention Jira issue
+keys or link issues only if your guidance asks for them; to link one, use the issue's "url"
+from the input as the <xref> href, never a URL you construct."""
 
 
 def house_style(guidance: Optional[str]) -> str:
-    """The instruction set's guidance, as the writer sees it.
+    """The instruction set's output guidance, as the writer sees it.
 
-    The same text also goes to the organize stage, which uses it to choose group names and
-    order. Writers get it because people put their whole house style in that box — the
-    wording of a note, the prefixes it opens with, which elements to use — and none of it
-    used to reach the agent that writes the words, so the guidance appeared to do nothing.
+    The same text goes to organize (group names and order) and, in "Describe it" mode, to
+    the template agent (topic structure). The writer gets it because it also says how a
+    note is formatted — the label it opens with, which elements to use, whether it links
+    its issue — and that is the writer's to do. Tone and voice are not in it: those come
+    from the writer agent's own configuration.
 
     Scoped on the way in: a single note is all this agent can affect. Rules about the topic
     around it are carried out by assembly, and telling the writer to produce them makes it
@@ -216,7 +303,7 @@ def house_style(guidance: Optional[str]) -> str:
         return ""
     return f"""
 
-## House style
+## Output guidance
 
 These rules come from the instruction set and are **binding**. Follow everything in them
 that governs this one release note: how it opens, what tense and voice it uses, what
@@ -244,7 +331,7 @@ names, credentials).{house_style(guidance)}
 
 def rewrite_instructions(product: str, errors: Sequence[str], guidance: Optional[str] = None) -> str:
     listed = "\n".join(f"- {e}" for e in errors)
-    # The house style rides along: a retry that drops it fixes the DITA and loses the
+    # The output guidance rides along: a retry that drops it fixes the DITA and loses the
     # wording the first attempt got right.
     return f"""Your previous fragment for this release note was not valid DITA. Fix these problems and
 return the corrected fragment only:
@@ -261,6 +348,14 @@ def write_input(item: ReleaseNoteItem, previous_fragment: Optional[str] = None) 
         "group": item.group_name,
         "issues": [issue_record(i) for i in item.issues],
     }
+    if getattr(item, "kind", None) == "nothing_to_report":
+        record["kind"] = "nothing_to_report"
+        record["release"] = item.fix_version
+        record["instructions"] = (
+            "No issue in this release is a change users need to know about. Write the entry your "
+            "guidance prescribes for a release with nothing to report; 'summary' is what the "
+            "work focused on."
+        )
     text = json.dumps(record, indent=1, ensure_ascii=False)
     if previous_fragment:
         text += f"\n\n## Previous fragment\n\n{previous_fragment}"
@@ -292,7 +387,12 @@ def topic_structure_instructions(guidance: str) -> str:
     return f"""You are turning a description of a release-notes topic structure into a DITA
 topic template. Return the template and nothing else — no commentary, no code fences.
 
-## The structure wanted
+## The output wanted
+
+The description covers the whole output. Take from it only the structure of the topic: what
+surrounds the notes, what repeats per group, and what fixed content appears where. What it
+says about how each note is worded or marked up, and about which groups exist and in what
+order, is applied by other stages — leave it out of the template.
 
 {guidance.strip()}
 
@@ -308,6 +408,16 @@ markers and two tokens:
   group notes at all.
 - {{title}} anywhere in the text is replaced by the release's title.
 - {{group}} inside the repeating block is replaced by that group's name.
+- Content that belongs to only some groups — an introduction that comes before one
+  product's heading, say — goes inside the repeating block with rn-for-group="…" naming
+  the group. It is kept only for groups whose name contains that text (ignoring case;
+  separate alternatives with |) and dropped for every other group. Group names carry a
+  version, so name the product ("Cloud Publishing"), not the version. Never put
+  rn-for-group on the rn-notes element or anything containing it.
+- Add rn-unwrap to an element's outputclass (outputclass="rn-group rn-unwrap") to emit its
+  children in its place. Use it when the structure wanted has a group's heading and list
+  directly in <body>, with no element around each group. Not on <topic>, <title>,
+  <shortdesc>, <body> or the rn-notes element.
 
 Everything else in the template is emitted as written, so fixed paragraphs, <ph
 conkeyref="..."/> references and a populated <shortdesc> all belong in it.
@@ -319,6 +429,7 @@ conkeyref="..."/> references and a populated <shortdesc> all belong in it.
   <shortdesc/>
   <body>
     <section outputclass="rn-group">
+      <p rn-for-group="Cloud Publishing">Cloud Publishing ships separately from the CCMS.</p>
       <p><b>{{group}}</b></p>
       <ul outputclass="rn-notes"/>
     </section>

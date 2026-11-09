@@ -33,13 +33,20 @@ note's history), the fragment shape (a note stores **content**, and assembly wra
 `tests/integration/test_pipeline_with_fakes.py` runs the whole pipeline against the local
 Postgres with fake Jira and fake agents; keep it green when touching the stages.
 
-**Guidance reaches two stages, and only governs one note at a time.**
-`organization_guidance` goes to the organize stage (group names and order) *and*, since the
-writer is what actually writes the words, to the writer and the workspace chat agent via
-`pipeline_prompts.house_style()`. It used to reach only the organize stage, so anyone who
-wrote their house style in that box — note prefixes, tense, which elements to use — saw no
-change in the output and reasonably reported the guidance as ignored. The block scopes
-itself on the way in: the writer is told to follow every rule about **this note** and to
+**One output guidance, read by every stage that shapes the output; tone is the agent's.**
+`instruction_sets.layout.guidance` (the "Output guidance" box in the editor's Output section)
+describes grouping, group headings, order and note format, in every layout mode. Organize
+reads it for group names and order (with each note's `fix_versions`, so a heading can carry
+a version); the writer and the workspace chat read it through
+`pipeline_prompts.house_style()`; in "Describe it" mode the template agent reads it for the
+topic structure. Each is told which part is its job. It replaced two fields that reached
+different agents — `organization_guidance` (organize and the writer) and
+`layout.agent.guidance` (the template agent only) — so a whole description written in
+either was mostly ignored; migration `move_org_guidance_to_layout` folded them together.
+**Tone and voice are not in it**: they belong to the writer agent's own configuration
+(description, context files, feedback memory), which hop-core puts in its system prompt —
+so two products with different voices need two writer agents. The writer's block scopes
+itself on the way in: it is told to follow every rule about **this note** and to
 ignore rules about the topic around it. That is not politeness — a writer told to emit
 `<title>`, `<shortdesc>` or `<ul>` wrappers returns a fragment that fails DTD validation and
 the note silently falls back to its plain summary. Topic-level structure is `topic_assembler.build_topic_xml`, and it is
@@ -50,13 +57,33 @@ note a `<div>` or an `<li>`, and what the `<shortdesc>` does. `layout.mode` pick
 options above), **template** (a DITA topic the writer authors, with `outputclass="rn-group"`
 marking what repeats per group and `rn-notes` marking where notes go; the notes host's tag
 decides whether a note is an `<li>` or a `<div>`, and both markers are stripped from the
-output), or **agent** (the structure described in words). Each mode keeps its own settings,
+output; an element inside the group block with `rn-for-group="…"` is kept only for groups
+whose name *contains* that text — containment, because organize puts the version in the
+name — which is how one product gets an introduction the others do not; and
+`rn-unwrap` in an element's outputclass emits its children in its place, so the `rn-group`
+element can exist only in the template and each group's heading and list sit directly in
+`<body>`), or **agent** ("Describe it": the output guidance turned into a template). Each mode keeps its own settings,
 so switching back does not lose the other. Agent mode resolves to a template **once per
 run** — `_settle_topic_structure` writes it to `jobs.topic_template` and every later
 assembly of that release reuses it. That is deliberate: assembly also runs inside request
 handlers (a topic-split change, a note edit), and nothing there may call a model. A release
 assembled before its first run, or whose agent failed, falls back to the structured options
 rather than producing no topic.
+**A whole note can be conditional, and the condition lives in its content.** The writer
+never sees the `<li>` around a note, so it marks an internal-only note by wrapping all of
+it in one `<div>` that carries only DITA conditional attributes (`audience`, `platform`,
+`product`, `props`, `otherprops`, `deliveryTarget`). `normalize_fragment` keeps that one
+wrapper — every other wrapping `<div>` is still dropped — and `note_element` moves its
+attributes onto the note's own element, so filtering removes the whole `<li>`. It is stored
+in `dita_content` rather than a column so every editor (workspace, chat, regeneration)
+round-trips it without knowing about it.
+**A release with nothing to report gets an entry only while that is true.** After organize,
+`_report_quiet_releases` finds fix versions whose in-query issues were all judged not
+relevant and, if the output guidance asks for it, creates a `kind = 'nothing_to_report'`
+item for each (`fix_version` says which), which the writer then writes from the guidance.
+It has no issues of its own — linking the irrelevant ones would stop a changed issue from
+being re-evaluated. A rerun that finds a note for that version deletes the entry if nobody
+touched it and flags it otherwise.
 What a note *is* follows from what collects it and is not a free choice: a `<ul>`/`<ol>`
 may only contain `<li>`, and an `<li>` may only live in a list. The editor offers only the
 valid element, the schema refuses a mismatched pair, and `note_element_for()` derives the

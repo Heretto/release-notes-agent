@@ -312,7 +312,7 @@ const MORE_RELEASES = 10;
         </div>
 
         <div class="form-section">
-          <h3>Guidance</h3>
+          <h3>Relevance</h3>
 
           <mat-form-field appearance="outline" class="full-width">
             <mat-label>What counts as a change users need to know about</mat-label>
@@ -321,20 +321,27 @@ const MORE_RELEASES = 10;
             <mat-hint>Shown to the analysis agent when it decides which issues become release notes</mat-hint>
           </mat-form-field>
 
-          <mat-form-field appearance="outline" class="full-width">
-            <mat-label>How the release notes are organized and written</mat-label>
-            <textarea matInput formControlName="organization_guidance" rows="4"
-                      placeholder="e.g. Group as New features, Improvements, Fixes, then Known issues. Open every note with Added. / Changed. / Fixed. and write in past simple."></textarea>
-            <mat-hint>
-              Given to the agent that groups the notes and to the one that writes them. Rules about
-              the topic around a note — its title, shortdesc or sections — are set by Topics below,
-              not here.
-            </mat-hint>
-          </mat-form-field>
         </div>
 
         <div class="form-section">
           <h3>Output</h3>
+
+          <!-- subscriptSizing="dynamic": the hint runs to several lines, and the default fixed
+               one-line subscript lets it run into the Topic layout card below. -->
+          <mat-form-field appearance="outline" class="full-width output-guidance" subscriptSizing="dynamic">
+            <mat-label>Output guidance</mat-label>
+            <textarea matInput formControlName="output_guidance" rows="10"
+                      placeholder="e.g. One group per product, in this order: Heretto CCMS, Heretto Portal, Cloud Publishing. Each group's heading is the product name and version (yy.mm.dd). Each note starts with Added. / Changed. / Fixed. and links its Jira issue with an internal xref."></textarea>
+            <mat-hint>
+              How the notes are grouped and ordered, what each group's heading says, and how each note
+              is formatted. Read by the agent that organizes the notes, by the writer, and — with
+              "Describe it" below — by the agent that builds the topic. Tone and voice come from the
+              writer agent's own instructions, not from here.
+            </mat-hint>
+            @if (form.get('output_guidance')?.hasError('required')) {
+              <mat-error>"Describe it" builds the topic from this, so it cannot be empty.</mat-error>
+            }
+          </mat-form-field>
 
           <div class="layout-card">
             <div class="vars-head">
@@ -356,9 +363,10 @@ const MORE_RELEASES = 10;
                   populated shortdesc — comes through untouched.
                 }
                 @case ('agent') {
-                  Describe the structure in your own words. At the start of each release an
-                  agent turns it into a template, which that release then keeps — so the
-                  shape stays put while you edit notes.
+                  The output guidance above describes the structure too. At the start of each
+                  release an agent turns it into a template, which that release then keeps — so
+                  the shape stays put while you edit notes. Until the first run, releases from
+                  this set use the default shape.
                 }
                 @default {
                   Pick from the shapes this app can build. Always valid, nothing to author.
@@ -435,20 +443,14 @@ const MORE_RELEASES = 10;
                 <li><code>outputclass="rn-group"</code> — the element repeated once per group,
                   with the notes marker inside it. Leave it out if you do not group notes.</li>
                 <li><code>&#123;title&#125;</code> and <code>&#123;group&#125;</code> are replaced as the topic is built.</li>
+                <li><code>rn-for-group="Cloud Publishing"</code> — on an element inside the group block:
+                  kept only for groups whose name contains that text (<code>|</code> separates
+                  alternatives), dropped for the rest. For an introduction one product needs.</li>
+                <li><code>outputclass="rn-group rn-unwrap"</code> — emit the element's children in its
+                  place, so each group's heading and list sit directly in <code>&lt;body&gt;</code>.</li>
               </ul>
             }
 
-            @if (form.get('layout_mode')?.value === 'agent') {
-              <mat-form-field appearance="outline" class="full-width" subscriptSizing="dynamic">
-                <mat-label>Describe the structure</mat-label>
-                <textarea matInput formControlName="agent_guidance" rows="8"
-                          placeholder="e.g. One bold paragraph per product release with the product name and version, then that product's notes as a single bulleted list. Leave the short description empty."></textarea>
-                <mat-hint>
-                  Turned into a template when a release starts, and kept for that release.
-                  Until the first run, releases from this set use the default shape.
-                </mat-hint>
-              </mat-form-field>
-            }
           </div>
 
           <mat-form-field appearance="outline" class="full-width">
@@ -533,7 +535,7 @@ const MORE_RELEASES = 10;
     .load-more { align-self: flex-start; background: none; border: none; padding: 6px 2px 0; cursor: pointer;
       font: inherit; font-size: 13px; font-weight: 500; color: var(--color-primary); }
     .load-more:disabled { color: var(--text-tertiary); cursor: default; }
-    .jql-field { margin-bottom: 12px; }
+    .jql-field, .output-guidance { margin-bottom: 12px; }
     .layout-card { border: 1px solid var(--border-default); border-radius: 8px; padding: 12px 14px;
       margin-bottom: 16px; background: var(--bg-secondary); }
     .layout-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -643,7 +645,6 @@ export class InstructionEditorComponent implements OnInit {
       writer_agent_id: [data?.writer_agent_id || null, Validators.required],
       analysis_agent_id: [data?.analysis_agent_id || null],
       relevance_guidance: [data?.relevance_guidance || ''],
-      organization_guidance: [data?.organization_guidance || ''],
       chunking_strategy: [data?.chunking_strategy || 'single'],
       group_heading: [layout.group_heading],
       notes_wrapper: [layout.notes_wrapper],
@@ -652,7 +653,7 @@ export class InstructionEditorComponent implements OnInit {
       shortdesc_text: [layout.shortdesc_text],
       layout_mode: [data?.layout?.mode || 'structured'],
       template_dita: [data?.layout?.template?.dita || ''],
-      agent_guidance: [data?.layout?.agent?.guidance || ''],
+      output_guidance: [data?.layout?.guidance || ''],
       heretto_folder_id: [data?.heretto_folder_id || ''],
       heretto_credential_id: [data?.heretto_credential_id || null],
       // Shown instead of the id. Not stored — the id is what publishing needs, and a
@@ -797,6 +798,40 @@ export class InstructionEditorComponent implements OnInit {
       problems.push('Nothing says where the notes go. Put outputclass="rn-notes" on the element that should hold them.');
     }
     if (!root.querySelector('title')) problems.push('The template needs a <title>.');
+    problems.push(...this.forGroupProblems(root));
+    problems.push(...this.unwrapProblems(root));
+    return problems;
+  }
+
+  /** Mirrors topic_assembler._unwrap_errors. */
+  private unwrapProblems(root: Element): string[] {
+    const problems: string[] = [];
+    for (const el of [root, ...Array.from(root.getElementsByTagName('*'))]) {
+      const classes = (el.getAttribute('outputclass') || '').split(/\s+/);
+      if (!classes.includes('rn-unwrap')) continue;
+      if (el === root || ['topic', 'title', 'shortdesc', 'body'].includes(el.nodeName)) {
+        problems.push(`outputclass="rn-unwrap" cannot go on the <${el.nodeName}>; the topic needs it.`);
+      } else if (classes.includes('rn-notes')) {
+        problems.push('outputclass="rn-unwrap" cannot go on the notes element: its tag is what decides whether notes are list items, and loose list items are invalid.');
+      }
+    }
+    return problems;
+  }
+
+  /** Mirrors topic_assembler._for_group_errors. */
+  private forGroupProblems(root: Element): string[] {
+    const block = Array.from(root.getElementsByTagName('*'))
+      .find(el => (el.getAttribute('outputclass') || '').split(/\s+/).includes('rn-group'));
+    const problems: string[] = [];
+    for (const el of Array.from(root.querySelectorAll('[rn-for-group]'))) {
+      if (!block || el === block || !block.contains(el)) {
+        problems.push(`rn-for-group only works on an element inside the outputclass="rn-group" block; it is on a <${el.nodeName}> outside it.`);
+      } else if (!(el.getAttribute('rn-for-group') || '').split('|').some(p => p.trim())) {
+        problems.push(`rn-for-group on a <${el.nodeName}> names no group.`);
+      } else if (this.hasMarker(el, 'rn-notes')) {
+        problems.push('The notes must not depend on the group: outputclass="rn-notes" is inside an element with rn-for-group, so other groups would lose their notes.');
+      }
+    }
     return problems;
   }
 
@@ -915,7 +950,9 @@ export class InstructionEditorComponent implements OnInit {
       if (mode === 'template' && !(this.form.get('template_dita')?.value || '').trim()) {
         this.form.patchValue({ template_dita: STARTER_TEMPLATE });
       }
+      this.applyLayoutValidators();
     });
+    this.applyLayoutValidators();
 
     // What a note is follows from what collects it — see noteElementOptions. Kept in step
     // here so the stored value always matches the only option the control offers.
@@ -939,6 +976,17 @@ export class InstructionEditorComponent implements OnInit {
     if (this.form.get('note_element')?.value !== only) {
       this.form.patchValue({ note_element: only }, { emitEvent: false });
     }
+  }
+
+  /** "Describe it" builds the topic from the output guidance, so there it is required. */
+  private applyLayoutValidators(): void {
+    const guidance = this.form.get('output_guidance');
+    if (this.form.get('layout_mode')?.value === 'agent') {
+      guidance?.setValidators(Validators.required);
+    } else {
+      guidance?.clearValidators();
+    }
+    guidance?.updateValueAndValidity({ emitEvent: false });
   }
 
   private applyModeValidators(): void {
@@ -1038,13 +1086,13 @@ export class InstructionEditorComponent implements OnInit {
   onSave(): void {
     if (!this.form.valid) return;
     const value = { ...this.form.value };
-    for (const key of ['description', 'product_name', 'relevance_guidance', 'organization_guidance', 'heretto_folder_id']) {
+    for (const key of ['description', 'product_name', 'relevance_guidance', 'heretto_folder_id']) {
       if (typeof value[key] === 'string' && !value[key].trim()) value[key] = null;
     }
     value.layout = {
       mode: value.layout_mode,
       template: { dita: value.layout_mode === 'template' ? (value.template_dita || '').trim() : (value.template_dita || '') },
-      agent: { guidance: (value.agent_guidance || '').trim() },
+      guidance: (value.output_guidance || '').trim(),
       structured: {
         group_heading: value.group_heading,
         notes_wrapper: value.notes_wrapper,
@@ -1054,7 +1102,7 @@ export class InstructionEditorComponent implements OnInit {
       }
     };
     for (const key of ['group_heading', 'notes_wrapper', 'note_element', 'shortdesc',
-                       'shortdesc_text', 'layout_mode', 'template_dita', 'agent_guidance',
+                       'shortdesc_text', 'layout_mode', 'template_dita', 'output_guidance',
                        'heretto_folder_path']) {
       delete value[key];
     }

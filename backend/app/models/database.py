@@ -88,6 +88,13 @@ class ItemStatus:
     ALL = (DRAFT, REVIEW, APPROVED, REJECTED)
 
 
+class ItemKind:
+    """What a release note item stands for."""
+    NOTE = "note"                            # written from the Jira issues linked to it
+    NOTHING_TO_REPORT = "nothing_to_report"  # a product release whose issues produced no note
+    ALL = (NOTE, NOTHING_TO_REPORT)
+
+
 class ChunkingStrategy:
     """How release note items are split into DITA topics."""
     SINGLE = "single"             # every note in one topic (the default)
@@ -169,7 +176,6 @@ class InstructionSet(Base):
     # Pipeline configuration
     product_name = Column(String(255), nullable=True)
     relevance_guidance = Column(Text, nullable=True)      # what counts as a change users must know about
-    organization_guidance = Column(Text, nullable=True)   # how to group and order the notes
     chunking_strategy = Column(String(40), nullable=False, default=ChunkingStrategy.SINGLE, server_default=ChunkingStrategy.SINGLE)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -292,6 +298,10 @@ class ReleaseNoteItem(Base):
     summary = Column(Text, nullable=False, default="")
     # A <div outputclass="release-note"> body fragment; see topic_assembler.
     dita_content = Column(Text, nullable=False, default="")
+    # A "nothing to report" entry has no issues of its own: it stands for `fix_version`, a
+    # release whose issues were all judged not relevant, and exists only while that holds.
+    kind = Column(String(30), nullable=False, default=ItemKind.NOTE, server_default=ItemKind.NOTE)
+    fix_version = Column(String(255), nullable=True)
     status = Column(String(20), nullable=False, default=ItemStatus.DRAFT, server_default=ItemStatus.DRAFT)
     # Set when something happened the person should look at (its Jira issue changed after a
     # person edited it, or dropped out of the query). Cleared by the person.

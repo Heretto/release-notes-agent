@@ -131,7 +131,11 @@ const HANDLE_WIDTH = 12;
                       <span class="note-main">
                         <span class="note-title">{{ item.title }}</span>
                         <span class="note-meta muted">
-                          {{ item.issue_keys.join(', ') || 'no issue' }}
+                          @if (item.kind === 'nothing_to_report') {
+                            Nothing to report · {{ item.fix_version }}
+                          } @else {
+                            {{ item.issue_keys.join(', ') || 'no issue' }}
+                          }
                           @if (item.user_edited) { · <mat-icon class="mini-icon" matTooltip="Edited by a person">edit</mat-icon> }
                           @if (item.has_notes) { · <mat-icon class="mini-icon" matTooltip="Has notes">sticky_note_2</mat-icon> }
                         </span>

@@ -37,10 +37,10 @@ pytestmark = pytest.mark.skipif(not DB_AVAILABLE, reason="development database i
 # ── Fakes ────────────────────────────────────────────────────────────────────────────
 
 def _ticket(key: str, summary: str, description: str = "", status: str = "Done", issue_type: str = "Story",
-            components=None, comments=None) -> JiraTicket:
+            components=None, comments=None, fix_versions=None) -> JiraTicket:
     return JiraTicket(
         key=key, summary=summary, description=description, issue_type=issue_type, status=status, priority="High",
-        labels=[], components=components or ["Web"], fix_versions=["2026.10"], comments=comments or [],
+        labels=[], components=components or ["Web"], fix_versions=fix_versions or ["2026.10"], comments=comments or [],
         custom_fields={}, url=f"https://jira.example/browse/{key}",
     )
 
@@ -74,11 +74,18 @@ class FakeAgent:
                 {"title": c["title"], "summary": c["summary"], "category": c["category"], "issue_keys": c["issue_keys"]}
                 for c in candidates
             ]}))
+        if "no release note was written for them" in instructions:
+            releases = json.loads(input_text)
+            entries = [{"version": r["version"], "group": f"Product {r['version']}", "focus": "stability"}
+                       for r in releases]
+            return FakeResult(json.dumps({"entries": entries, "order": []}))
         if "organizing release notes" in instructions:
             items = json.loads(input_text)
             return FakeResult(json.dumps({"groups": [{"name": "Improvements", "notes": [i["n"] for i in items]}]}))
         # write / rewrite
         record = json.loads(input_text.split("\n\n## ", 1)[0])
+        if record.get("kind") == "nothing_to_report":
+            return FakeResult(f'<p>In version {record["release"]}, there are no end-user updates to report.</p>')
         marker = "rewritten" if "what_changed_in_jira" in record else "written"
         return FakeResult(f'<div><p><b>{record["title"]}</b></p><p>{marker}: {record["summary"]}</p></div>')
 
@@ -279,3 +286,57 @@ def test_rerun_evaluates_issues_a_failed_run_left_pending(db, seeded_job):
     assert job.status.value == "completed", job.error_message
     assert [i.relevance for i in job.issues] == [IssueRelevance.RELEVANT]
     assert [i.title for i in job.items] == ["Note for T-5"]
+
+
+def test_output_guidance_reaches_organize_and_the_writer(db, seeded_job):
+    """One field describes the output; it used to be split across two that each reached
+    different agents, so most of a description written in either was ignored."""
+    marker = "OUTPUT-GUIDANCE-MARKER: one group per product"
+    seeded_job.instruction_set.layout = {"mode": "structured", "guidance": marker}
+    db.commit()
+
+    seen: Dict[str, bool] = {}
+
+    @dataclass
+    class Recording(FakeAgent):
+        async def run(self, instructions, input_text="", max_tokens=None, temperature=None):
+            stage = "organize" if "organizing release notes" in instructions else (
+                "write" if instructions.startswith("Write the release note") else None)
+            if stage:
+                seen[stage] = seen.get(stage, False) or marker in instructions
+            return await super().run(instructions, input_text, max_tokens, temperature)
+
+    job = _run(db, seeded_job.id, [_ticket("T-1", "Faster search", "Search got faster")], Recording())
+    assert job.status.value == "completed", job.error_message
+    assert seen == {"organize": True, "write": True}
+
+
+def test_a_release_with_nothing_to_report_gets_an_entry_until_it_has_notes(db, seeded_job):
+    """Guidance can ask for an entry when a release's issues are all internal. It stands for
+    that release only while that holds: a rerun that finds a real note retires it."""
+    from app.models.database import IssueRelevance, ItemKind
+
+    seeded_job.instruction_set.layout = {
+        "mode": "structured",
+        "guidance": "One group per product. When a release has nothing to report, say so in one entry.",
+    }
+    db.commit()
+    agent = FakeAgent()
+    first = [
+        _ticket("T-1", "Faster search", "Search got faster", fix_versions=["CCMS 2026.10"]),
+        _ticket("T-2", "Refactor the portal cache", "internal", fix_versions=["Portal 26.10"]),
+    ]
+    job = _run(db, seeded_job.id, first, agent)
+    assert job.status.value == "completed", job.error_message
+    assert {i.issue_key: i.relevance for i in job.issues}["T-2"] == IssueRelevance.NOT_RELEVANT
+    entries = [i for i in job.items if i.kind == ItemKind.NOTHING_TO_REPORT]
+    assert [(e.fix_version, e.group_name) for e in entries] == [("Portal 26.10", "Product Portal 26.10")]
+    assert "no end-user updates" in entries[0].dita_content          # the writer wrote it
+    assert "no end-user updates" in job.topics[0].dita_content         # and it is published
+
+    # Rerun: the portal release now has a user-facing change. The untouched entry goes.
+    second = first + [_ticket("T-3", "Portal dark mode", "Dark mode is here", fix_versions=["Portal 26.10"])]
+    job = _run(db, seeded_job.id, second, agent)
+    assert job.status.value == "completed", job.error_message
+    assert [i for i in job.items if i.kind == ItemKind.NOTHING_TO_REPORT] == []
+    assert "no end-user updates" not in job.topics[0].dita_content
