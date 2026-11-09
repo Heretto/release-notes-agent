@@ -326,7 +326,9 @@ const MORE_RELEASES = 10;
         <div class="form-section">
           <h3>Output</h3>
 
-          <mat-form-field appearance="outline" class="full-width">
+          <!-- subscriptSizing="dynamic": the hint runs to several lines, and the default fixed
+               one-line subscript lets it run into the Topic layout card below. -->
+          <mat-form-field appearance="outline" class="full-width output-guidance" subscriptSizing="dynamic">
             <mat-label>Output guidance</mat-label>
             <textarea matInput formControlName="output_guidance" rows="10"
                       placeholder="e.g. One group per product, in this order: Heretto CCMS, Heretto Portal, Cloud Publishing. Each group's heading is the product name and version (yy.mm.dd). Each note starts with Added. / Changed. / Fixed. and links its Jira issue with an internal xref."></textarea>
@@ -533,7 +535,7 @@ const MORE_RELEASES = 10;
     .load-more { align-self: flex-start; background: none; border: none; padding: 6px 2px 0; cursor: pointer;
       font: inherit; font-size: 13px; font-weight: 500; color: var(--color-primary); }
     .load-more:disabled { color: var(--text-tertiary); cursor: default; }
-    .jql-field { margin-bottom: 12px; }
+    .jql-field, .output-guidance { margin-bottom: 12px; }
     .layout-card { border: 1px solid var(--border-default); border-radius: 8px; padding: 12px 14px;
       margin-bottom: 16px; background: var(--bg-secondary); }
     .layout-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
